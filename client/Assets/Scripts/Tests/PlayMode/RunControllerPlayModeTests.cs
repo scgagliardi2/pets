@@ -153,5 +153,66 @@ namespace Pets.Tests
             Assert.AreEqual(GamePhase.Shop, controller.State.Phase);
             Assert.AreEqual(1, controller.State.Round);
         }
+
+        /// <summary>
+        /// Regression guard for a real bug: HorizontalLayoutGroup/VerticalLayoutGroup default
+        /// childControlWidth/Height to false when added via script, so without explicitly
+        /// setting them the layout groups never actually resize/reposition their children —
+        /// everything renders collapsed on top of itself. This can't be caught by looking at
+        /// logic alone, so it checks actual on-screen geometry instead.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Layout_KeyRowsAndSlotsAreSizedAndNotOverlapping()
+        {
+            var controller = FindRunController();
+            int slot = FindPurchasableSlot(controller);
+            Assert.GreaterOrEqual(slot, 0);
+            controller.Buy(slot);
+            yield return null;
+            Canvas.ForceUpdateCanvases();
+
+            var header = GameObject.Find("Canvas/ShopPanel/Header").GetComponent<RectTransform>();
+            var shopRow = GameObject.Find("Canvas/ShopPanel/ShopRow").GetComponent<RectTransform>();
+            var boardRow = GameObject.Find("Canvas/ShopPanel/BoardRow").GetComponent<RectTransform>();
+            var footer = GameObject.Find("Canvas/ShopPanel/Footer").GetComponent<RectTransform>();
+
+            AssertHasArea(header, "Header");
+            AssertHasArea(shopRow, "ShopRow");
+            AssertHasArea(boardRow, "BoardRow");
+            AssertHasArea(footer, "Footer");
+
+            // Rows should stack top-to-bottom without overlapping (a small tolerance covers
+            // floating point/pixel rounding, not a real overlap).
+            Assert.LessOrEqual(WorldTop(shopRow), WorldBottom(header) + 1f, "ShopRow overlaps Header");
+            Assert.LessOrEqual(WorldTop(boardRow), WorldBottom(shopRow) + 1f, "BoardRow overlaps ShopRow");
+            Assert.LessOrEqual(WorldTop(footer), WorldBottom(boardRow) + 1f, "Footer overlaps BoardRow");
+
+            // Shop slots should be spread out horizontally, not stacked at the same position.
+            var shopRowTransform = shopRow.transform;
+            Assert.GreaterOrEqual(shopRowTransform.childCount, 2, "Expected at least 2 shop slot instances");
+            float firstX = shopRowTransform.GetChild(0).position.x;
+            float secondX = shopRowTransform.GetChild(1).position.x;
+            Assert.AreNotEqual(firstX, secondX, "First two shop slots are stacked at the same X position");
+        }
+
+        private static void AssertHasArea(RectTransform rt, string label)
+        {
+            Assert.Greater(rt.rect.width, 1f, $"{label} has ~zero width");
+            Assert.Greater(rt.rect.height, 1f, $"{label} has ~zero height");
+        }
+
+        private static float WorldTop(RectTransform rt)
+        {
+            var corners = new Vector3[4];
+            rt.GetWorldCorners(corners);
+            return corners[1].y;
+        }
+
+        private static float WorldBottom(RectTransform rt)
+        {
+            var corners = new Vector3[4];
+            rt.GetWorldCorners(corners);
+            return corners[0].y;
+        }
     }
 }

@@ -54,6 +54,7 @@ namespace Pets.Editor
             var shopSlotPrefab = BuildShopSlotPrefab();
             var boardSlotPrefab = BuildBoardSlotPrefab();
 
+            BuildCamera();
             BuildEventSystem();
             var runController = BuildRunController(creatureLibrary, botRosterLibrary, shopConfig);
             var canvasGo = BuildCanvas();
@@ -69,6 +70,19 @@ namespace Pets.Editor
         }
 
         // ---- top-level scene pieces ----
+
+        private static void BuildCamera()
+        {
+            // Screen Space Overlay Canvas doesn't need a camera to render, but an empty scene
+            // with zero cameras makes the Game view show a "No cameras rendering" placeholder
+            // instead of a normal background, which reads as broken. A plain clearing camera
+            // fixes that.
+            var go = new GameObject("Main Camera", typeof(Camera));
+            go.tag = "MainCamera";
+            var camera = go.GetComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.1f, 0.1f, 0.12f);
+        }
 
         private static void BuildEventSystem()
         {
@@ -112,20 +126,21 @@ namespace Pets.Editor
             var panelLayout = panelGo.AddComponent<VerticalLayoutGroup>();
             panelLayout.spacing = 16;
             panelLayout.padding = new RectOffset(24, 24, 48, 24);
-            panelLayout.childForceExpandWidth = true;
-            panelLayout.childForceExpandHeight = false;
             panelLayout.childAlignment = TextAnchor.UpperCenter;
+            ConfigureLayoutGroup(panelLayout, forceExpandWidth: true, forceExpandHeight: false);
 
             var headerGo = CreateUIObject("Header", panelGo.transform);
             var headerLayout = headerGo.AddComponent<HorizontalLayoutGroup>();
             headerLayout.spacing = 24;
             headerLayout.childAlignment = TextAnchor.MiddleCenter;
-            headerLayout.childForceExpandWidth = false;
-            headerLayout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(headerLayout, forceExpandWidth: false, forceExpandHeight: false);
             AddLayoutElement(headerGo, preferredHeight: 60);
             var goldText = CreateText("GoldText", headerGo.transform, "Gold: 0", 28);
+            AddLayoutElement(goldText.gameObject, 220, 50);
             var livesText = CreateText("LivesText", headerGo.transform, "Lives: 0", 28);
+            AddLayoutElement(livesText.gameObject, 200, 50);
             var roundText = CreateText("RoundText", headerGo.transform, "Round: 0", 28);
+            AddLayoutElement(roundText.gameObject, 220, 50);
 
             var shopLabel = CreateText("ShopLabel", panelGo.transform, "Shop", 22);
             AddLayoutElement(shopLabel.gameObject, preferredHeight: 30);
@@ -133,8 +148,7 @@ namespace Pets.Editor
             var shopRowLayout = shopRowGo.AddComponent<HorizontalLayoutGroup>();
             shopRowLayout.spacing = 12;
             shopRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            shopRowLayout.childForceExpandWidth = false;
-            shopRowLayout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(shopRowLayout, forceExpandWidth: false, forceExpandHeight: false);
             AddLayoutElement(shopRowGo, preferredHeight: 220);
 
             var boardLabel = CreateText("BoardLabel", panelGo.transform, "Your Board", 22);
@@ -143,16 +157,14 @@ namespace Pets.Editor
             var boardRowLayout = boardRowGo.AddComponent<HorizontalLayoutGroup>();
             boardRowLayout.spacing = 12;
             boardRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            boardRowLayout.childForceExpandWidth = false;
-            boardRowLayout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(boardRowLayout, forceExpandWidth: false, forceExpandHeight: false);
             AddLayoutElement(boardRowGo, preferredHeight: 220);
 
             var footerGo = CreateUIObject("Footer", panelGo.transform);
             var footerLayout = footerGo.AddComponent<HorizontalLayoutGroup>();
             footerLayout.spacing = 24;
             footerLayout.childAlignment = TextAnchor.MiddleCenter;
-            footerLayout.childForceExpandWidth = false;
-            footerLayout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(footerLayout, forceExpandWidth: false, forceExpandHeight: false);
             AddLayoutElement(footerGo, preferredHeight: 80);
             var rerollButton = CreateButton("RerollButton", footerGo.transform, "Reroll", 160, 60);
             var fightButton = CreateButton("FightButton", footerGo.transform, "Fight!", 160, 60);
@@ -183,8 +195,7 @@ namespace Pets.Editor
             layout.spacing = 16;
             layout.padding = new RectOffset(48, 48, 48, 48);
             layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(layout, forceExpandWidth: true, forceExpandHeight: false);
 
             var outcomeText = CreateText("OutcomeText", panelGo.transform, "", 40);
             outcomeText.color = Color.white;
@@ -218,8 +229,7 @@ namespace Pets.Editor
             var layout = panelGo.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 24;
             layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(layout, forceExpandWidth: true, forceExpandHeight: false);
 
             var titleText = CreateText("TitleText", panelGo.transform, "", 40);
             titleText.color = Color.white;
@@ -250,12 +260,14 @@ namespace Pets.Editor
             layout.padding = new RectOffset(8, 8, 8, 8);
             layout.spacing = 4;
             layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(layout, forceExpandWidth: true, forceExpandHeight: false);
 
             var nameText = CreateText("NameText", root.transform, "Name", 18);
+            AddLayoutElement(nameText.gameObject, preferredHeight: 24);
             var statsText = CreateText("StatsText", root.transform, "0/0", 16);
+            AddLayoutElement(statsText.gameObject, preferredHeight: 22);
             var costText = CreateText("CostText", root.transform, "0g", 16);
+            AddLayoutElement(costText.gameObject, preferredHeight: 22);
             var buyButton = CreateButton("BuyButton", root.transform, "Buy", 120, 40);
             var freezeButton = CreateButton("FreezeButton", root.transform, "Freeze", 120, 32);
             var freezeLabel = freezeButton.GetComponentInChildren<Text>();
@@ -286,18 +298,18 @@ namespace Pets.Editor
             layout.padding = new RectOffset(8, 8, 8, 8);
             layout.spacing = 4;
             layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(layout, forceExpandWidth: true, forceExpandHeight: false);
 
             var nameText = CreateText("NameText", root.transform, "Name", 16);
+            AddLayoutElement(nameText.gameObject, preferredHeight: 40);
             var statsText = CreateText("StatsText", root.transform, "0/0", 16);
+            AddLayoutElement(statsText.gameObject, preferredHeight: 22);
 
             var moveRowGo = CreateUIObject("MoveRow", root.transform);
             var moveRowLayout = moveRowGo.AddComponent<HorizontalLayoutGroup>();
             moveRowLayout.spacing = 4;
             moveRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            moveRowLayout.childForceExpandWidth = false;
-            moveRowLayout.childForceExpandHeight = false;
+            ConfigureLayoutGroup(moveRowLayout, forceExpandWidth: false, forceExpandHeight: false);
             AddLayoutElement(moveRowGo, preferredHeight: 32);
             var moveLeftButton = CreateButton("MoveLeftButton", moveRowGo.transform, "<", 40, 32);
             var moveRightButton = CreateButton("MoveRightButton", moveRowGo.transform, ">", 40, 32);
@@ -337,6 +349,21 @@ namespace Pets.Editor
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>
+        /// HorizontalLayoutGroup/VerticalLayoutGroup default childControlWidth/Height to false
+        /// when added via script — without this, the group never actually resizes/repositions
+        /// its children (they keep whatever raw RectTransform they started with), which is what
+        /// caused everything to render collapsed on top of itself. Always call this after adding
+        /// either layout group type.
+        /// </summary>
+        private static void ConfigureLayoutGroup(HorizontalOrVerticalLayoutGroup group, bool forceExpandWidth, bool forceExpandHeight)
+        {
+            group.childControlWidth = true;
+            group.childControlHeight = true;
+            group.childForceExpandWidth = forceExpandWidth;
+            group.childForceExpandHeight = forceExpandHeight;
         }
 
         private static LayoutElement AddLayoutElement(GameObject go, float preferredWidth = -1, float preferredHeight = -1)
