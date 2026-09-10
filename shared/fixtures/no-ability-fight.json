@@ -1,0 +1,10 @@
+{
+  "seed": 1,
+  "teamA": [{ "instanceId": "a1", "attack": 3, "health": 10, "abilities": [] }],
+  "teamB": [{ "instanceId": "b1", "attack": 2, "health": 10, "abilities": [] }],
+  "expected": {
+    "outcome": "TeamAWins",
+    "faintOrder": ["b1"],
+    "survivors": [{ "instanceId": "a1", "health": 2, "attack": 3 }]
+  }
+}

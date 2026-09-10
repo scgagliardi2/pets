@@ -1,0 +1,19 @@
+{
+  "seed": 1,
+  "teamA": [
+    {
+      "instanceId": "faintee",
+      "attack": 1,
+      "health": 1,
+      "abilities": [
+        { "trigger": "OnFaint", "effects": [{ "type": "DealDamage", "target": "RandomEnemy", "amount": 3 }] }
+      ]
+    }
+  ],
+  "teamB": [{ "instanceId": "target", "attack": 1, "health": 10, "abilities": [] }],
+  "expected": {
+    "outcome": "TeamBWins",
+    "faintOrder": ["faintee"],
+    "survivors": [{ "instanceId": "target", "health": 6, "attack": 1 }]
+  }
+}

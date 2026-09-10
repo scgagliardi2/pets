@@ -1,0 +1,28 @@
+{
+  "seed": 1,
+  "teamA": [
+    {
+      "instanceId": "striker",
+      "attack": 0,
+      "health": 5,
+      "abilities": [
+        { "trigger": "OnBattleStart", "effects": [{ "type": "DealDamage", "target": "FrontEnemy", "amount": 5 }] }
+      ]
+    }
+  ],
+  "teamB": [
+    {
+      "instanceId": "fragile",
+      "attack": 0,
+      "health": 1,
+      "abilities": [
+        { "trigger": "OnFaint", "effects": [{ "type": "DealDamage", "target": "RandomEnemy", "amount": 2 }] }
+      ]
+    }
+  ],
+  "expected": {
+    "outcome": "TeamAWins",
+    "faintOrder": ["fragile"],
+    "survivors": [{ "instanceId": "striker", "health": 3, "attack": 0 }]
+  }
+}

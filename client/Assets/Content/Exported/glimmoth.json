@@ -1,0 +1,22 @@
+{
+    "id": "glimmoth",
+    "displayName": "Glimmoth",
+    "tier": 2,
+    "baseAttack": 2,
+    "baseHealth": 2,
+    "levelAttackBonus": 2,
+    "levelHealthBonus": 2,
+    "abilities": [
+        {
+            "trigger": "OnBattleStart",
+            "effects": [
+                {
+                    "type": "DealDamage",
+                    "target": "FrontEnemy",
+                    "amount": 2,
+                    "summonTemplateId": ""
+                }
+            ]
+        }
+    ]
+}

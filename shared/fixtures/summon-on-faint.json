@@ -1,0 +1,30 @@
+{
+  "seed": 1,
+  "teamA": [
+    {
+      "instanceId": "warrior",
+      "attack": 10,
+      "health": 1,
+      "abilities": [
+        {
+          "trigger": "OnFaint",
+          "effects": [
+            {
+              "type": "Summon",
+              "summonTemplate": { "id": "guard", "displayName": "Guard", "attack": 1, "health": 100 }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "teamB": [{ "instanceId": "brick", "attack": 1, "health": 1000, "abilities": [] }],
+  "expected": {
+    "outcome": "Draw",
+    "faintOrder": ["warrior"],
+    "survivors": [
+      { "instanceId": "guard#summon0", "health": 51, "attack": 1 },
+      { "instanceId": "brick", "health": 941, "attack": 1 }
+    ]
+  }
+}
