@@ -50,14 +50,29 @@ namespace Pets.Editor
             var glimmoth = CreateCreature("glimmoth", "Glimmoth", 2, 2, 2, 2, 2, new Color(0.52f, 0.3f, 0.78f), glimmothBattleStart);
             var cragtoise = CreateCreature("cragtoise", "Cragtoise", 3, 3, 8, 2, 2, new Color(0.4f, 0.42f, 0.44f), cragtoiseHurt);
 
-            CreateBotTeam(1, (pebblehide, 1));
-            CreateBotTeam(2, (pebblehide, 1), (sparklet, 1));
-            CreateBotTeam(3, (sparklet, 1), (mossback, 1));
-            CreateBotTeam(4, (pebblehide, 2), (mossback, 1), (sparklet, 1));
-            CreateBotTeam(5, (thistlepup, 1), (pebblehide, 1));
-            CreateBotTeam(6, (glimmoth, 1), (thistlepup, 1), (mossback, 1));
-            CreateBotTeam(7, (cragtoise, 1), (glimmoth, 1), (sparklet, 2));
-            CreateBotTeam(8, (cragtoise, 2), (thistlepup, 2), (pebblehide, 2), (mossback, 1));
+            var botTeams = new List<BotTeamDefinition>
+            {
+                CreateBotTeam(1, (pebblehide, 1)),
+                CreateBotTeam(2, (pebblehide, 1), (sparklet, 1)),
+                CreateBotTeam(3, (sparklet, 1), (mossback, 1)),
+                CreateBotTeam(4, (pebblehide, 2), (mossback, 1), (sparklet, 1)),
+                CreateBotTeam(5, (thistlepup, 1), (pebblehide, 1)),
+                CreateBotTeam(6, (glimmoth, 1), (thistlepup, 1), (mossback, 1)),
+                CreateBotTeam(7, (cragtoise, 1), (glimmoth, 1), (sparklet, 2)),
+                CreateBotTeam(8, (cragtoise, 2), (thistlepup, 2), (pebblehide, 2), (mossback, 1)),
+            };
+
+            var allCreatures = new List<CreatureDefinition> { burr, pebblehide, sparklet, mossback, thistlepup, glimmoth, cragtoise };
+
+            var library = CreateOrLoadAsset<CreatureLibrary>("Assets/Content/CreatureLibrary.asset");
+            library.AllCreatures = allCreatures;
+            EditorUtility.SetDirty(library);
+
+            var roster = CreateOrLoadAsset<BotRosterLibrary>("Assets/Content/BotRosterLibrary.asset");
+            roster.Rounds = botTeams;
+            EditorUtility.SetDirty(roster);
+
+            CreateOrLoadAsset<ShopConfig>("Assets/Content/ShopConfig.asset");
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -123,7 +138,7 @@ namespace Pets.Editor
             return asset;
         }
 
-        private static void CreateBotTeam(int round, params (CreatureDefinition creature, int level)[] slots)
+        private static BotTeamDefinition CreateBotTeam(int round, params (CreatureDefinition creature, int level)[] slots)
         {
             var asset = CreateOrLoadAsset<BotTeamDefinition>($"{BotRosterPath}/round-{round:D2}.asset");
             asset.Round = round;
@@ -134,6 +149,7 @@ namespace Pets.Editor
             }
             asset.Slots = list;
             EditorUtility.SetDirty(asset);
+            return asset;
         }
 
         private static T CreateOrLoadAsset<T>(string path) where T : ScriptableObject

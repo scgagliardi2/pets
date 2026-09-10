@@ -128,3 +128,23 @@ debugging/log readability, `placeholderColor` is dropped — `Simulation` has ze
 concerns). `Simulation.EffectData`'s `SummonTemplate` field is a small resolved
 `Simulation.CreatureTemplate` (id, display name, attack, health) rather than an id string —
 resolved once by the converter, so the simulator never needs to look anything up mid-battle.
+
+## 7. Runtime registries and shop config
+
+Two more ScriptableObjects exist purely so gameplay code can find content at runtime — Editor
+`AssetDatabase` lookups (as used by the Editor-only content smoke tests) don't work in a built
+player:
+
+- `CreatureLibrary` — a flat `AllCreatures: CreatureDefinition[]`, plus `GetByMaxTier(tier)` (used
+  to build the shop pool; a creature at `Tier <= 0`, like the `burr-token` summon template, is
+  never shop-eligible) and `GetById(id)` (used to resolve save data back to references).
+- `BotRosterLibrary` — an ordered `Rounds: BotTeamDefinition[]`, plus `GetByRound(round)`.
+
+Both are populated by `Editor/ContentSeeder.cs` alongside the creatures/bot teams themselves, so
+there's one generator for all of it.
+
+`ShopConfig` holds the tunable run economy (starting gold/lives, shop size, reroll cost, board
+size, buy-cost formula, tier-unlock cadence) as Inspector-editable fields rather than code
+constants — see `client/Assets/Scripts/Data/ShopConfig.cs` for the current placeholder values.
+This is balance data, not creature content, so it doesn't follow the trigger/effect vocabulary
+above — it's just a plain settings asset.
