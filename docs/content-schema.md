@@ -1,6 +1,6 @@
 # Content Schema
 
-Status: **Phase 1, in progress.** Documents the data shape for creatures/abilities/tiers/bot
+Status: **Phase 1 complete.** Documents the data shape for creatures/abilities/tiers/bot
 rosters (PLAN.md §2.3), kept in sync with the actual Unity ScriptableObject fields
 (`client/Assets/Scripts/Data`) and their JSON export format
 (`client/Assets/Scripts/Data/ContentJsonExporter.cs`).

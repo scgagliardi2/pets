@@ -1,6 +1,6 @@
 # Battle Simulation Spec
 
-Status: **Phase 1, in progress.** Source of truth for trigger ordering, tie-breaking, and stat
+Status: **Phase 1 complete.** Source of truth for trigger ordering, tie-breaking, and stat
 formulas (PLAN.md §3, CLAUDE.md). Implemented by `client/Assets/Scripts/Simulation`. Update this
 file *before or alongside* simulation code changes, not after.
 
