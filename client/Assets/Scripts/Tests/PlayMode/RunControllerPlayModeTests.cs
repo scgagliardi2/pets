@@ -25,9 +25,10 @@ namespace Pets.Tests
         [UnitySetUp]
         public IEnumerator SetUp()
         {
-            // Ensure every test starts a genuinely fresh run, not a leftover save from a
+            // Ensure every test starts a genuinely fresh run, not a leftover save/history from a
             // previous test/session.
             SaveSystem.DeleteSave();
+            SaveSystem.DeleteHistory();
 #if UNITY_EDITOR
             EditorSceneManager.LoadSceneInPlayMode(ScenePath, new LoadSceneParameters(LoadSceneMode.Single));
 #endif
@@ -38,6 +39,7 @@ namespace Pets.Tests
         public void TearDown()
         {
             SaveSystem.DeleteSave();
+            SaveSystem.DeleteHistory();
         }
 
         private static RunController FindRunController()
@@ -57,21 +59,71 @@ namespace Pets.Tests
             return -1;
         }
 
+        /// <summary>Buys whatever's purchasable and fights every round until the run ends
+        /// (win, loss, or the 200-round safety cap).</summary>
+        private static IEnumerator PlayUntilRunEnds(RunController controller)
+        {
+            bool ended = false;
+            controller.OnRunEnded += _ => ended = true;
+
+            for (int i = 0; i < 200 && !ended; i++)
+            {
+                for (int s = 0; s < controller.State.ShopSlots.Count; s++)
+                {
+                    if (controller.State.ShopSlots[s].Offer != null && controller.State.Board.Count < controller.Config.BoardMaxSize)
+                    {
+                        controller.Buy(s);
+                    }
+                }
+                controller.Fight();
+                yield return null;
+            }
+
+            Assert.IsTrue(ended, "Run never ended within 200 simulated rounds");
+        }
+
         [UnityTest]
-        public IEnumerator SceneLoads_RunControllerAndUIExist()
+        public IEnumerator SceneLoads_ShowsHomeScreenWithNoActiveRun()
         {
             var controller = FindRunController();
             Assert.IsNotNull(controller, "RunController not found in Game scene");
-            Assert.IsNotNull(controller.State);
-            Assert.IsNotNull(GameObject.Find("Canvas/ShopPanel"));
+            Assert.IsNull(controller.State, "No run should be active until Continue/New Run is chosen");
+            Assert.AreEqual(AppScreen.Home, controller.Screen);
             Assert.IsNotNull(GameObject.Find("EventSystem"));
+
+            var homePanel = GameObject.Find("Canvas/HomePanel");
+            Assert.IsNotNull(homePanel);
+            Assert.IsTrue(homePanel.activeSelf, "HomePanel should be visible at launch");
+
+            // ShopPanel exists but starts hidden — GameObject.Find skips inactive objects, so
+            // Transform.Find (which doesn't) is needed to check it's actually inactive.
+            var shopPanel = GameObject.Find("Canvas").transform.Find("ShopPanel").gameObject;
+            Assert.IsFalse(shopPanel.activeSelf, "ShopPanel should be hidden until a run starts");
             yield break;
+        }
+
+        [UnityTest]
+        public IEnumerator StartNewRun_FromHome_ShowsShopPanelAndHidesHome()
+        {
+            var controller = FindRunController();
+            controller.StartNewRun();
+            yield return null;
+
+            Assert.IsNotNull(controller.State);
+            Assert.AreEqual(AppScreen.InRun, controller.Screen);
+            Assert.IsNotNull(GameObject.Find("Canvas/ShopPanel"), "ShopPanel should be active after starting a run");
+
+            var homePanel = GameObject.Find("Canvas").transform.Find("HomePanel").gameObject;
+            Assert.IsFalse(homePanel.activeSelf, "HomePanel should hide once a run starts");
         }
 
         [UnityTest]
         public IEnumerator Buy_UpdatesBoardAndGoldTextReflectsIt()
         {
             var controller = FindRunController();
+            controller.StartNewRun();
+            yield return null;
+
             var goldText = GameObject.Find("Canvas/ShopPanel/Header/GoldText").GetComponent<Text>();
 
             int startingGold = controller.State.Gold;
@@ -91,6 +143,9 @@ namespace Pets.Tests
         public IEnumerator Fight_ProducesBattleResultAndTransitionsPhase()
         {
             var controller = FindRunController();
+            controller.StartNewRun();
+            yield return null;
+
             int slot = FindPurchasableSlot(controller);
             Assert.GreaterOrEqual(slot, 0);
             controller.Buy(slot);
@@ -128,43 +183,49 @@ namespace Pets.Tests
         public IEnumerator FullRun_EventuallyEndsAndNewRunResetsToShopRoundOne()
         {
             var controller = FindRunController();
+            controller.StartNewRun();
+            yield return null;
 
-            bool ended = false;
-            controller.OnRunEnded += _ => ended = true;
-
-            for (int i = 0; i < 200 && !ended; i++)
-            {
-                for (int s = 0; s < controller.State.ShopSlots.Count; s++)
-                {
-                    if (controller.State.ShopSlots[s].Offer != null && controller.State.Board.Count < controller.Config.BoardMaxSize)
-                    {
-                        controller.Buy(s);
-                    }
-                }
-                controller.Fight();
-                yield return null;
-            }
-
-            Assert.IsTrue(ended, "Run never ended within 200 simulated rounds");
+            yield return PlayUntilRunEnds(controller);
 
             controller.StartNewRun();
             yield return null;
 
+            Assert.AreEqual(AppScreen.InRun, controller.Screen);
             Assert.AreEqual(GamePhase.Shop, controller.State.Phase);
             Assert.AreEqual(1, controller.State.Round);
         }
 
-        /// <summary>
-        /// Regression guard for a real bug: HorizontalLayoutGroup/VerticalLayoutGroup default
-        /// childControlWidth/Height to false when added via script, so without explicitly
-        /// setting them the layout groups never actually resize/reposition their children —
-        /// everything renders collapsed on top of itself. This can't be caught by looking at
-        /// logic alone, so it checks actual on-screen geometry instead.
-        /// </summary>
+        [UnityTest]
+        public IEnumerator RunEnd_ThenGoHome_RecordsHistoryAndReturnsToHomeScreen()
+        {
+            var controller = FindRunController();
+            controller.StartNewRun();
+            yield return null;
+
+            yield return PlayUntilRunEnds(controller);
+
+            var history = SaveSystem.LoadHistory();
+            Assert.AreEqual(1, history.Count, "Ending a run should append exactly one history entry");
+            Assert.AreEqual(controller.State.Victory, history[0].Victory);
+            Assert.AreEqual(controller.State.Round, history[0].RoundReached);
+
+            controller.GoHome();
+            yield return null;
+
+            Assert.AreEqual(AppScreen.Home, controller.Screen);
+            var homePanel = GameObject.Find("Canvas/HomePanel");
+            Assert.IsNotNull(homePanel);
+            Assert.IsTrue(homePanel.activeSelf);
+        }
+
         [UnityTest]
         public IEnumerator Layout_KeyRowsAndSlotsAreSizedAndNotOverlapping()
         {
             var controller = FindRunController();
+            controller.StartNewRun();
+            yield return null;
+
             int slot = FindPurchasableSlot(controller);
             Assert.GreaterOrEqual(slot, 0);
             controller.Buy(slot);

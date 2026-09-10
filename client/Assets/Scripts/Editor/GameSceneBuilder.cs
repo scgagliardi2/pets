@@ -62,6 +62,9 @@ namespace Pets.Editor
             BuildShopPanel(canvasGo.transform, runController, shopSlotPrefab, boardSlotPrefab);
             BuildBattleResultPanel(canvasGo.transform, runController);
             BuildRunEndPanel(canvasGo.transform, runController);
+            // Built last so it renders on top as the final Canvas sibling — same convention
+            // RunEndPanel already relies on to appear over ShopPanel.
+            BuildHomePanel(canvasGo.transform, runController);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AssetDatabase.SaveAssets();
@@ -169,7 +172,12 @@ namespace Pets.Editor
             var rerollButton = CreateButton("RerollButton", footerGo.transform, "Reroll", 160, 60);
             var fightButton = CreateButton("FightButton", footerGo.transform, "Fight!", 160, 60);
 
-            var shopScreenUI = panelGo.AddComponent<ShopScreenUI>();
+            // Attached to the always-active Canvas, not panelGo itself — same convention
+            // BattleResultUI/RunEndUI already use. This panel now gets deactivated (before any
+            // run starts / after GoHome), and a component living on the GameObject it disables
+            // would unsubscribe itself from OnStateChanged in OnDisable and never hear the event
+            // that's supposed to reactivate it.
+            var shopScreenUI = canvasTransform.gameObject.AddComponent<ShopScreenUI>();
             var so = new SerializedObject(shopScreenUI);
             so.FindProperty("runController").objectReferenceValue = runController;
             so.FindProperty("shopPanel").objectReferenceValue = panelGo;
@@ -236,6 +244,7 @@ namespace Pets.Editor
             AddLayoutElement(titleText.gameObject, preferredHeight: 80);
 
             var newRunButton = CreateButton("NewRunButton", panelGo.transform, "New Run", 220, 70);
+            var homeButton = CreateButton("HomeButton", panelGo.transform, "Home", 220, 70);
 
             panelGo.SetActive(false);
 
@@ -245,7 +254,78 @@ namespace Pets.Editor
             so.FindProperty("panel").objectReferenceValue = panelGo;
             so.FindProperty("titleText").objectReferenceValue = titleText;
             so.FindProperty("newRunButton").objectReferenceValue = newRunButton;
+            so.FindProperty("homeButton").objectReferenceValue = homeButton;
             so.ApplyModifiedProperties();
+        }
+
+        private static void BuildHomePanel(Transform canvasTransform, RunController runController)
+        {
+            var panelGo = CreateUIObject("HomePanel", canvasTransform);
+            StretchToParent(panelGo.GetComponent<RectTransform>());
+            var bg = panelGo.AddComponent<Image>();
+            bg.color = new Color(0.08f, 0.08f, 0.1f, 1f);
+
+            var homeContentGo = CreateUIObject("HomeContent", panelGo.transform);
+            StretchToParent(homeContentGo.GetComponent<RectTransform>());
+            var homeLayout = homeContentGo.AddComponent<VerticalLayoutGroup>();
+            homeLayout.spacing = 24;
+            homeLayout.childAlignment = TextAnchor.MiddleCenter;
+            ConfigureLayoutGroup(homeLayout, forceExpandWidth: true, forceExpandHeight: false);
+
+            var titleText = CreateText("TitleText", homeContentGo.transform, "Critterbrawl", 44);
+            titleText.color = Color.white;
+            AddLayoutElement(titleText.gameObject, preferredHeight: 90);
+
+            var continueButton = CreateButton("ContinueButton", homeContentGo.transform, "Continue", 240, 70);
+            var newRunButton = CreateButton("NewRunButton", homeContentGo.transform, "New Run", 240, 70);
+            var statsButton = CreateButton("StatsButton", homeContentGo.transform, "Stats", 240, 70);
+
+            var statsContentGo = CreateUIObject("StatsContent", panelGo.transform);
+            StretchToParent(statsContentGo.GetComponent<RectTransform>());
+            var statsLayout = statsContentGo.AddComponent<VerticalLayoutGroup>();
+            statsLayout.spacing = 16;
+            statsLayout.padding = new RectOffset(48, 48, 48, 48);
+            statsLayout.childAlignment = TextAnchor.UpperCenter;
+            ConfigureLayoutGroup(statsLayout, forceExpandWidth: true, forceExpandHeight: false);
+
+            var statsTitleText = CreateText("TitleText", statsContentGo.transform, "Run History", 36);
+            statsTitleText.color = Color.white;
+            AddLayoutElement(statsTitleText.gameObject, preferredHeight: 60);
+
+            var summaryText = CreateText("SummaryText", statsContentGo.transform, "", 22);
+            summaryText.color = Color.white;
+            AddLayoutElement(summaryText.gameObject, preferredHeight: 40);
+
+            var historyListText = CreateText("HistoryListText", statsContentGo.transform, "", 18);
+            historyListText.color = Color.white;
+            historyListText.alignment = TextAnchor.UpperLeft;
+            AddLayoutElement(historyListText.gameObject, preferredHeight: 500);
+
+            var backButton = CreateButton("BackButton", statsContentGo.transform, "Back", 200, 60);
+
+            statsContentGo.SetActive(false);
+
+            var statsScreenUI = statsContentGo.AddComponent<StatsScreenUI>();
+            var statsSo = new SerializedObject(statsScreenUI);
+            statsSo.FindProperty("homeContent").objectReferenceValue = homeContentGo;
+            statsSo.FindProperty("summaryText").objectReferenceValue = summaryText;
+            statsSo.FindProperty("historyListText").objectReferenceValue = historyListText;
+            statsSo.FindProperty("backButton").objectReferenceValue = backButton;
+            statsSo.ApplyModifiedProperties();
+
+            // Same reasoning as ShopScreenUI above: attached to the always-active Canvas, not
+            // panelGo (HomePanel), since HomePanel itself gets deactivated once a run starts.
+            var homeScreenUI = canvasTransform.gameObject.AddComponent<HomeScreenUI>();
+            var homeSo = new SerializedObject(homeScreenUI);
+            homeSo.FindProperty("runController").objectReferenceValue = runController;
+            homeSo.FindProperty("homePanel").objectReferenceValue = panelGo;
+            homeSo.FindProperty("homeContent").objectReferenceValue = homeContentGo;
+            homeSo.FindProperty("statsContent").objectReferenceValue = statsContentGo;
+            homeSo.FindProperty("continueButton").objectReferenceValue = continueButton;
+            homeSo.FindProperty("newRunButton").objectReferenceValue = newRunButton;
+            homeSo.FindProperty("statsButton").objectReferenceValue = statsButton;
+            homeSo.FindProperty("statsScreenUI").objectReferenceValue = statsScreenUI;
+            homeSo.ApplyModifiedProperties();
         }
 
         // ---- prefabs ----

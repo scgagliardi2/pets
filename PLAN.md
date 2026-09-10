@@ -68,7 +68,7 @@ Key principle: the **battle simulator is a pure, deterministic function** of
 is critical for:
 - Unit testing without spinning up scenes.
 - Replaying a battle log as an animation independent of simulation speed.
-- Eventually reimplementing the same algorithm server-side (Phase 4+) for anti-cheat validation
+- Eventually reimplementing the same algorithm server-side (Phase 5+) for anti-cheat validation
   in PvP, without fighting engine coupling.
 
 Because the client is C# and the eventual server is TypeScript, we cannot literally share code
@@ -128,12 +128,16 @@ immediately.
 Phases are milestones, not deadlines — move on only when the current phase is genuinely playable
 end-to-end. Each phase should end with something you can actually play.
 
+**Status (as of 2026-09-10):** Phase 0 and Phase 1 complete. Phase 2 in progress — Milestone 2A
+(shop-phase ability triggers + roster/bot-roster expansion) done; Milestone 2B (home screen, run
+history, stats screen) done.
+
 **Phase 0 — Project scaffolding**
 - Unity project created, folder structure above, git LFS or `.gitignore` tuned for Unity.
 - Empty backend scaffold (not wired up yet) so structure exists but MVP doesn't depend on it.
 - GitHub Actions CI skeleton (build/test client, lint/test server) even if server has nothing yet.
 
-**Phase 1 — Core loop, vertical slice (single player, ~5-8 creatures)**
+**Phase 1 — Core loop, vertical slice (single player, ~5-8 creatures)** — *complete*
 - Data model for Creature/Ability/Tier (ScriptableObjects + JSON export).
 - Deterministic battle simulator with a handful of triggers/effects, fully unit tested.
 - Shop UI: buy/sell/freeze/reroll/upgrade, board arrangement.
@@ -141,11 +145,16 @@ end-to-end. Each phase should end with something you can actually play.
 - Local save (PlayerPrefs or a save file) — no backend required to play.
 - **Exit criteria:** you can play a full run start to (win or lose) with placeholder art.
 
-**Phase 2 — Content & systems depth**
+**Phase 2 — Content & systems depth** — *in progress*
 - Expand roster (aim for enough creatures that team-building has real decisions — SAP launched
   with a few dozen; don't block on hitting a specific number, expand until the loop feels good).
+  — *done (Milestone 2A): 14 creatures + token, `OnBuy`/`OnSell`/`OnLevelUp`/`OnTurnStart` wired
+  up in `ShopEconomy`, `GainGold` effect added.*
 - More ability triggers/effects, tier progression tuning, difficulty curve pass on bot rosters.
-- Basic meta: run history, simple stats screen.
+  — *done (Milestone 2A): bot roster expanded 8 → 12 rounds.*
+- Basic meta: run history, simple stats screen. — *done (Milestone 2B): a home screen (Continue /
+  New Run / Stats) is now the app's entry point; run outcomes are logged to a cross-run history
+  file and shown on a Stats screen reachable from Home.*
 
 **Phase 3 — Backend introduction**
 - Node/TS + Postgres service: account creation (or anonymous device-id accounts), cloud save,
@@ -153,7 +162,12 @@ end-to-end. Each phase should end with something you can actually play.
 - Unity client integrates HTTP client for auth + save sync; must still work fully offline
   (local save is the source of truth, cloud sync is best-effort).
 
-**Phase 4 — Async PvP**
+**Phase 4 — Polish & release prep**
+- Real art pass (replacing placeholders), audio, juice/animation polish.
+- Monetization decision (see §9) and store listing assets.
+- iOS/Android build pipeline, store submission (App Store, Google Play).
+
+**Phase 5 — Async PvP**
 - Team "snapshot" format finalized (reuses the bot-roster data shape from Phase 1).
 - Server-side matchmaking pairs snapshots by rank/rating.
 - Battle sim reimplemented server-side in TypeScript, validated against the shared golden
@@ -161,18 +175,13 @@ end-to-end. Each phase should end with something you can actually play.
 - Client requests a match, downloads opponent snapshot + battle log (or recomputes locally from
   the snapshot — decide based on anti-cheat needs at the time), plays the animated result.
 
-**Phase 5 — Polish & release prep**
-- Real art pass (replacing placeholders), audio, juice/animation polish.
-- Monetization decision (see §9) and store listing assets.
-- iOS/Android build pipeline, store submission (App Store, Google Play).
-
 ## 7. Testing Strategy
 
 - **Battle simulation (highest priority):** pure C# unit tests (EditMode) covering individual
   abilities, trigger ordering, edge cases (simultaneous faints, empty board, max board size).
   These are cheap, fast, and where the most subtle bugs will live — invest here first.
 - **Golden fixtures:** curated `(teamA, teamB, seed) -> expected log` cases in `/shared/fixtures`,
-  run by both the Unity suite and (from Phase 4) the Node suite, to guarantee parity.
+  run by both the Unity suite and (from Phase 5) the Node suite, to guarantee parity.
 - **Integration/PlayMode tests:** shop transactions (buy/sell/gold math), save/load round-trip.
 - **Backend tests (Phase 3+):** Vitest + Supertest against routes, using a disposable Postgres
   (Docker Compose) rather than mocks, so schema/query bugs surface in tests.
@@ -191,13 +200,13 @@ end-to-end. Each phase should end with something you can actually play.
   Phase 3+) so the backend and shared fixtures have a real schema to target rather than guessing
   at one later.
 
-## 9. Monetization & Analytics (deferred, decide before Phase 5)
+## 9. Monetization & Analytics (deferred, decide before Phase 4)
 
 Not needed for a hobby MVP, but flagging now so architecture doesn't paint us into a corner:
 - Likely candidates: cosmetic-only IAP (skins), optional rewarded ads, or simply no monetization
   for a personal project. Avoid pay-to-win mechanics (extra rerolls/gold for money) — they
   undermine the design's skill expression.
-- Analytics: defer to Phase 5; if added, prefer a lightweight self-hosted or privacy-respecting
+- Analytics: defer to Phase 4; if added, prefer a lightweight self-hosted or privacy-respecting
   option over heavy SDKs, and gate behind a clear opt-in.
 
 ## 10. Risks & Open Questions

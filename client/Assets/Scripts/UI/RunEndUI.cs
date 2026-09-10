@@ -11,6 +11,7 @@ namespace Pets.UI
         [SerializeField] private GameObject panel;
         [SerializeField] private Text titleText;
         [SerializeField] private Button newRunButton;
+        [SerializeField] private Button homeButton;
 
         private void Awake()
         {
@@ -19,6 +20,11 @@ namespace Pets.UI
             {
                 panel.SetActive(false);
                 runController.StartNewRun();
+            });
+            homeButton.onClick.AddListener(() =>
+            {
+                panel.SetActive(false);
+                runController.GoHome();
             });
         }
 

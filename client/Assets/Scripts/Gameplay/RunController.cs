@@ -5,9 +5,18 @@ using UnityEngine;
 
 namespace Pets.Gameplay
 {
+    /// <summary>Top-level app navigation state — distinct from GamePhase, which only describes
+    /// where a run in progress is. Home has no RunState; InRun always does.</summary>
+    public enum AppScreen
+    {
+        Home,
+        InRun,
+    }
+
     /// <summary>
-    /// The one MonoBehaviour in Gameplay — orchestrates shop/battle/run-over transitions, delegates
-    /// actual logic to ShopEconomy/BattleSimulator/SaveSystem, and fires events for UI to react to.
+    /// The one MonoBehaviour in Gameplay — orchestrates home/shop/battle/run-over transitions,
+    /// delegates actual logic to ShopEconomy/BattleSimulator/SaveSystem, and fires events for UI
+    /// to react to.
     /// </summary>
     public sealed class RunController : MonoBehaviour
     {
@@ -17,6 +26,7 @@ namespace Pets.Gameplay
 
         public RunState State { get; private set; }
         public ShopConfig Config => shopConfig;
+        public AppScreen Screen { get; private set; } = AppScreen.Home;
 
         public event Action OnStateChanged;
         public event Action<BattleLog, bool> OnBattleResolved;
@@ -24,16 +34,32 @@ namespace Pets.Gameplay
 
         private void Start()
         {
-            if (SaveSystem.TryLoad(creatureLibrary, out var loaded))
+            OnStateChanged?.Invoke();
+        }
+
+        /// <summary>Non-mutating peek for the Home screen's Continue button — true if a save
+        /// exists for a run that hasn't ended yet.</summary>
+        public bool HasContinuableRun()
+        {
+            return SaveSystem.TryLoad(creatureLibrary, out var loaded) && loaded.Phase != GamePhase.RunOver;
+        }
+
+        public void ContinueRun()
+        {
+            if (!SaveSystem.TryLoad(creatureLibrary, out var loaded) || loaded.Phase == GamePhase.RunOver)
             {
-                State = loaded;
+                return;
             }
-            else
-            {
-                State = new RunState();
-                ShopEconomy.StartRun(State, shopConfig, creatureLibrary);
-                SaveSystem.Save(State);
-            }
+            State = loaded;
+            Screen = AppScreen.InRun;
+            OnStateChanged?.Invoke();
+        }
+
+        /// <summary>Returns to the Home screen without touching State or the save — an
+        /// in-progress run stays parked and continuable.</summary>
+        public void GoHome()
+        {
+            Screen = AppScreen.Home;
             OnStateChanged?.Invoke();
         }
 
@@ -132,6 +158,7 @@ namespace Pets.Gameplay
             State = new RunState();
             ShopEconomy.StartRun(State, shopConfig, creatureLibrary);
             SaveSystem.Save(State);
+            Screen = AppScreen.InRun;
             OnStateChanged?.Invoke();
         }
 
@@ -140,6 +167,7 @@ namespace Pets.Gameplay
             State.Phase = GamePhase.RunOver;
             State.Victory = victory;
             SaveSystem.Save(State);
+            SaveSystem.AppendHistory(new RunHistoryEntry { CompletedAtUtc = DateTime.UtcNow.ToString("o"), RoundReached = State.Round, Victory = victory });
             OnRunEnded?.Invoke(victory);
         }
     }
