@@ -154,7 +154,7 @@ namespace Pets.Tests
 
             BattleLog resolvedLog = null;
             bool? resolvedWon = null;
-            controller.OnBattleResolved += (log, won) =>
+            controller.OnBattleResolved += (playerLineup, enemyLineup, log, won) =>
             {
                 resolvedLog = log;
                 resolvedWon = won;

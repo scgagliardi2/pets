@@ -53,6 +53,7 @@ namespace Pets.Editor
 
             var shopSlotPrefab = BuildShopSlotPrefab();
             var boardSlotPrefab = BuildBoardSlotPrefab();
+            var fightCardPrefab = BuildFightCardPrefab();
 
             BuildCamera();
             BuildEventSystem();
@@ -60,7 +61,7 @@ namespace Pets.Editor
             var canvasGo = BuildCanvas();
 
             BuildShopPanel(canvasGo.transform, runController, shopSlotPrefab, boardSlotPrefab);
-            BuildBattleResultPanel(canvasGo.transform, runController);
+            BuildBattleResultPanel(canvasGo.transform, runController, fightCardPrefab);
             BuildRunEndPanel(canvasGo.transform, runController);
             // Built last so it renders on top as the final Canvas sibling — same convention
             // RunEndPanel already relies on to appear over ShopPanel.
@@ -126,6 +127,7 @@ namespace Pets.Editor
         {
             var panelGo = CreateUIObject("ShopPanel", canvasTransform);
             StretchToParent(panelGo.GetComponent<RectTransform>());
+            AddGradientBackground(panelGo, new Color(0.35f, 0.27f, 0.16f), new Color(0.15f, 0.12f, 0.08f));
             var panelLayout = panelGo.AddComponent<VerticalLayoutGroup>();
             panelLayout.spacing = 16;
             panelLayout.padding = new RectOffset(24, 24, 48, 24);
@@ -193,17 +195,56 @@ namespace Pets.Editor
             so.ApplyModifiedProperties();
         }
 
-        private static void BuildBattleResultPanel(Transform canvasTransform, RunController runController)
+        private static void BuildBattleResultPanel(Transform canvasTransform, RunController runController, FightCardView fightCardPrefab)
         {
             var panelGo = CreateUIObject("BattleResultPanel", canvasTransform);
             StretchToParent(panelGo.GetComponent<RectTransform>());
-            var bg = panelGo.AddComponent<Image>();
-            bg.color = new Color(0f, 0f, 0f, 0.85f);
+            AddGradientBackground(panelGo, new Color(0.38f, 0.1f, 0.08f), new Color(0.08f, 0.02f, 0.02f));
             var layout = panelGo.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 16;
             layout.padding = new RectOffset(48, 48, 48, 48);
             layout.childAlignment = TextAnchor.MiddleCenter;
             ConfigureLayoutGroup(layout, forceExpandWidth: true, forceExpandHeight: false);
+
+            var lineupGo = CreateUIObject("LineupSection", panelGo.transform);
+            var lineupLayout = lineupGo.AddComponent<VerticalLayoutGroup>();
+            lineupLayout.spacing = 8;
+            lineupLayout.childAlignment = TextAnchor.MiddleCenter;
+            ConfigureLayoutGroup(lineupLayout, forceExpandWidth: true, forceExpandHeight: false);
+            AddLayoutElement(lineupGo, preferredHeight: 420);
+
+            var playerLabel = CreateText("PlayerLabel", lineupGo.transform, "Your Team", 20);
+            playerLabel.color = Color.white;
+            AddLayoutElement(playerLabel.gameObject, preferredHeight: 28);
+
+            var playerRowGo = CreateUIObject("PlayerRow", lineupGo.transform);
+            var playerRowLayout = playerRowGo.AddComponent<HorizontalLayoutGroup>();
+            playerRowLayout.spacing = 10;
+            playerRowLayout.childAlignment = TextAnchor.MiddleCenter;
+            ConfigureLayoutGroup(playerRowLayout, forceExpandWidth: false, forceExpandHeight: false);
+            AddLayoutElement(playerRowGo, preferredHeight: 150);
+
+            var vsText = CreateText("VsText", lineupGo.transform, "VS", 24);
+            vsText.color = new Color(1f, 0.85f, 0.3f);
+            AddLayoutElement(vsText.gameObject, preferredHeight: 32);
+
+            var enemyLabel = CreateText("EnemyLabel", lineupGo.transform, "Enemy Team", 20);
+            enemyLabel.color = Color.white;
+            AddLayoutElement(enemyLabel.gameObject, preferredHeight: 28);
+
+            var enemyRowGo = CreateUIObject("EnemyRow", lineupGo.transform);
+            var enemyRowLayout = enemyRowGo.AddComponent<HorizontalLayoutGroup>();
+            enemyRowLayout.spacing = 10;
+            enemyRowLayout.childAlignment = TextAnchor.MiddleCenter;
+            ConfigureLayoutGroup(enemyRowLayout, forceExpandWidth: false, forceExpandHeight: false);
+            AddLayoutElement(enemyRowGo, preferredHeight: 150);
+
+            var lineupUI = lineupGo.AddComponent<FightLineupUI>();
+            var lineupSo = new SerializedObject(lineupUI);
+            lineupSo.FindProperty("playerRowContainer").objectReferenceValue = playerRowGo.transform;
+            lineupSo.FindProperty("enemyRowContainer").objectReferenceValue = enemyRowGo.transform;
+            lineupSo.FindProperty("cardPrefab").objectReferenceValue = fightCardPrefab;
+            lineupSo.ApplyModifiedProperties();
 
             var outcomeText = CreateText("OutcomeText", panelGo.transform, "", 40);
             outcomeText.color = Color.white;
@@ -212,7 +253,7 @@ namespace Pets.Editor
             var logText = CreateText("LogText", panelGo.transform, "", 18);
             logText.color = Color.white;
             logText.alignment = TextAnchor.UpperLeft;
-            AddLayoutElement(logText.gameObject, preferredHeight: 600);
+            AddLayoutElement(logText.gameObject, preferredHeight: 260);
 
             var continueButton = CreateButton("ContinueButton", panelGo.transform, "Continue", 200, 60);
 
@@ -222,6 +263,7 @@ namespace Pets.Editor
             var so = new SerializedObject(battleResultUI);
             so.FindProperty("runController").objectReferenceValue = runController;
             so.FindProperty("panel").objectReferenceValue = panelGo;
+            so.FindProperty("lineupUI").objectReferenceValue = lineupUI;
             so.FindProperty("outcomeText").objectReferenceValue = outcomeText;
             so.FindProperty("logText").objectReferenceValue = logText;
             so.FindProperty("continueButton").objectReferenceValue = continueButton;
@@ -232,8 +274,7 @@ namespace Pets.Editor
         {
             var panelGo = CreateUIObject("RunEndPanel", canvasTransform);
             StretchToParent(panelGo.GetComponent<RectTransform>());
-            var bg = panelGo.AddComponent<Image>();
-            bg.color = new Color(0f, 0f, 0f, 0.92f);
+            AddGradientBackground(panelGo, new Color(0.05f, 0.05f, 0.07f, 0.94f), new Color(0f, 0f, 0f, 0.94f));
             var layout = panelGo.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 24;
             layout.childAlignment = TextAnchor.MiddleCenter;
@@ -262,8 +303,7 @@ namespace Pets.Editor
         {
             var panelGo = CreateUIObject("HomePanel", canvasTransform);
             StretchToParent(panelGo.GetComponent<RectTransform>());
-            var bg = panelGo.AddComponent<Image>();
-            bg.color = new Color(0.08f, 0.08f, 0.1f, 1f);
+            AddGradientBackground(panelGo, new Color(0.16f, 0.18f, 0.34f), new Color(0.05f, 0.05f, 0.09f));
 
             var homeContentGo = CreateUIObject("HomeContent", panelGo.transform);
             StretchToParent(homeContentGo.GetComponent<RectTransform>());
@@ -409,6 +449,53 @@ namespace Pets.Editor
             var prefabGo = PrefabUtility.SaveAsPrefabAsset(root, $"{PrefabsPath}/BoardSlotView.prefab");
             Object.DestroyImmediate(root);
             return prefabGo.GetComponent<BoardSlotView>();
+        }
+
+        /// <summary>Adds (or reuses) an Image on panelGo and paints it with a top-to-bottom
+        /// UIGradient, so every full-screen panel gets distinguishable "scenery" without any
+        /// imported art. Safe to call on a GameObject that also has a layout group on it (Image
+        /// isn't a layout-affecting component) — same pattern BattleResultPanel/RunEndPanel
+        /// already used for their flat-color backgrounds.</summary>
+        private static void AddGradientBackground(GameObject panelGo, Color top, Color bottom)
+        {
+            var bg = panelGo.GetComponent<Image>();
+            if (bg == null)
+            {
+                bg = panelGo.AddComponent<Image>();
+            }
+            bg.color = Color.white;
+            var gradient = panelGo.AddComponent<UIGradient>();
+            gradient.TopColor = top;
+            gradient.BottomColor = bottom;
+        }
+
+        private static FightCardView BuildFightCardPrefab()
+        {
+            var root = CreateUIObject("FightCardView", null);
+            AddLayoutElement(root, 130, 150);
+            var bg = root.AddComponent<Image>();
+            bg.color = Color.gray;
+            var layout = root.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(6, 6, 6, 6);
+            layout.spacing = 4;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            ConfigureLayoutGroup(layout, forceExpandWidth: true, forceExpandHeight: false);
+
+            var nameText = CreateText("NameText", root.transform, "Name", 16);
+            AddLayoutElement(nameText.gameObject, preferredHeight: 50);
+            var statsText = CreateText("StatsText", root.transform, "0/0", 18);
+            AddLayoutElement(statsText.gameObject, preferredHeight: 28);
+
+            var view = root.AddComponent<FightCardView>();
+            var so = new SerializedObject(view);
+            so.FindProperty("nameText").objectReferenceValue = nameText;
+            so.FindProperty("statsText").objectReferenceValue = statsText;
+            so.FindProperty("background").objectReferenceValue = bg;
+            so.ApplyModifiedProperties();
+
+            var prefabGo = PrefabUtility.SaveAsPrefabAsset(root, $"{PrefabsPath}/FightCardView.prefab");
+            Object.DestroyImmediate(root);
+            return prefabGo.GetComponent<FightCardView>();
         }
 
         // ---- low-level UI construction helpers ----

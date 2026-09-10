@@ -156,18 +156,21 @@ history, stats screen) done.
   New Run / Stats) is now the app's entry point; run outcomes are logged to a cross-run history
   file and shown on a Stats screen reachable from Home.*
 
-**Phase 3 — Backend introduction**
+**Phase 3 — Gameplay**
+- Update gameplay, assets, images, etc to make the game more fun and interesting.
+
+**Phase 4 — Backend introduction**
 - Node/TS + Postgres service: account creation (or anonymous device-id accounts), cloud save,
   basic leaderboard (best run length/score).
 - Unity client integrates HTTP client for auth + save sync; must still work fully offline
   (local save is the source of truth, cloud sync is best-effort).
 
-**Phase 4 — Polish & release prep**
+**Phase 5 — Polish & release prep**
 - Real art pass (replacing placeholders), audio, juice/animation polish.
 - Monetization decision (see §9) and store listing assets.
 - iOS/Android build pipeline, store submission (App Store, Google Play).
 
-**Phase 5 — Async PvP**
+**Phase 6 — Async PvP**
 - Team "snapshot" format finalized (reuses the bot-roster data shape from Phase 1).
 - Server-side matchmaking pairs snapshots by rank/rating.
 - Battle sim reimplemented server-side in TypeScript, validated against the shared golden

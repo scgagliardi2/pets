@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Pets.Gameplay;
 using Pets.Simulation;
@@ -7,8 +8,9 @@ using UnityEngine.UI;
 namespace Pets.UI
 {
     /// <summary>
-    /// Battle-result panel: outcome + a plain multiline dump of the battle log (no
-    /// animation/replay yet — placeholder-art phase, PLAN.md §8).
+    /// Battle-result panel: a static lineup of both teams going into the fight, the outcome, and
+    /// a plain multiline dump of the battle log (no animation/replay yet — placeholder-art
+    /// phase, PLAN.md §8).
     /// </summary>
     public sealed class BattleResultUI : MonoBehaviour
     {
@@ -21,6 +23,7 @@ namespace Pets.UI
 
         [SerializeField] private RunController runController;
         [SerializeField] private GameObject panel;
+        [SerializeField] private FightLineupUI lineupUI;
         [SerializeField] private Text outcomeText;
         [SerializeField] private Text logText;
         [SerializeField] private Button continueButton;
@@ -41,9 +44,10 @@ namespace Pets.UI
             runController.OnBattleResolved -= Show;
         }
 
-        private void Show(BattleLog log, bool won)
+        private void Show(List<FightCardInfo> playerTeam, List<FightCardInfo> enemyTeam, BattleLog log, bool won)
         {
             panel.SetActive(true);
+            lineupUI.Show(playerTeam, enemyTeam);
             outcomeText.text = won ? "Victory!" : log.Outcome == BattleOutcome.Draw ? "Draw" : "Defeat";
 
             var sb = new StringBuilder();

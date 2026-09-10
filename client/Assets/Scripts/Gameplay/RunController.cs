@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Pets.Data;
 using Pets.Simulation;
 using UnityEngine;
@@ -29,7 +30,7 @@ namespace Pets.Gameplay
         public AppScreen Screen { get; private set; } = AppScreen.Home;
 
         public event Action OnStateChanged;
-        public event Action<BattleLog, bool> OnBattleResolved;
+        public event Action<List<FightCardInfo>, List<FightCardInfo>, BattleLog, bool> OnBattleResolved;
         public event Action<bool> OnRunEnded;
 
         private void Start()
@@ -129,6 +130,21 @@ namespace Pets.Gameplay
             var teamA = TeamStateConverter.ToTeamState(playerSlots, "player");
             var teamB = TeamStateConverter.ToTeamState(botTeam, "bot");
 
+            // Snapshotted before BattleSimulator.Run mutates teamA/teamB in place, so the
+            // fight-lineup view shows what each side brought into the battle, not the aftermath.
+            var playerLineup = State.Board.ConvertAll(c => new FightCardInfo(
+                c.Definition.DisplayName,
+                c.Level,
+                c.Definition.BaseAttack + (c.Level - 1) * c.Definition.LevelAttackBonus + c.BonusAttack,
+                c.Definition.BaseHealth + (c.Level - 1) * c.Definition.LevelHealthBonus + c.BonusHealth,
+                c.Definition.PlaceholderColor));
+            var enemyLineup = botTeam.Slots.ConvertAll(s => new FightCardInfo(
+                s.Creature.DisplayName,
+                s.Level,
+                s.Creature.BaseAttack + (s.Level - 1) * s.Creature.LevelAttackBonus,
+                s.Creature.BaseHealth + (s.Level - 1) * s.Creature.LevelHealthBonus,
+                s.Creature.PlaceholderColor));
+
             int seed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             var log = BattleSimulator.Run(teamA, teamB, seed);
             bool won = log.Outcome == BattleOutcome.TeamAWins;
@@ -138,7 +154,7 @@ namespace Pets.Gameplay
                 State.Lives -= 1;
             }
 
-            OnBattleResolved?.Invoke(log, won);
+            OnBattleResolved?.Invoke(playerLineup, enemyLineup, log, won);
 
             if (State.Lives <= 0)
             {
