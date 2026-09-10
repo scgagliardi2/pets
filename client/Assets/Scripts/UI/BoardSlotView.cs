@@ -20,8 +20,8 @@ namespace Pets.UI
             var definition = creature.Definition;
             nameText.text = $"{definition.DisplayName} Lv{creature.Level}";
 
-            int attack = definition.BaseAttack + (creature.Level - 1) * definition.LevelAttackBonus;
-            int health = definition.BaseHealth + (creature.Level - 1) * definition.LevelHealthBonus;
+            int attack = definition.BaseAttack + (creature.Level - 1) * definition.LevelAttackBonus + creature.BonusAttack;
+            int health = definition.BaseHealth + (creature.Level - 1) * definition.LevelHealthBonus + creature.BonusHealth;
             statsText.text = $"{attack}/{health}";
             background.color = definition.PlaceholderColor;
 

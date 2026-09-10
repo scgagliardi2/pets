@@ -22,16 +22,27 @@ namespace Pets.Data
             for (int i = 0; i < slots.Count; i++)
             {
                 var (creature, level) = slots[i];
-                team.Slots.Add(ToCreatureState(creature, level, $"{teamLabel}:{creature.Id}#{i}"));
+                team.Slots.Add(ToCreatureState(creature, level, $"{teamLabel}:{creature.Id}#{i}", 0, 0));
             }
             return team;
         }
 
-        public static CreatureState ToCreatureState(CreatureDefinition definition, int level, string instanceId)
+        public static TeamState ToTeamState(IReadOnlyList<(CreatureDefinition creature, int level, int bonusAttack, int bonusHealth)> slots, string teamLabel)
+        {
+            var team = new TeamState();
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var (creature, level, bonusAttack, bonusHealth) = slots[i];
+                team.Slots.Add(ToCreatureState(creature, level, $"{teamLabel}:{creature.Id}#{i}", bonusAttack, bonusHealth));
+            }
+            return team;
+        }
+
+        public static CreatureState ToCreatureState(CreatureDefinition definition, int level, string instanceId, int bonusAttack = 0, int bonusHealth = 0)
         {
             int effectiveLevel = level < 1 ? 1 : level;
-            int attack = definition.BaseAttack + (effectiveLevel - 1) * definition.LevelAttackBonus;
-            int health = definition.BaseHealth + (effectiveLevel - 1) * definition.LevelHealthBonus;
+            int attack = definition.BaseAttack + (effectiveLevel - 1) * definition.LevelAttackBonus + bonusAttack;
+            int health = definition.BaseHealth + (effectiveLevel - 1) * definition.LevelHealthBonus + bonusHealth;
 
             return new CreatureState
             {

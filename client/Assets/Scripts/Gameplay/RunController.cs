@@ -99,7 +99,7 @@ namespace Pets.Gameplay
 
             State.Phase = GamePhase.Battle;
 
-            var playerSlots = State.Board.ConvertAll(c => (c.Definition, c.Level));
+            var playerSlots = State.Board.ConvertAll(c => (c.Definition, c.Level, c.BonusAttack, c.BonusHealth));
             var teamA = TeamStateConverter.ToTeamState(playerSlots, "player");
             var teamB = TeamStateConverter.ToTeamState(botTeam, "bot");
 

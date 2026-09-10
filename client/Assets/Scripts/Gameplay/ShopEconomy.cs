@@ -1,5 +1,6 @@
 using System.Linq;
 using Pets.Data;
+using Pets.Simulation;
 using UnityEngine;
 
 namespace Pets.Gameplay
@@ -31,7 +32,17 @@ namespace Pets.Gameplay
         {
             state.Gold = config.GoldPerRound;
             state.Phase = GamePhase.Shop;
+            FireOnTurnStart(state);
             RefreshShop(state, config, library, includeFrozen: false);
+        }
+
+        /// <summary>Fires each board creature's OnTurnStart abilities, front-to-back.</summary>
+        public static void FireOnTurnStart(RunState state)
+        {
+            foreach (var creature in state.Board)
+            {
+                FireShopTrigger(state, TriggerType.OnTurnStart, creature);
+            }
         }
 
         public static void RefreshShop(RunState state, ShopConfig config, CreatureLibrary library, bool includeFrozen)
@@ -70,10 +81,12 @@ namespace Pets.Gameplay
             }
 
             state.Gold -= cost;
-            state.Board.Add(new BoardCreature { Definition = slot.Offer, Level = 1 });
+            var bought = new BoardCreature { Definition = slot.Offer, Level = 1 };
+            state.Board.Add(bought);
             slot.Offer = null;
             slot.Frozen = false;
 
+            FireShopTrigger(state, TriggerType.OnBuy, bought);
             TryCombineAll(state, config);
             return true;
         }
@@ -85,6 +98,8 @@ namespace Pets.Gameplay
                 return false;
             }
             var creature = state.Board[boardIndex];
+            // Fired before removal so Self/RandomAlly resolve against the still-intact board.
+            FireShopTrigger(state, TriggerType.OnSell, creature);
             state.Gold += config.SellRefund(creature.Definition.Tier) * creature.Level;
             state.Board.RemoveAt(boardIndex);
             return true;
@@ -156,11 +171,78 @@ namespace Pets.Gameplay
                         state.Board.RemoveAt(item.index);
                     }
 
-                    state.Board.Insert(insertIndex, new BoardCreature { Definition = definition, Level = level + 1 });
+                    var leveledUp = new BoardCreature { Definition = definition, Level = level + 1 };
+                    state.Board.Insert(insertIndex, leveledUp);
+                    FireShopTrigger(state, TriggerType.OnLevelUp, leveledUp);
                     merged = true;
                     break;
                 }
             } while (merged);
+        }
+
+        /// <summary>
+        /// Applies every effect of source's abilities matching trigger. Shop-context vocabulary:
+        /// GainGold adds to RunState.Gold; BuffAttack/BuffHealth add a permanent bonus to the
+        /// resolved target's BoardCreature (Self or RandomAlly = a random other board creature —
+        /// RandomEnemy/FrontEnemy have no meaning in the shop and resolve to no target).
+        /// DealDamage/Heal/Summon are battle-only and are no-ops here. See content-schema.md's
+        /// shop-phase trigger section.
+        /// </summary>
+        private static void FireShopTrigger(RunState state, TriggerType trigger, BoardCreature source)
+        {
+            foreach (var ability in source.Definition.Abilities)
+            {
+                if (ability == null || ability.Trigger != trigger)
+                {
+                    continue;
+                }
+                foreach (var effect in ability.Effects)
+                {
+                    ApplyShopEffect(state, effect, source);
+                }
+            }
+        }
+
+        private static void ApplyShopEffect(RunState state, EffectDefinition effect, BoardCreature source)
+        {
+            switch (effect.Type)
+            {
+                case EffectType.GainGold:
+                    state.Gold += effect.Amount;
+                    break;
+                case EffectType.BuffAttack:
+                case EffectType.BuffHealth:
+                    var target = ResolveShopTarget(state, effect.Target, source);
+                    if (target == null)
+                    {
+                        break;
+                    }
+                    if (effect.Type == EffectType.BuffAttack)
+                    {
+                        target.BonusAttack += effect.Amount;
+                    }
+                    else
+                    {
+                        target.BonusHealth += effect.Amount;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private static BoardCreature ResolveShopTarget(RunState state, TargetSelector selector, BoardCreature source)
+        {
+            switch (selector)
+            {
+                case TargetSelector.Self:
+                    return source;
+                case TargetSelector.RandomAlly:
+                    var others = state.Board.Where(c => c != source).ToList();
+                    return others.Count == 0 ? null : others[Random.Range(0, others.Count)];
+                default:
+                    return null;
+            }
         }
     }
 }

@@ -46,7 +46,7 @@ namespace Pets.Tests
                 Phase = GamePhase.Shop,
                 Victory = false,
             };
-            state.Board.Add(new BoardCreature { Definition = creatureA, Level = 2 });
+            state.Board.Add(new BoardCreature { Definition = creatureA, Level = 2, BonusAttack = 3, BonusHealth = 1 });
             state.Board.Add(new BoardCreature { Definition = creatureB, Level = 1 });
             state.ShopSlots.Add(new ShopSlot { Offer = creatureB, Frozen = true });
             state.ShopSlots.Add(new ShopSlot { Offer = null, Frozen = false });
@@ -63,6 +63,8 @@ namespace Pets.Tests
             Assert.AreEqual(2, restored.Board.Count);
             Assert.AreEqual(creatureA, restored.Board[0].Definition);
             Assert.AreEqual(2, restored.Board[0].Level);
+            Assert.AreEqual(3, restored.Board[0].BonusAttack);
+            Assert.AreEqual(1, restored.Board[0].BonusHealth);
             Assert.AreEqual(creatureB, restored.Board[1].Definition);
             Assert.AreEqual(1, restored.Board[1].Level);
 

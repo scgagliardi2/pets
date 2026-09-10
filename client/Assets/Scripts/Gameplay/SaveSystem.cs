@@ -23,7 +23,7 @@ namespace Pets.Gameplay
                 round = state.Round,
                 phase = state.Phase.ToString(),
                 victory = state.Victory,
-                board = state.Board.Select(c => new SaveCreature { creatureId = c.Definition.Id, level = c.Level }).ToArray(),
+                board = state.Board.Select(c => new SaveCreature { creatureId = c.Definition.Id, level = c.Level, bonusAttack = c.BonusAttack, bonusHealth = c.BonusHealth }).ToArray(),
                 shopSlots = state.ShopSlots.Select(s => new SaveShopSlot { creatureId = s.Offer != null ? s.Offer.Id : "", frozen = s.Frozen }).ToArray(),
             };
             File.WriteAllText(SavePath, JsonUtility.ToJson(dto));
@@ -57,7 +57,7 @@ namespace Pets.Gameplay
                 var definition = library.GetById(c.creatureId);
                 if (definition != null)
                 {
-                    state.Board.Add(new BoardCreature { Definition = definition, Level = c.level });
+                    state.Board.Add(new BoardCreature { Definition = definition, Level = c.level, BonusAttack = c.bonusAttack, BonusHealth = c.bonusHealth });
                 }
             }
 
@@ -98,6 +98,8 @@ namespace Pets.Gameplay
         {
             public string creatureId;
             public int level;
+            public int bonusAttack;
+            public int bonusHealth;
         }
 
         [Serializable]

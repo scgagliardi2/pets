@@ -1,6 +1,6 @@
 # Content Schema
 
-Status: **Phase 1 complete.** Documents the data shape for creatures/abilities/tiers/bot
+Status: **Phase 2 in progress.** Documents the data shape for creatures/abilities/tiers/bot
 rosters (PLAN.md §2.3), kept in sync with the actual Unity ScriptableObject fields
 (`client/Assets/Scripts/Data`) and their JSON export format
 (`client/Assets/Scripts/Data/ContentJsonExporter.cs`).
@@ -27,7 +27,7 @@ creature in code.
 
 | Field | Type | Notes |
 |---|---|---|
-| `type` | `EffectType` enum | `DealDamage`, `Heal`, `BuffAttack`, `BuffHealth`, `Summon`. |
+| `type` | `EffectType` enum | `DealDamage`, `Heal`, `BuffAttack`, `BuffHealth`, `Summon`, `GainGold`. `GainGold` is shop-only — see §8. |
 | `target` | `TargetSelector` enum | `Self`, `RandomAlly`, `RandomEnemy`, `FrontEnemy`. Ignored for `Summon`. |
 | `amount` | `int` | Damage/heal/buff magnitude. Ignored for `Summon`. |
 | `summonTemplateId` | `string` | Only for `Summon` — id of a `CreatureDefinition` used as a fixed stat template (not drawn from the shop pool). |
@@ -148,3 +148,38 @@ size, buy-cost formula, tier-unlock cadence) as Inspector-editable fields rather
 constants — see `client/Assets/Scripts/Data/ShopConfig.cs` for the current placeholder values.
 This is balance data, not creature content, so it doesn't follow the trigger/effect vocabulary
 above — it's just a plain settings asset.
+
+## 8. Shop-phase trigger resolution (Phase 2)
+
+`OnBuy`, `OnSell`, `OnLevelUp`, and `OnTurnStart` are now live, resolved by
+`Gameplay/ShopEconomy.cs` rather than the battle simulator (`Simulation` stays scoped to the
+battle phase only — see battle-sim-spec.md §1). The same `AbilityDefinition`/`EffectDefinition`
+assets used for battle triggers are reused here; a creature can freely mix battle-trigger and
+shop-trigger abilities in the same `Abilities` list.
+
+**Firing order:**
+- `OnBuy` — fires for the bought creature immediately after it's added to the board, before the
+  combine-3-to-upgrade check.
+- `OnSell` — fires for the sold creature immediately before it's removed from the board (so
+  `Self`/`RandomAlly` still resolve against the intact board).
+- `OnLevelUp` — fires for the merged creature immediately after a combine-3 produces it.
+- `OnTurnStart` — fires for every board creature, front-to-back, at the start of each shop phase
+  (not on the very first shop phase of a run, where the board is always empty).
+
+**Target selectors in shop context:** `Self` resolves to the triggering creature; `RandomAlly`
+resolves to a uniformly random *other* creature currently on the board (empty board → no target).
+`RandomEnemy` and `FrontEnemy` have no meaning outside a battle and always resolve to no target —
+an effect using them on a shop-trigger ability is silently skipped, so don't author that
+combination.
+
+**Effect semantics in shop context:**
+- `GainGold(amount)` — adds directly to the run's gold. Shop-only; never fires during a battle
+  since `BattleSimulator` never selects `OnBuy`/`OnSell`/`OnLevelUp`/`OnTurnStart` abilities in the
+  first place.
+- `BuffAttack(amount, target)` / `BuffHealth(amount, target)` — adds a **permanent** bonus to the
+  resolved target's `Gameplay/BoardCreature.BonusAttack`/`BonusHealth` (separate from the
+  level-scaling bonus), which `Data/TeamStateConverter.cs` folds into effective battle stats
+  alongside the level formula (battle-sim-spec.md §2). These bonuses persist through
+  `SaveSystem` across app restarts, same as level.
+- `DealDamage`, `Heal`, `Summon` have no meaning outside a battle and are no-ops if authored on a
+  shop-trigger ability — don't author that combination either.

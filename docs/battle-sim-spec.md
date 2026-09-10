@@ -1,6 +1,6 @@
 # Battle Simulation Spec
 
-Status: **Phase 1 complete.** Source of truth for trigger ordering, tie-breaking, and stat
+Status: **Phase 2 in progress.** Source of truth for trigger ordering, tie-breaking, and stat
 formulas (PLAN.md §3, CLAUDE.md). Implemented by `client/Assets/Scripts/Simulation`. Update this
 file *before or alongside* simulation code changes, not after.
 
@@ -33,10 +33,12 @@ Full vocabulary per PLAN.md §2.3: `OnBattleStart`, `OnHurt`, `OnFaint`, `OnLeve
 
 **Implemented by the battle simulator (this phase):** `OnBattleStart`, `OnHurt`, `OnFaint`.
 
-**Defined in the schema, no effects wired yet (shop-phase, future Gameplay work):** `OnLevelUp`,
-`OnBuy`, `OnSell`, `OnTurnStart`. These exist as enum values so `docs/content-schema.md` and the
-`Simulation.TriggerType` enum don't need a breaking change when shop-phase work starts — but no
-creature in the starter roster uses them yet, and the simulator never fires them.
+**Shop-phase, resolved outside the battle simulator (Phase 2):** `OnLevelUp`, `OnBuy`, `OnSell`,
+`OnTurnStart` are now live, but fired by `Gameplay/ShopEconomy.cs`, not `BattleSimulator` — the
+battle simulator itself still only ever fires `OnBattleStart`/`OnHurt`/`OnFaint` and will never
+select an ability with one of these triggers, since a battle only ever asks a creature for its
+`OnBattleStart`/`OnHurt`/`OnFaint` abilities in the first place. See content-schema.md §8 for
+firing order, target-selector semantics, and effect semantics in the shop context.
 
 ## 4. Effect vocabulary
 
@@ -137,11 +139,11 @@ survivors either side), it's a draw.
   fixed resolution order defined above. No other source of nondeterminism (no wall-clock, no
   `UnityEngine.Random`) is permitted anywhere in `Simulation`.
 
-## 8. Out of scope (this phase)
+## 8. Out of scope (battle simulator)
 
-- Shop phase: gold, shop pool/odds, buy/sell/reroll/freeze, combining 3 copies to level up.
-- `OnBuy`/`OnSell`/`OnLevelUp`/`OnTurnStart` effect execution.
-- Board arrangement UI, local save, the actual round-to-round meta loop.
-
-These land in the next pass once the foundation here is stable; see PLAN.md §6 Phase 1 for the
-full checklist.
+- Shop phase gold/pool/odds/buy/sell/reroll/freeze/combine-to-level-up mechanics themselves — those
+  live in `Gameplay/ShopEconomy.cs` and are out of scope for this document, which covers the
+  battle simulator only (§1). `OnBuy`/`OnSell`/`OnLevelUp`/`OnTurnStart` *ability effect
+  execution* is documented in content-schema.md §8, not here, since the battle simulator never
+  runs it.
+- Run history and a stats screen (PLAN.md §6 Phase 2's "basic meta") — deferred to a later pass.

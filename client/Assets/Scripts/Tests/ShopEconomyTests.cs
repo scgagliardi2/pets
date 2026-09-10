@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using Pets.Data;
 using Pets.Gameplay;
+using Pets.Simulation;
 using UnityEngine;
 
 namespace Pets.Tests
@@ -48,6 +50,19 @@ namespace Pets.Tests
             creature.Tier = tier;
             creature.BaseAttack = 1;
             creature.BaseHealth = 1;
+            return creature;
+        }
+
+        private static CreatureDefinition CreatureWithAbility(string id, int tier, TriggerType trigger, EffectType effectType, TargetSelector target, int amount)
+        {
+            var creature = Creature(id, tier);
+            var ability = ScriptableObject.CreateInstance<AbilityDefinition>();
+            ability.Trigger = trigger;
+            ability.Effects = new List<EffectDefinition>
+            {
+                new EffectDefinition { Type = effectType, Target = target, Amount = amount },
+            };
+            creature.Abilities = new List<AbilityDefinition> { ability };
             return creature;
         }
 
@@ -189,6 +204,76 @@ namespace Pets.Tests
             ShopEconomy.RefreshShop(state, config, library, includeFrozen: true);
 
             Assert.IsTrue(state.ShopSlots.All(s => s.Offer.Tier <= 1));
+        }
+
+        [Test]
+        public void Buy_FiresOnBuyAbility_GainGoldAddsToRunGold()
+        {
+            var goldOnBuy = CreatureWithAbility("gold-on-buy", tier: 1, TriggerType.OnBuy, EffectType.GainGold, TargetSelector.Self, amount: 3);
+            var state = NewRun();
+            state.ShopSlots[0].Offer = goldOnBuy;
+            int goldBeforeBuy = state.Gold;
+
+            ShopEconomy.Buy(state, config, 0);
+
+            Assert.AreEqual(goldBeforeBuy - config.BuyCost(1) + 3, state.Gold);
+        }
+
+        [Test]
+        public void Buy_FiresOnBuyAbility_BuffsRandomAlly()
+        {
+            var buffer = CreatureWithAbility("buffer-on-buy", tier: 1, TriggerType.OnBuy, EffectType.BuffAttack, TargetSelector.RandomAlly, amount: 2);
+            var state = NewRun();
+            state.Board.Add(new BoardCreature { Definition = tier1A, Level = 1 });
+            state.ShopSlots[0].Offer = buffer;
+
+            ShopEconomy.Buy(state, config, 0);
+
+            Assert.AreEqual(2, state.Board[0].BonusAttack);
+        }
+
+        [Test]
+        public void Sell_FiresOnSellAbility_BeforeRemovalSoRandomAllyStillResolves()
+        {
+            var seller = CreatureWithAbility("buffer-on-sell", tier: 1, TriggerType.OnSell, EffectType.BuffHealth, TargetSelector.RandomAlly, amount: 4);
+            var state = NewRun();
+            state.Board.Add(new BoardCreature { Definition = seller, Level = 1 });
+            state.Board.Add(new BoardCreature { Definition = tier1A, Level = 1 });
+
+            ShopEconomy.Sell(state, config, 0);
+
+            Assert.AreEqual(1, state.Board.Count);
+            Assert.AreEqual(4, state.Board[0].BonusHealth);
+        }
+
+        [Test]
+        public void TryCombineAll_FiresOnLevelUpAbility_OnMergedCreature()
+        {
+            var leveler = CreatureWithAbility("gold-on-levelup", tier: 1, TriggerType.OnLevelUp, EffectType.GainGold, TargetSelector.Self, amount: 5);
+            var state = NewRun();
+            state.Board.Add(new BoardCreature { Definition = leveler, Level = 1 });
+            state.Board.Add(new BoardCreature { Definition = leveler, Level = 1 });
+            state.Board.Add(new BoardCreature { Definition = leveler, Level = 1 });
+            int goldBeforeCombine = state.Gold;
+
+            ShopEconomy.TryCombineAll(state, config);
+
+            Assert.AreEqual(1, state.Board.Count);
+            Assert.AreEqual(2, state.Board[0].Level);
+            Assert.AreEqual(goldBeforeCombine + 5, state.Gold);
+        }
+
+        [Test]
+        public void StartShopPhase_FiresOnTurnStartAcrossTheWholeBoard()
+        {
+            var turnStarter = CreatureWithAbility("gold-on-turnstart", tier: 1, TriggerType.OnTurnStart, EffectType.GainGold, TargetSelector.Self, amount: 1);
+            var state = NewRun();
+            state.Board.Add(new BoardCreature { Definition = turnStarter, Level = 1 });
+            state.Board.Add(new BoardCreature { Definition = turnStarter, Level = 1 });
+
+            ShopEconomy.StartShopPhase(state, config, library);
+
+            Assert.AreEqual(config.GoldPerRound + 2, state.Gold);
         }
     }
 }
