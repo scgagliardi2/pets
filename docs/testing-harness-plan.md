@@ -1,9 +1,35 @@
 # Testing Harness Plan
 
-Status: **Proposal.** Written 2026-09-10 against the Phase 2 codebase (14 creatures, 12-round bot
-roster, shop-phase triggers live). Complements PLAN.md §7 (Testing Strategy) and CLAUDE.md's
-testing conventions — this document goes one level deeper on *how* to build the piece that's
-currently missing: a harness that plays complete runs, not just isolated units.
+Status: **Partially implemented**, 2026-09-10, against the Phase 2 codebase (14 creatures,
+12-round bot roster, shop-phase triggers live). Complements PLAN.md §7 (Testing Strategy) and
+CLAUDE.md's testing conventions — this document goes one level deeper on *how* to build the piece
+that was missing: a harness that plays complete runs, not just isolated units.
+
+**What's done, from §7's build order:**
+- §2.5 (seed the shop-phase RNG) — implemented as `Random.InitState(seed)` at the top of each
+  harness-driven run, no production code change (the "simplest fix" variant this section
+  describes).
+- §3 (content validation/linting) — `client/Assets/Scripts/Tests/ContentValidationTests.cs`.
+- §2.1-2.3 (full-run harness, hard assertions, PR-gating) —
+  `client/Assets/Scripts/Tests/FullRunHarnessTests.cs`, three policies × 50 seeds by default.
+- §2.4 (metrics collection) and §5.2 (extended nightly sweep) — the harness writes
+  `client/TestResults/full-run-metrics-<policy>.json`; a scheduled CI job
+  (`full-run-harness-nightly` in `.github/workflows/ci.yml`) reruns it with
+  `PETS_HARNESS_SEED_COUNT=500` and uploads the output as a build artifact.
+- §6 (playtest checklist) — `docs/PLAYTEST-CHECKLIST.md`.
+
+**What's still blocked on you, not implemented here:**
+- §5.1 (fix the CI Unity license gate) — needs a real `UNITY_LICENSE` (+ email/password or
+  serial) added as repo secrets, which only you can create. Both Unity CI jobs still have
+  `continue-on-error: true` until that exists; nothing here can safely flip that off.
+- §4 (content snapshot regression) — deliberately not attempted without a live Unity run to
+  generate the initial baseline logs; doing that blind risked checking in a "golden" snapshot that
+  was never actually verified against the real simulator.
+- §2.4's balance-drift *comparison* tooling — still explicitly deferred until there's baseline
+  metrics data to compare against, per this doc's original recommendation.
+- The new tests haven't been run inside the Unity Editor (no Unity available in the environment
+  that wrote them) — they're written to match the existing test suite's exact patterns/types, but
+  verify they compile and pass before relying on them.
 
 ## 1. Where things stand today
 

@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Extended full-run harness sweep — see docs/testing-harness-plan.md §5.2. A much larger seed
+    # count than the PR-gating default, to improve the odds of catching a rare edge case; kept out
+    # of the PR-gating job so it doesn't slow down every push.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
 
 jobs:
   client:
@@ -31,6 +37,41 @@ jobs:
         with:
           projectPath: client
           testMode: EditMode
+
+  full-run-harness-nightly:
+    name: Full-run harness (extended sweep)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Same missing-secrets situation as the `client` job above — blocked on UNITY_LICENSE until
+    # that's set up. Remove continue-on-error at the same time as the `client` job's.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/cache@v4
+        with:
+          path: client/Library
+          key: Library-client-${{ hashFiles('client/Assets/**', 'client/Packages/**', 'client/ProjectSettings/**') }}
+          restore-keys: Library-client-
+      - uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          # Read by FullRunHarnessTests.SeedCount — far more seeds/policy than the PR-gating
+          # default (50) now that this doesn't need to finish inside every PR's budget.
+          PETS_HARNESS_SEED_COUNT: "500"
+        with:
+          projectPath: client
+          testMode: EditMode
+          testFilter: FullRunHarnessTests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-run-metrics
+          path: client/TestResults/full-run-metrics-*.json
+          if-no-files-found: ignore
 
   server:
     name: Server lint/test
