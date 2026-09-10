@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  client:
+    name: Unity EditMode tests
+    runs-on: ubuntu-latest
+    # Requires UNITY_LICENSE (+ UNITY_EMAIL/UNITY_PASSWORD or UNITY_SERIAL) repo secrets to
+    # activate a Unity license in CI. Until those are set up, let this job fail without blocking
+    # merges — remove continue-on-error once the license secrets exist (see SETUP.md).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/cache@v4
+        with:
+          path: client/Library
+          key: Library-client-${{ hashFiles('client/Assets/**', 'client/Packages/**', 'client/ProjectSettings/**') }}
+          restore-keys: Library-client-
+      - uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: client
+          testMode: EditMode
+
+  server:
+    name: Server lint/test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # No lockfile/deps yet (server is an empty Phase 0 scaffold) — install becomes real once
+      # Phase 3 introduces actual dependencies.
+      - run: npm install --no-audit --no-fund
+        working-directory: server
+      - run: npm test
+        working-directory: server
