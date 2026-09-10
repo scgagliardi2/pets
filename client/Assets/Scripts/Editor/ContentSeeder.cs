@@ -8,10 +8,11 @@ using UnityEngine;
 namespace Pets.Editor
 {
     /// <summary>
-    /// One-off generator for the Phase 1 starter roster (docs/content-schema.md,
-    /// docs/battle-sim-spec.md's worked examples). Run via the menu item below, or in batch mode
-    /// with `-executeMethod Pets.Editor.ContentSeeder.GenerateStarterContent`. Idempotent —
-    /// re-running updates existing assets in place by id/path rather than duplicating them.
+    /// Generator for the starter roster/bot rosters (docs/content-schema.md,
+    /// docs/battle-sim-spec.md's worked examples), grown in place as content is added each phase.
+    /// Run via the menu item below, or in batch mode with
+    /// `-executeMethod Pets.Editor.ContentSeeder.GenerateStarterContent`. Idempotent — re-running
+    /// updates existing assets in place by id/path rather than duplicating them.
     /// </summary>
     public static class ContentSeeder
     {
@@ -43,26 +44,63 @@ namespace Pets.Editor
             var cragtoiseHurt = CreateAbility("cragtoise-onhurt", TriggerType.OnHurt,
                 Effect(EffectType.DealDamage, TargetSelector.RandomEnemy, 2));
 
+            // Phase 2: exercises the newly-live shop-phase triggers (OnBuy/OnSell/OnLevelUp/
+            // OnTurnStart), resolved by Gameplay/ShopEconomy.cs — see content-schema.md §8.
+            var puddlewickBuy = CreateAbility("puddlewick-onbuy", TriggerType.OnBuy,
+                Effect(EffectType.GainGold, TargetSelector.Self, 1));
+            var twiggleTurnStart = CreateAbility("twiggle-onturnstart", TriggerType.OnTurnStart,
+                Effect(EffectType.BuffHealth, TargetSelector.Self, 1));
+            var fernkitBuy = CreateAbility("fernkit-onbuy", TriggerType.OnBuy,
+                Effect(EffectType.BuffAttack, TargetSelector.RandomAlly, 1));
+            var barkhollowSell = CreateAbility("barkhollow-onsell", TriggerType.OnSell,
+                Effect(EffectType.BuffAttack, TargetSelector.RandomAlly, 3));
+            var emberliskHurt = CreateAbility("emberlisk-onhurt", TriggerType.OnHurt,
+                Effect(EffectType.DealDamage, TargetSelector.RandomEnemy, 1));
+            var quillmawLevelUp = CreateAbility("quillmaw-onlevelup", TriggerType.OnLevelUp,
+                Effect(EffectType.BuffAttack, TargetSelector.RandomAlly, 2));
+            var duskfenFaint = CreateAbility("duskfen-onfaint", TriggerType.OnFaint,
+                SummonEffect(burr));
+            var ashcallowBattleStart = CreateAbility("ashcallow-onbattlestart", TriggerType.OnBattleStart,
+                Effect(EffectType.DealDamage, TargetSelector.RandomEnemy, 3));
+
             var pebblehide = CreateCreature("pebblehide", "Pebblehide", 1, 2, 3, 2, 2, new Color(0.62f, 0.5f, 0.38f), pebblehideFaint);
             var sparklet = CreateCreature("sparklet", "Sparklet", 1, 3, 1, 2, 2, new Color(1f, 0.85f, 0.25f), sparkletBattleStart);
             var mossback = CreateCreature("mossback", "Mossback", 1, 1, 5, 2, 2, new Color(0.3f, 0.55f, 0.32f), mossbackHurt);
+            var puddlewick = CreateCreature("puddlewick", "Puddlewick", 1, 1, 2, 1, 1, new Color(0.35f, 0.55f, 0.65f), puddlewickBuy);
+            var twiggle = CreateCreature("twiggle", "Twiggle", 1, 2, 2, 1, 2, new Color(0.45f, 0.6f, 0.3f), twiggleTurnStart);
+            var fernkit = CreateCreature("fernkit", "Fernkit", 1, 2, 1, 1, 1, new Color(0.5f, 0.75f, 0.4f), fernkitBuy);
             var thistlepup = CreateCreature("thistlepup", "Thistlepup", 2, 4, 3, 2, 2, new Color(0.72f, 0.3f, 0.28f), thistlepupFaint);
             var glimmoth = CreateCreature("glimmoth", "Glimmoth", 2, 2, 2, 2, 2, new Color(0.52f, 0.3f, 0.78f), glimmothBattleStart);
+            var barkhollow = CreateCreature("barkhollow", "Barkhollow", 2, 2, 4, 2, 2, new Color(0.42f, 0.28f, 0.15f), barkhollowSell);
+            var emberlisk = CreateCreature("emberlisk", "Emberlisk", 2, 3, 2, 2, 1, new Color(0.85f, 0.35f, 0.15f), emberliskHurt);
             var cragtoise = CreateCreature("cragtoise", "Cragtoise", 3, 3, 8, 2, 2, new Color(0.4f, 0.42f, 0.44f), cragtoiseHurt);
+            var quillmaw = CreateCreature("quillmaw", "Quillmaw", 3, 4, 5, 3, 2, new Color(0.55f, 0.2f, 0.5f), quillmawLevelUp);
+            var duskfen = CreateCreature("duskfen", "Duskfen", 3, 2, 9, 1, 3, new Color(0.2f, 0.3f, 0.35f), duskfenFaint);
+            var ashcallow = CreateCreature("ashcallow", "Ashcallow", 3, 5, 4, 3, 2, new Color(0.9f, 0.55f, 0.1f), ashcallowBattleStart);
 
             var botTeams = new List<BotTeamDefinition>
             {
                 CreateBotTeam(1, (pebblehide, 1)),
                 CreateBotTeam(2, (pebblehide, 1), (sparklet, 1)),
-                CreateBotTeam(3, (sparklet, 1), (mossback, 1)),
+                CreateBotTeam(3, (fernkit, 1), (twiggle, 1)),
                 CreateBotTeam(4, (pebblehide, 2), (mossback, 1), (sparklet, 1)),
-                CreateBotTeam(5, (thistlepup, 1), (pebblehide, 1)),
+                CreateBotTeam(5, (puddlewick, 1), (thistlepup, 1), (pebblehide, 1)),
                 CreateBotTeam(6, (glimmoth, 1), (thistlepup, 1), (mossback, 1)),
-                CreateBotTeam(7, (cragtoise, 1), (glimmoth, 1), (sparklet, 2)),
-                CreateBotTeam(8, (cragtoise, 2), (thistlepup, 2), (pebblehide, 2), (mossback, 1)),
+                CreateBotTeam(7, (barkhollow, 1), (emberlisk, 1), (sparklet, 2)),
+                CreateBotTeam(8, (cragtoise, 1), (glimmoth, 1), (sparklet, 2)),
+                CreateBotTeam(9, (cragtoise, 2), (thistlepup, 2), (pebblehide, 2), (mossback, 1)),
+                CreateBotTeam(10, (quillmaw, 1), (barkhollow, 2), (emberlisk, 2), (twiggle, 2)),
+                CreateBotTeam(11, (duskfen, 1), (ashcallow, 1), (cragtoise, 2), (glimmoth, 2), (sparklet, 3)),
+                CreateBotTeam(12, (ashcallow, 2), (quillmaw, 2), (cragtoise, 3), (duskfen, 2), (thistlepup, 3)),
             };
 
-            var allCreatures = new List<CreatureDefinition> { burr, pebblehide, sparklet, mossback, thistlepup, glimmoth, cragtoise };
+            var allCreatures = new List<CreatureDefinition>
+            {
+                burr,
+                pebblehide, sparklet, mossback, puddlewick, twiggle, fernkit,
+                thistlepup, glimmoth, barkhollow, emberlisk,
+                cragtoise, quillmaw, duskfen, ashcallow,
+            };
 
             var library = CreateOrLoadAsset<CreatureLibrary>("Assets/Content/CreatureLibrary.asset");
             library.AllCreatures = allCreatures;

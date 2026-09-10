@@ -1,0 +1,22 @@
+{
+    "id": "emberlisk",
+    "displayName": "Emberlisk",
+    "tier": 2,
+    "baseAttack": 3,
+    "baseHealth": 2,
+    "levelAttackBonus": 2,
+    "levelHealthBonus": 1,
+    "abilities": [
+        {
+            "trigger": "OnHurt",
+            "effects": [
+                {
+                    "type": "DealDamage",
+                    "target": "RandomEnemy",
+                    "amount": 1,
+                    "summonTemplateId": ""
+                }
+            ]
+        }
+    ]
+}

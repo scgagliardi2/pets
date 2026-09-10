@@ -1,0 +1,22 @@
+{
+    "id": "fernkit",
+    "displayName": "Fernkit",
+    "tier": 1,
+    "baseAttack": 2,
+    "baseHealth": 1,
+    "levelAttackBonus": 1,
+    "levelHealthBonus": 1,
+    "abilities": [
+        {
+            "trigger": "OnBuy",
+            "effects": [
+                {
+                    "type": "BuffAttack",
+                    "target": "RandomAlly",
+                    "amount": 1,
+                    "summonTemplateId": ""
+                }
+            ]
+        }
+    ]
+}

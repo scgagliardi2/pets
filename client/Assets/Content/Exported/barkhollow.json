@@ -1,0 +1,22 @@
+{
+    "id": "barkhollow",
+    "displayName": "Barkhollow",
+    "tier": 2,
+    "baseAttack": 2,
+    "baseHealth": 4,
+    "levelAttackBonus": 2,
+    "levelHealthBonus": 2,
+    "abilities": [
+        {
+            "trigger": "OnSell",
+            "effects": [
+                {
+                    "type": "BuffAttack",
+                    "target": "RandomAlly",
+                    "amount": 3,
+                    "summonTemplateId": ""
+                }
+            ]
+        }
+    ]
+}
