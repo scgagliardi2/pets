@@ -36,6 +36,10 @@ namespace Pets.Gameplay
         private const float PlayerTokenSize = 34f;
         private const float MoveDuration = 0.4f;
 
+        /// <summary>How far the current/available highlight panel extends past the icon's own
+        /// edge on each side.</summary>
+        private const float BackdropPadding = 10f;
+
         private const float CaptionWidth = 130f;
         private const float CaptionHeight = 30f;
         private const float CaptionGap = 6f;
@@ -255,10 +259,27 @@ namespace Pets.Gameplay
 
         private NodeView CreateNode(RegionMapNode node, Vector2 position)
         {
+            float size = node.Type == NodeType.Gym ? NodeSize * GymNodeScale : NodeSize;
+
+            // A plain color panel behind the icon, slightly larger than it, standing in for a
+            // "you are here"/"you can go here" highlight. Drawn first so the icon renders on top
+            // of it. (An earlier version used a uGUI Outline component for this — a single-offset
+            // drop-shadow effect, not a true outline — which reads as a hazy blur rather than a
+            // crisp highlight against pixel art's soft anti-aliased edges. A backdrop avoids that
+            // entirely and matches the rest of this UI's flat-panel look.)
+            var backdropGO = new GameObject($"Backdrop_{node.Id}", typeof(RectTransform));
+            backdropGO.transform.SetParent(nodeRoot, false);
+            var backdropRect = backdropGO.GetComponent<RectTransform>();
+            backdropRect.anchorMin = backdropRect.anchorMax = new Vector2(0.5f, 0f);
+            backdropRect.pivot = new Vector2(0.5f, 0.5f);
+            backdropRect.sizeDelta = new Vector2(size + BackdropPadding * 2f, size + BackdropPadding * 2f);
+            backdropRect.anchoredPosition = position;
+            var backdrop = backdropGO.AddComponent<Image>();
+            backdrop.raycastTarget = false;
+
             var go = new GameObject($"Node_{node.Id}_{node.Type}", typeof(RectTransform));
             go.transform.SetParent(nodeRoot, false);
 
-            float size = node.Type == NodeType.Gym ? NodeSize * GymNodeScale : NodeSize;
             var rect = go.GetComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
             rect.pivot = new Vector2(0.5f, 0.5f);
@@ -284,10 +305,6 @@ namespace Pets.Gameplay
                 image.color = baseTint;
             }
 
-            var outline = go.AddComponent<Outline>();
-            outline.effectDistance = new Vector2(3f, 3f);
-            outline.useGraphicAlpha = false;
-
             var button = go.AddComponent<Button>();
             button.targetGraphic = image;
             string nodeId = node.Id;
@@ -300,7 +317,7 @@ namespace Pets.Gameplay
                 Node = node,
                 Rect = rect,
                 Image = image,
-                Outline = outline,
+                Backdrop = backdrop,
                 Button = button,
                 Label = caption,
                 BaseColor = baseTint
@@ -436,7 +453,7 @@ namespace Pets.Gameplay
                     : isVisited ? Dim(view.BaseColor, 0.75f)
                     : Dim(view.BaseColor, 0.4f);
 
-                view.Outline.effectColor = isCurrent ? Theme.TextLight
+                view.Backdrop.color = isCurrent ? Theme.TextLight
                     : isAvailable ? Theme.TabSelectedBg
                     : new Color(0f, 0f, 0f, 0f);
 
@@ -541,7 +558,7 @@ namespace Pets.Gameplay
             public RegionMapNode Node;
             public RectTransform Rect;
             public Image Image;
-            public Outline Outline;
+            public Image Backdrop;
             public Button Button;
             public Text Label;
             public Color BaseColor;

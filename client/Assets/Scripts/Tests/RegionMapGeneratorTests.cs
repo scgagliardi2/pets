@@ -104,27 +104,53 @@ namespace Pets.Tests
         }
 
         [Test]
-        public void Generate_ProducesNoCrossingEdges()
+        public void Generate_EveryChoiceLayer_HasAtLeastThreeNodes()
         {
-            // Sources and targets are both laid out left-to-right by IndexInLayer, so two edges
-            // cross on screen exactly when a left-hand source reaches further right than a
-            // right-hand source does. Crossings would make the rendered paths unreadable.
             for (int seed = 1; seed <= 25; seed++)
             {
                 var map = RegionMapGenerator.Generate(seed);
-
-                for (int layer = 0; layer < map.LayerCount - 1; layer++)
+                for (int layer = 1; layer <= RegionMapGenerator.ChoiceLayerCount; layer++)
                 {
-                    var sources = map.NodesInLayer(layer).OrderBy(n => n.IndexInLayer).ToList();
-                    for (int i = 0; i < sources.Count - 1; i++)
+                    Assert.GreaterOrEqual(map.NodesInLayer(layer).Count, 3, $"seed {seed}, layer {layer}");
+                }
+            }
+        }
+
+        [Test]
+        public void Generate_EveryChoiceLayer_HasAtMostTwoOfAnyType_AndAtMostOnePokemonCenter()
+        {
+            for (int seed = 1; seed <= 25; seed++)
+            {
+                var map = RegionMapGenerator.Generate(seed);
+                for (int layer = 1; layer <= RegionMapGenerator.ChoiceLayerCount; layer++)
+                {
+                    var countsByType = map.NodesInLayer(layer).GroupBy(n => n.Type).ToDictionary(g => g.Key, g => g.Count());
+                    foreach (var kvp in countsByType)
                     {
-                        int furthestRightOfLeftSource = TargetIndices(map, sources[i]).Max();
-                        int furthestLeftOfRightSource = TargetIndices(map, sources[i + 1]).Min();
-                        Assert.LessOrEqual(
-                            furthestRightOfLeftSource,
-                            furthestLeftOfRightSource,
-                            $"seed {seed}: edges from {sources[i].Id} and {sources[i + 1].Id} cross");
+                        int cap = kvp.Key == NodeType.Camp ? 1 : 2;
+                        Assert.LessOrEqual(kvp.Value, cap, $"seed {seed}, layer {layer}, type {kvp.Key}");
                     }
+                }
+            }
+        }
+
+        [Test]
+        public void Generate_EveryNode_CanReachAtLeastTwoDistinctNodeTypes_ExceptIntoTheSingleNodeGymLayer()
+        {
+            for (int seed = 1; seed <= 25; seed++)
+            {
+                var map = RegionMapGenerator.Generate(seed);
+                foreach (var node in map.Nodes.Where(n => n.NextIds.Count > 0))
+                {
+                    var targetLayer = map.GetById(node.NextIds[0]).Layer;
+                    if (map.NodesInLayer(targetLayer).Count == 1)
+                    {
+                        // Only the Gym layer is ever a single node — nothing to diversify into.
+                        continue;
+                    }
+
+                    var reachableTypes = node.NextIds.Select(id => map.GetById(id).Type).Distinct().Count();
+                    Assert.GreaterOrEqual(reachableTypes, 2, $"seed {seed}: {node.Id} only reaches one node type");
                 }
             }
         }

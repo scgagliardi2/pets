@@ -27,8 +27,23 @@ namespace Pets.Meta
             NodeType.PvE, NodeType.PvE, NodeType.PvE, NodeType.Event, NodeType.PvP, NodeType.Camp
         };
 
-        private const int MinNodesPerLayer = 2;
+        private const int MinNodesPerLayer = 3;
         private const int MaxNodesPerLayer = 4;
+
+        /// <summary>No choice layer offers more than this many nodes of the same type — keeps any
+        /// one layer from reading as "mostly one thing".</summary>
+        private const int MaxOfAnyTypePerLayer = 2;
+
+        /// <summary>Camp (shown to the player as "Pokémon Center") is capped tighter than the
+        /// general per-type limit — at most one per layer, so healing/shopping stays a deliberate,
+        /// occasional stop rather than a repeat option.</summary>
+        private const int MaxCampPerLayer = 1;
+
+        /// <summary>From any node, the set of nodes it can step to must include at least this many
+        /// distinct types — so a choice is always actually a choice, never just "which copy of the
+        /// same node." Doesn't apply to the final choice layer's edges into the Gym, since the Gym
+        /// layer is always exactly one node/type by design (see ConnectLayers).</summary>
+        private const int MinDistinctReachableTypes = 2;
 
         /// <summary>layerCount includes the single start layer and the single Gym layer, so the
         /// minimum meaningful map is 3 layers (start -> one choice layer -> Gym).</summary>
@@ -56,9 +71,10 @@ namespace Pets.Meta
                     : MinNodesPerLayer + rng.NextInt(MaxNodesPerLayer - MinNodesPerLayer + 1);
 
                 var currentLayer = new List<RegionMapNode>();
+                var typeCountsInLayer = new Dictionary<NodeType, int>();
                 for (int i = 0; i < nodeCount; i++)
                 {
-                    var type = MiddleNodeTypes[rng.NextInt(MiddleNodeTypes.Length)];
+                    var type = PickNodeType(rng, typeCountsInLayer);
                     currentLayer.Add(new RegionMapNode { Id = $"L{layer}-{i}", Type = type, Layer = layer, IndexInLayer = i });
                 }
                 map.Nodes.AddRange(currentLayer);
@@ -74,14 +90,44 @@ namespace Pets.Meta
             return map;
         }
 
+        /// <summary>Draws a node type for a layer from the same weighted pool as always (PvE most
+        /// common), re-rolling any draw that would push a type over its per-layer cap
+        /// (MaxOfAnyTypePerLayer generally, the tighter MaxCampPerLayer for Camp). With a layer no
+        /// bigger than MaxNodesPerLayer and caps well above what a layer needs to fill, a valid type
+        /// is always available — the exception is genuinely unreachable and fails loudly rather than
+        /// silently producing a cap-violating layer.</summary>
+        private static NodeType PickNodeType(DeterministicRandom rng, Dictionary<NodeType, int> typeCountsInLayer)
+        {
+            const int maxAttempts = 64;
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                var candidate = MiddleNodeTypes[rng.NextInt(MiddleNodeTypes.Length)];
+                int cap = candidate == NodeType.Camp ? MaxCampPerLayer : MaxOfAnyTypePerLayer;
+                int current = typeCountsInLayer.TryGetValue(candidate, out var count) ? count : 0;
+                if (current < cap)
+                {
+                    typeCountsInLayer[candidate] = current + 1;
+                    return candidate;
+                }
+            }
+
+            throw new InvalidOperationException(
+                $"Could not draw a node type honoring per-layer caps (max {MaxOfAnyTypePerLayer}/type, {MaxCampPerLayer} Camp) after {maxAttempts} attempts.");
+        }
+
         /// <summary>Spreads <paramref name="to"/> across <paramref name="from"/> as a monotonically
         /// advancing staircase of contiguous target ranges: source i owns [lo, hi], and source i+1
-        /// starts at that same hi, so ranges touch but never overlap out of order.
+        /// starts at that same hi, so ranges touch and every target keeps at least one incoming edge
+        /// (nothing unreachable) with every source keeping at least one outgoing edge (no dead
+        /// ends).
         ///
-        /// That one rule buys all three properties the map needs at once: every source keeps at
-        /// least one outgoing edge (no dead ends), every target keeps at least one incoming edge
-        /// (nothing unreachable), and no two edges cross — which is what makes the rendered map
-        /// readable as a set of distinct walkable paths instead of a tangle.</summary>
+        /// Each source's range is then widened — growing lo/hi outward, never leaving gaps — until
+        /// it reaches at least MinDistinctReachableTypes distinct node types, so every choice is a
+        /// real choice rather than several copies of the same node. That widening can make
+        /// neighbouring sources' ranges overlap more than the base staircase would on its own;
+        /// reachable-type diversity wins that trade-off over a perfectly uncrossed look. The one
+        /// case this can't apply is a single-node target layer (the Gym) — there's only one type to
+        /// reach, so every source simply connects to it, same as before.</summary>
         private static void ConnectLayers(List<RegionMapNode> from, List<RegionMapNode> to, DeterministicRandom rng)
         {
             int lo = 0;
@@ -101,12 +147,49 @@ namespace Pets.Meta
                     hi = Math.Min(Math.Max(ideal + rng.NextInt(2), lo), to.Count - 1);
                 }
 
+                (lo, hi) = WidenForTypeDiversity(to, lo, hi);
+
                 for (int target = lo; target <= hi; target++)
                 {
                     from[i].NextIds.Add(to[target].Id);
                 }
                 lo = hi;
             }
+        }
+
+        /// <summary>Grows [lo, hi] outward (alternating sides, starting right) until the range
+        /// covers at least MinDistinctReachableTypes distinct types or the whole list — never
+        /// shrinking, so every guarantee the caller already established still holds.</summary>
+        private static (int lo, int hi) WidenForTypeDiversity(List<RegionMapNode> to, int lo, int hi)
+        {
+            var reachableTypes = new HashSet<NodeType>();
+            for (int i = lo; i <= hi; i++)
+            {
+                reachableTypes.Add(to[i].Type);
+            }
+
+            bool growRightNext = true;
+            while (reachableTypes.Count < MinDistinctReachableTypes && (lo > 0 || hi < to.Count - 1))
+            {
+                if (growRightNext && hi < to.Count - 1)
+                {
+                    hi++;
+                    reachableTypes.Add(to[hi].Type);
+                }
+                else if (lo > 0)
+                {
+                    lo--;
+                    reachableTypes.Add(to[lo].Type);
+                }
+                else if (hi < to.Count - 1)
+                {
+                    hi++;
+                    reachableTypes.Add(to[hi].Type);
+                }
+                growRightNext = !growRightNext;
+            }
+
+            return (lo, hi);
         }
     }
 }
