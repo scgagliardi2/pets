@@ -128,14 +128,7 @@ namespace Pets.EditorTools
             ForceLayoutRebuild(runOverOverlay);
             runOverOverlay.gameObject.SetActive(false);
 
-            // Temporary review strip so the new sprite art (ButtonBlue/Green/Red, TextBox — see
-            // Theme.cs) can be eyeballed on the main game screen; sits on top of the Content
-            // panels regardless of active tab. Remove once the sprites are reviewed and actually
-            // wired into real hub UI.
-            var spriteReviewRow = CreatePanel(canvasRect, "SpriteReviewRow", Color.clear, new Vector2(0.02f, 0.01f), new Vector2(0.5f, 0.08f));
-            AddHorizontalLayout(spriteReviewRow, expandHeight: true);
-            CreateButton(spriteReviewRow, "ReviewButton", "Review Button", Theme.ButtonStyle.Primary, useSprite: true);
-            CreateTextBox(spriteReviewRow, "ReviewTextBox", "Review Text Box");
+            BuildUiKitShowcase(canvasRect);
 
             var hub = new GameObject("LocationHub").AddComponent<LocationHubController>();
             SetField(hub, "tabBar", tabBar.gameObject);
@@ -176,6 +169,42 @@ namespace Pets.EditorTools
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
             Debug.Log($"Forest scene rebuilt at {ScenePath}");
+        }
+
+        /// <summary>A showcase strip holding one of every sprite-backed widget — the five
+        /// Theme.ButtonStyle variants plus the TextBox — pinned over the Content panels so it's
+        /// visible on whichever tab is open. This exists to review the widgets themselves (see
+        /// Pets.UI.UiButton / UiTextBox and tools/generate_ui_sprites.py), not as real hub UI, so
+        /// it's one self-contained block that can be deleted in a single edit once the styles are
+        /// signed off and used in anger.</summary>
+        private static void BuildUiKitShowcase(RectTransform canvasRect)
+        {
+            var showcase = CreatePanel(canvasRect, "UiKitShowcase", Color.clear,
+                new Vector2(0.03f, 0.02f), new Vector2(0.97f, 0.30f));
+            AddVerticalLayout(showcase);
+
+            var buttonRow = CreatePanel(showcase, "ButtonRow", Color.clear, Vector2.zero, Vector2.one);
+            var buttonRowLayout = buttonRow.gameObject.AddComponent<LayoutElement>();
+            buttonRowLayout.preferredHeight = 64;
+            buttonRowLayout.flexibleWidth = 1;
+            // controlWidth: true so the five buttons share the row's width via their
+            // LayoutElement.flexibleWidth. Left off (the default), each would instead keep the
+            // prefab's own 220 width — 5 * 220 plus spacing overflows the 960-unit reference
+            // resolution and the row runs off the right edge of the screen.
+            AddHorizontalLayout(buttonRow, expandHeight: true, controlWidth: true);
+
+            CreateButton(buttonRow, "PrimaryButton", "Primary", Theme.ButtonStyle.Primary, useSprite: true);
+            CreateButton(buttonRow, "SecondaryButton", "Secondary", Theme.ButtonStyle.Secondary, useSprite: true);
+            CreateButton(buttonRow, "ConfirmButton", "Confirm", Theme.ButtonStyle.Confirm, useSprite: true);
+            CreateButton(buttonRow, "DangerButton", "Danger", Theme.ButtonStyle.Danger, useSprite: true);
+            CreateButton(buttonRow, "DisabledButton", "Disabled", Theme.ButtonStyle.Disabled, useSprite: true);
+
+            CreateTextBox(showcase, "ShowcaseTextBox",
+                "Text box - 9-sliced parchment panel for readouts.", Theme.FontSizeBody);
+
+            // No ForceLayoutRebuild here on purpose: the showcase is still active at the end of
+            // Build(), so the ForceLayoutRebuild(canvasRect) there already walks into it, same as
+            // it does for the tab bar and the Content panels.
         }
 
         private static void CreateBootstrapper()

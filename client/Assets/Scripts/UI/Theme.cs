@@ -64,11 +64,13 @@ namespace Pets.UI
         private static Sprite buttonBlueSprite;
         private static Sprite buttonGreenSprite;
         private static Sprite buttonRedSprite;
+        private static Sprite buttonGraySprite;
         private static Sprite textBoxSprite;
 
-        // Same lazy Resources.Load pattern as GameFont, backing the 9-sliced button/panel art
-        // (see UiSpriteImportProcessor for the import settings, particularly the border/PPU values
-        // that make these render correctly as Image.Type.Sliced).
+        // Same lazy Resources.Load pattern as GameFont, backing the 9-sliced button/panel art.
+        // All five share one 12x12 / 5px-border geometry — see tools/generate_ui_sprites.py for
+        // the art itself and UiSpriteImportProcessor for the import settings that make them render
+        // correctly as Image.Type.Sliced.
         public static Sprite ButtonBlueSprite =>
             buttonBlueSprite != null ? buttonBlueSprite : buttonBlueSprite = Resources.Load<Sprite>("Sprites/UI/ButtonBlue");
 
@@ -78,24 +80,40 @@ namespace Pets.UI
         public static Sprite ButtonRedSprite =>
             buttonRedSprite != null ? buttonRedSprite : buttonRedSprite = Resources.Load<Sprite>("Sprites/UI/ButtonRed");
 
+        public static Sprite ButtonGraySprite =>
+            buttonGraySprite != null ? buttonGraySprite : buttonGraySprite = Resources.Load<Sprite>("Sprites/UI/ButtonGray");
+
         public static Sprite TextBoxSprite =>
             textBoxSprite != null ? textBoxSprite : textBoxSprite = Resources.Load<Sprite>("Sprites/UI/TextBox");
 
         public enum ButtonStyle { Primary, Secondary, Confirm, Danger, Disabled }
 
-        /// <summary>The 9-sliced sprite for a given button style — Confirm/Danger get the
-        /// green/red art since those map directly onto "go" / "destructive" actions; every other
-        /// style (Primary, Secondary, Disabled) shares the blue art, distinguished instead by the
-        /// tint ButtonBackground/ButtonText and Selectable.colors apply on top of it.</summary>
+        /// <summary>The 9-sliced sprite for a given button style. Each style gets art in its own
+        /// palette rather than a tint over shared blue art: tinting a sprite whose whole read is a
+        /// baked 1px highlight/shadow bevel darkens the bevel along with the fill, so a "grey"
+        /// button came out as muddy blue instead of neutral grey. Secondary and Disabled share the
+        /// slate art and are separated by the Selectable tint in UiButton instead.</summary>
         public static Sprite ButtonSprite(ButtonStyle style)
         {
             switch (style)
             {
                 case ButtonStyle.Confirm: return ButtonGreenSprite;
                 case ButtonStyle.Danger: return ButtonRedSprite;
+                case ButtonStyle.Secondary: return ButtonGraySprite;
+                case ButtonStyle.Disabled: return ButtonGraySprite;
                 default: return ButtonBlueSprite;
             }
         }
+
+        // Selectable.colors multipliers for the sprite-backed buttons. The art already carries its
+        // own colour, so these stay near-white and only shade it: Normal sits slightly below white
+        // so that Highlighted has somewhere brighter to go, and Pressed darkens enough to read as
+        // a press alongside UiButton's 2px label nudge.
+        public static readonly Color ButtonTintNormal = new Color(0.93f, 0.93f, 0.93f);
+        public static readonly Color ButtonTintHighlighted = Color.white;
+        public static readonly Color ButtonTintPressed = new Color(0.74f, 0.74f, 0.74f);
+        public static readonly Color ButtonTintSelected = new Color(0.93f, 0.93f, 0.93f);
+        public static readonly Color ButtonTintDisabled = new Color(0.62f, 0.62f, 0.62f, 0.65f);
 
         public static Color ButtonBackground(ButtonStyle style)
         {

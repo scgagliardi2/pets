@@ -157,12 +157,21 @@ namespace Pets.EditorTools
             uiButton.Text = label;
 
             var button = instance.GetComponent<Button>();
-            var colors = button.colors;
-            colors.disabledColor = Theme.ButtonDisabledBg;
-            button.colors = colors;
+            // Selectable.colors is deliberately left to UiButton.Apply() here. Overriding
+            // disabledColor at the call site (as this used to) replaces the tint the sprite art is
+            // tuned for with an opaque flat grey, which double-darkens the bevel.
+            //
+            // The Disabled *style* is a look, not a state, so make it behave like one too —
+            // otherwise a button that reads as disabled still takes clicks.
+            if (style == Theme.ButtonStyle.Disabled)
+            {
+                button.interactable = false;
+            }
 
             var layoutElement = instance.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = 44;
+            // Matches the prefab's own height: the art draws a 10-unit border top and bottom, so
+            // anything near the old 44 leaves almost no flat centre and the chamfers collide.
+            layoutElement.preferredHeight = 64;
             layoutElement.flexibleWidth = 1;
 
             return button;
@@ -172,7 +181,8 @@ namespace Pets.EditorTools
         /// — see UiPrefabBuilder), the non-interactive counterpart to CreateSpriteButton, for
         /// previewing/using the "Monster Trails" TextBox art wherever a plain label needs the
         /// bordered-box treatment instead of a flat panel background.</summary>
-        public static Text CreateTextBox(Transform parent, string name, string content, int fontSize = 16)
+        public static Text CreateTextBox(Transform parent, string name, string content, int fontSize = 16,
+            TextAnchor anchor = TextAnchor.MiddleCenter)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.TextBoxPrefabPath);
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
@@ -182,9 +192,10 @@ namespace Pets.EditorTools
             uiTextBox.Text = content;
             var text = uiTextBox.TextComponent;
             text.fontSize = fontSize;
+            text.alignment = anchor;
 
             var layoutElement = instance.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = 44;
+            layoutElement.preferredHeight = 72;
             layoutElement.flexibleWidth = 1;
 
             return text;
@@ -513,23 +524,89 @@ namespace Pets.EditorTools
                 return;
             }
 
-            for (int i = 0; i < root.childCount; i++)
+            SizeCanvasToReferenceResolution(root);
+
+            // Outermost-first. A nested row can only be solved once its parent has given it its
+            // final size, so every group is rebuilt in top-down order and only then are they all
+            // destroyed. Doing both in one bottom-up pass (as this used to) bakes an inner row
+            // against its parent's pre-layout size, destroys the inner group, and then lets the
+            // parent resize the row — leaving the row's children frozen at the wrong size with
+            // nothing left alive to re-solve them. That is what made the showcase's buttons stay
+            // full-panel height inside a 64-high row.
+            var groups = new List<RectTransform>();
+            CollectLayoutGroups(root, groups);
+
+            foreach (var rect in groups)
             {
-                if (root.GetChild(i) is RectTransform child)
-                {
-                    ForceLayoutRebuild(child, keepLive);
-                }
+                LayoutRebuilder.ForceRebuildLayoutImmediate(rect);
             }
 
-            var layoutGroup = root.GetComponent(typeof(ILayoutGroup)) as Behaviour;
-            if (layoutGroup != null)
+            foreach (var rect in groups)
             {
-                LayoutRebuilder.ForceRebuildLayoutImmediate(root);
-                if (System.Array.IndexOf(keepLive, root) < 0)
+                if (System.Array.IndexOf(keepLive, rect) >= 0)
+                {
+                    continue;
+                }
+                if (rect.GetComponent(typeof(ILayoutGroup)) is Behaviour layoutGroup)
                 {
                     Object.DestroyImmediate(layoutGroup);
                 }
             }
+        }
+
+        /// <summary>Pre-order (parent before child) walk collecting every active RectTransform that
+        /// carries a LayoutGroup. Inactive subtrees are skipped rather than baked — see
+        /// ForceLayoutRebuild's note about a Dropdown's popup Template.</summary>
+        private static void CollectLayoutGroups(RectTransform root, List<RectTransform> into)
+        {
+            if (!root.gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            if (root.GetComponent(typeof(ILayoutGroup)) != null)
+            {
+                into.Add(root);
+            }
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                if (root.GetChild(i) is RectTransform child)
+                {
+                    CollectLayoutGroups(child, into);
+                }
+            }
+        }
+
+        /// <summary>Resizes a Canvas root to its CanvasScaler's reference resolution before its
+        /// subtree is laid out, and is a no-op on anything that isn't a Canvas root.
+        ///
+        /// Canvas normally drives its own RectTransform from Screen, and CanvasScaler then divides
+        /// that by a scale factor so the canvas measures exactly referenceResolution. Neither runs
+        /// in a headless batchmode Editor script: nothing renders, so the canvas keeps batchmode's
+        /// stand-in 640x480 Screen and a scale factor of 1. Every row baked by ForceLayoutRebuild
+        /// was therefore being solved against a 640x480 canvas and then saved, while at runtime the
+        /// same canvas measures 960x720 — which is why baked rows came out narrow and clipped
+        /// (a 960-wide tab bar's buttons only reaching ~45% across, a two-row panel squeezed to
+        /// ~62% height and overlapping itself) no matter what the layout groups were told to do.</summary>
+        private static void SizeCanvasToReferenceResolution(RectTransform root)
+        {
+            if (root.GetComponent<Canvas>() == null)
+            {
+                return;
+            }
+
+            var scaler = root.GetComponent<CanvasScaler>();
+            if (scaler == null || scaler.uiScaleMode != CanvasScaler.ScaleMode.ScaleWithScreenSize)
+            {
+                return;
+            }
+
+            root.anchorMin = new Vector2(0.5f, 0.5f);
+            root.anchorMax = new Vector2(0.5f, 0.5f);
+            root.pivot = new Vector2(0.5f, 0.5f);
+            root.anchoredPosition = Vector2.zero;
+            root.sizeDelta = scaler.referenceResolution;
         }
 
         public static void SetField(object target, string fieldName, object value)
