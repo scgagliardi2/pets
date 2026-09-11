@@ -37,7 +37,14 @@ namespace Pets.EditorTools
             promptText.fontStyle = FontStyle.Bold;
             AnchorFullRect(promptText.GetComponent<RectTransform>(), new Vector2(0f, 0.9f), Vector2.one);
 
-            var (_, _, content) = CreateScrollView(canvasRect, "SpeciesScroll", new Vector2(0.02f, 0.15f), new Vector2(0.98f, 0.9f), horizontal: false, vertical: true);
+            var toolbar = CreatePanel(canvasRect, "ToolbarBar", Theme.ChromeBg, new Vector2(0f, 0.81f), new Vector2(1f, 0.9f));
+            AddHorizontalLayout(toolbar, expandHeight: true, padding: new RectOffset(12, 12, 8, 8));
+            var typeFilterButton = CreateButton(toolbar, "TypeFilterButton", "Type: All", Theme.ButtonStyle.Secondary);
+            var sortAttackButton = CreateButton(toolbar, "SortAttackButton", "ATK", Theme.ButtonStyle.Secondary);
+            var sortSpeedButton = CreateButton(toolbar, "SortSpeedButton", "SPD", Theme.ButtonStyle.Secondary);
+            var sortHealthButton = CreateButton(toolbar, "SortHealthButton", "HP", Theme.ButtonStyle.Secondary);
+
+            var (_, _, content) = CreateScrollView(canvasRect, "SpeciesScroll", new Vector2(0.02f, 0.15f), new Vector2(0.98f, 0.81f), horizontal: false, vertical: true);
             content.anchorMin = new Vector2(0, 1);
             content.anchorMax = new Vector2(1, 1);
             content.pivot = new Vector2(0.5f, 1f);
@@ -64,8 +71,16 @@ namespace Pets.EditorTools
             SetField(controller, "gridContainer", content);
             SetField(controller, "confirmButton", confirmButton);
             SetField(controller, "confirmButtonLabel", confirmLabel);
+            SetField(controller, "typeFilterButton", typeFilterButton);
+            SetField(controller, "sortAttackButton", sortAttackButton);
+            SetField(controller, "sortSpeedButton", sortSpeedButton);
+            SetField(controller, "sortHealthButton", sortHealthButton);
 
             UnityEventTools.AddVoidPersistentListener(confirmButton.onClick, controller.OnConfirmClicked);
+            UnityEventTools.AddVoidPersistentListener(typeFilterButton.onClick, controller.OnTypeFilterClicked);
+            UnityEventTools.AddVoidPersistentListener(sortAttackButton.onClick, controller.OnSortAttackClicked);
+            UnityEventTools.AddVoidPersistentListener(sortSpeedButton.onClick, controller.OnSortSpeedClicked);
+            UnityEventTools.AddVoidPersistentListener(sortHealthButton.onClick, controller.OnSortHealthClicked);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);

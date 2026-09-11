@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Pets.Data;
+using Pets.Simulation;
 using Pets.UI;
 
 namespace Pets.Gameplay
@@ -12,19 +13,37 @@ namespace Pets.Gameplay
     /// <summary>Character Select screen (design doc §3): pick a Starter, then a Secondary, from
     /// the full curated roster, then start a run with that Lead/Support pair. Design doc §3's
     /// "3 secondary options" narrowing and cosmetic customization aren't implemented — this current
-    /// build shows the whole roster for both picks instead, per explicit scoping for this pass.</summary>
+    /// build shows the whole roster for both picks instead, per explicit scoping for this pass.
+    ///
+    /// A Type filter (cycles through the 18 types plus "All") and Attack/Speed/Health sort toggles
+    /// sit above the grid and apply to whichever pick (Starter or Secondary) is currently showing —
+    /// state carries over between the two picks rather than resetting, since a player filtering for
+    /// e.g. Water types likely wants that for both picks.</summary>
     public sealed class CharacterSelectController : MonoBehaviour
     {
         private const string GameSceneName = "Game";
+        private static readonly PokemonType[] AllTypes = (PokemonType[])Enum.GetValues(typeof(PokemonType));
+
+        private enum SortKey { None, Attack, Speed, Health }
 
         [SerializeField] private PokemonSpeciesLibrary speciesLibrary;
         [SerializeField] private Text promptText;
         [SerializeField] private RectTransform gridContainer;
         [SerializeField] private Button confirmButton;
         [SerializeField] private Text confirmButtonLabel;
+        [SerializeField] private Button typeFilterButton;
+        [SerializeField] private Button sortAttackButton;
+        [SerializeField] private Button sortSpeedButton;
+        [SerializeField] private Button sortHealthButton;
 
         private PokemonSpeciesDefinitionAsset chosenLead;
         private PokemonSpeciesDefinitionAsset chosenSupport;
+
+        private List<PokemonSpeciesDefinitionAsset> currentPhaseRoster;
+        private Action<PokemonSpeciesDefinitionAsset> currentPhaseHandler;
+        private int typeFilterIndex = -1; // -1 = "All Types"
+        private SortKey sortKey = SortKey.None;
+        private bool sortDescending = true;
 
         private void Start()
         {
@@ -35,14 +54,17 @@ namespace Pets.Gameplay
         private void ShowStarterGrid()
         {
             promptText.text = "Choose your Starter";
-            PopulateGrid(speciesLibrary.AllSpecies, OnStarterChosen);
+            currentPhaseRoster = speciesLibrary.AllSpecies;
+            currentPhaseHandler = OnStarterChosen;
+            RefreshGrid();
         }
 
         private void ShowSecondaryGrid()
         {
             promptText.text = $"{chosenLead.DisplayName} is your Starter. Choose your Secondary.";
-            var remaining = speciesLibrary.AllSpecies.Where(s => s.Id != chosenLead.Id).ToList();
-            PopulateGrid(remaining, OnSecondaryChosen);
+            currentPhaseRoster = speciesLibrary.AllSpecies.Where(s => s.Id != chosenLead.Id).ToList();
+            currentPhaseHandler = OnSecondaryChosen;
+            RefreshGrid();
         }
 
         private void OnStarterChosen(PokemonSpeciesDefinitionAsset species)
@@ -65,6 +87,87 @@ namespace Pets.Gameplay
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
             SceneManager.LoadScene(GameSceneName);
+        }
+
+        public void OnTypeFilterClicked()
+        {
+            typeFilterIndex++;
+            if (typeFilterIndex >= AllTypes.Length)
+            {
+                typeFilterIndex = -1;
+            }
+            RefreshGrid();
+        }
+
+        public void OnSortAttackClicked() => OnSortClicked(SortKey.Attack);
+        public void OnSortSpeedClicked() => OnSortClicked(SortKey.Speed);
+        public void OnSortHealthClicked() => OnSortClicked(SortKey.Health);
+
+        private void OnSortClicked(SortKey key)
+        {
+            if (sortKey == key)
+            {
+                sortDescending = !sortDescending;
+            }
+            else
+            {
+                sortKey = key;
+                sortDescending = true;
+            }
+            RefreshGrid();
+        }
+
+        /// <summary>Re-applies the active Type filter and stat sort to currentPhaseRoster and
+        /// repopulates the grid — called on every phase change and every filter/sort click, since
+        /// none of those are expensive enough (roster is a few dozen entries) to warrant anything
+        /// smarter than a full rebuild.</summary>
+        private void RefreshGrid()
+        {
+            IEnumerable<PokemonSpeciesDefinitionAsset> filtered = currentPhaseRoster;
+            if (typeFilterIndex >= 0)
+            {
+                var type = AllTypes[typeFilterIndex];
+                filtered = filtered.Where(s => s.Type1 == type || (s.HasSecondType && s.Type2 == type));
+            }
+
+            List<PokemonSpeciesDefinitionAsset> ordered;
+            switch (sortKey)
+            {
+                case SortKey.Attack:
+                    ordered = Sort(filtered, s => s.BaseAttack);
+                    break;
+                case SortKey.Speed:
+                    ordered = Sort(filtered, s => s.BaseSpeed);
+                    break;
+                case SortKey.Health:
+                    ordered = Sort(filtered, s => s.BaseHealth);
+                    break;
+                default:
+                    ordered = filtered.ToList();
+                    break;
+            }
+
+            PopulateGrid(ordered, currentPhaseHandler);
+            UpdateToolbarVisuals();
+        }
+
+        private List<PokemonSpeciesDefinitionAsset> Sort(IEnumerable<PokemonSpeciesDefinitionAsset> species, Func<PokemonSpeciesDefinitionAsset, int> key) =>
+            (sortDescending ? species.OrderByDescending(key) : species.OrderBy(key)).ToList();
+
+        private void UpdateToolbarVisuals()
+        {
+            typeFilterButton.GetComponentInChildren<Text>().text = typeFilterIndex < 0 ? "Type: All" : $"Type: {AllTypes[typeFilterIndex]}";
+
+            SetSortButtonVisual(sortAttackButton, SortKey.Attack, "ATK");
+            SetSortButtonVisual(sortSpeedButton, SortKey.Speed, "SPD");
+            SetSortButtonVisual(sortHealthButton, SortKey.Health, "HP");
+        }
+
+        private void SetSortButtonVisual(Button button, SortKey key, string label)
+        {
+            bool active = sortKey == key;
+            button.GetComponentInChildren<Text>().text = active ? $"{label} {(sortDescending ? "▼" : "▲")}" : label;
+            button.image.color = active ? Theme.TabSelectedBg : Theme.ButtonSecondaryBg;
         }
 
         private void PopulateGrid(List<PokemonSpeciesDefinitionAsset> species, Action<PokemonSpeciesDefinitionAsset> onChosen)

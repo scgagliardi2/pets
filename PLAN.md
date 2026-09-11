@@ -188,6 +188,14 @@ criteria are met and the Forest Location is playable end to end:**
   simplification of §3's actual flow (fixed/chosen starter + a narrowed 3-option secondary pick +
   cosmetics) — full parity with §3 is still open. Covered end to end by
   `CharacterSelectScenePlayModeTests.cs`.
+- The curated roster has grown from Phase 0's 13 species to 28 (`Assets/Content/Species`,
+  `Assets/Content/PokemonSpeciesLibrary.asset`), adding four more type-flavored passives (Fairy,
+  Ghost, Dragon, Ice — `Assets/Content/Passives`) so every curated species still resolves a real
+  passive per `PokemonContentTests.cs`; most new species reuse an existing type-flavored passive
+  rather than getting a bespoke one, per content-schema.md §3's "reusable across species" note.
+  Character Select's grid now has a Type filter (cycles through all 18 types plus "All") and
+  Attack/Speed/Health sort toggles (click to sort high-to-low, click again for low-to-high) above
+  the stat grid, applying to both the Starter and Secondary picks.
 - A branching Region/Location node-map generator exists (`Meta/RegionMapGenerator.cs`, covered by
   `RegionMapGeneratorTests.cs`) and renders into a scrollable preview scene
   (`Assets/Scenes/RegionMap.unity`, `RegionMapController.cs`/`RegionMapSceneBuilder.cs`): random

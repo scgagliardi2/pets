@@ -1,10 +1,10 @@
 # Content Schema
 
-Status: **Partially implemented (2026-09-10) — Phase 0's slice built.** See
+Status: **Partially implemented (2026-09-11) — Phase 0's slice built, Phase 1 roster growing.** See
 `docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`. Documents the data shape for
 species/passives/items/team-synergy/locations (PLAN.md §8), kept in sync with the actual Unity
 ScriptableObject fields (`client/Assets/Scripts/Data`) and their JSON export format. §2-§3 and §8
-are built and content-authored for 13 curated species (`client/Assets/Content`); §6 (team synergy)
+are built and content-authored for 28 curated species (`client/Assets/Content`); §6 (team synergy)
 and §7 (items) are Phase 1+ and not yet implemented; §9 (Location/Gym content) is Phase 1+/2 and
 not yet implemented. The old `Data/` code (`CreatureDefinition`, `AbilityDefinition`,
 `BotTeamDefinition` etc.) implemented a different game (see ADR 0001) and has been removed — this

@@ -39,7 +39,7 @@ namespace Pets.Tests
         public IEnumerator Grid_ShowsACardForEveryCuratedSpecies()
         {
             var buttons = GridContent().GetComponentsInChildren<Button>();
-            Assert.AreEqual(13, buttons.Length);
+            Assert.AreEqual(28, buttons.Length);
             yield break;
         }
 
@@ -65,7 +65,7 @@ namespace Pets.Tests
             yield return null;
 
             var secondaryButtons = GridContent().GetComponentsInChildren<Button>();
-            Assert.AreEqual(12, secondaryButtons.Length, "the chosen Starter should not reappear in the Secondary grid");
+            Assert.AreEqual(27, secondaryButtons.Length, "the chosen Starter should not reappear in the Secondary grid");
             Assert.IsFalse(secondaryButtons.Any(b => b.gameObject.name == starterCardName));
 
             secondaryButtons[0].onClick.Invoke();
@@ -89,6 +89,67 @@ namespace Pets.Tests
 
             StringAssert.Contains(leadName, summaryBeforeConfirm);
             StringAssert.Contains(supportName, summaryBeforeConfirm);
+        }
+
+        [UnityTest]
+        public IEnumerator ClickingTypeFilter_NarrowsTheGridToOnlyThatType()
+        {
+            int allCount = GridContent().GetComponentsInChildren<Button>().Length;
+
+            var typeFilterButton = GameObject.Find("Canvas").transform.Find("ToolbarBar/TypeFilterButton").GetComponent<Button>();
+            typeFilterButton.onClick.Invoke();
+            yield return null;
+
+            string label = typeFilterButton.GetComponentInChildren<Text>().text;
+            StringAssert.StartsWith("Type: ", label);
+            string activeType = label.Substring("Type: ".Length);
+
+            var filteredButtons = GridContent().GetComponentsInChildren<Button>();
+            Assert.Less(filteredButtons.Length, allCount, "filtering by a single type should narrow the grid");
+            Assert.Greater(filteredButtons.Length, 0, "the first type in the enum should have at least one curated species");
+
+            foreach (var button in filteredButtons)
+            {
+                string typeLine = button.GetComponentsInChildren<Text>()[1].text; // Name, Type, ATK, HP, SPD
+                StringAssert.Contains(activeType, typeLine);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ClickingSortAttack_OrdersCardsHighestFirst_ThenLowestFirstOnSecondClick()
+        {
+            var canvas = GameObject.Find("Canvas").transform;
+            var sortAttackButton = canvas.Find("ToolbarBar/SortAttackButton").GetComponent<Button>();
+
+            sortAttackButton.onClick.Invoke();
+            yield return null;
+            AssertOrderedByAttack(descending: true);
+
+            sortAttackButton.onClick.Invoke();
+            yield return null;
+            AssertOrderedByAttack(descending: false);
+        }
+
+        private static void AssertOrderedByAttack(bool descending)
+        {
+            var buttons = GridContent().GetComponentsInChildren<Button>();
+            Assert.Greater(buttons.Length, 1, "need at least two cards to prove an ordering");
+
+            int previous = descending ? int.MaxValue : int.MinValue;
+            foreach (var button in buttons)
+            {
+                string atkText = button.GetComponentsInChildren<Text>()[2].text; // "ATK 49"
+                int attack = int.Parse(atkText.Substring("ATK ".Length));
+                if (descending)
+                {
+                    Assert.LessOrEqual(attack, previous, "cards should be sorted by Attack, highest first");
+                }
+                else
+                {
+                    Assert.GreaterOrEqual(attack, previous, "cards should be sorted by Attack, lowest first");
+                }
+                previous = attack;
+            }
         }
     }
 }
