@@ -92,17 +92,22 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator ClickingTypeFilter_NarrowsTheGridToOnlyThatType()
+        public IEnumerator SelectingATypeInTheFilterDropdown_NarrowsTheGridToOnlyThatType()
         {
             int allCount = GridContent().GetComponentsInChildren<Button>().Length;
 
-            var typeFilterButton = GameObject.Find("Canvas").transform.Find("ToolbarBar/TypeFilterButton").GetComponent<Button>();
-            typeFilterButton.onClick.Invoke();
+            var typeFilterDropdown = GameObject.Find("Canvas").transform.Find("ToolbarBar/TypeFilterDropdown").GetComponent<Dropdown>();
+            Assert.AreEqual("All Types", typeFilterDropdown.options[0].text, "option 0 should be the unfiltered 'All Types' entry");
+            Assert.Greater(typeFilterDropdown.options.Count, 1, "the dropdown should list every PokemonType, not just All Types");
+
+            // Selecting option 1 (the first real PokemonType) the same way a player's click on the
+            // popup list would — Dropdown.value's setter fires onValueChanged exactly like a real
+            // selection does, so this exercises the same code path without needing to open the
+            // popup and click a generated item in a headless run.
+            typeFilterDropdown.value = 1;
             yield return null;
 
-            string label = typeFilterButton.GetComponentInChildren<Text>().text;
-            StringAssert.StartsWith("Type: ", label);
-            string activeType = label.Substring("Type: ".Length);
+            string activeType = typeFilterDropdown.options[1].text;
 
             var filteredButtons = GridContent().GetComponentsInChildren<Button>();
             Assert.Less(filteredButtons.Length, allCount, "filtering by a single type should narrow the grid");
@@ -113,6 +118,11 @@ namespace Pets.Tests
                 string typeLine = button.GetComponentsInChildren<Text>()[1].text; // Name, Type, ATK, HP, SPD
                 StringAssert.Contains(activeType, typeLine);
             }
+
+            // Back to "All Types" should restore the full, unfiltered grid.
+            typeFilterDropdown.value = 0;
+            yield return null;
+            Assert.AreEqual(allCount, GridContent().GetComponentsInChildren<Button>().Length);
         }
 
         [UnityTest]
@@ -128,6 +138,32 @@ namespace Pets.Tests
             sortAttackButton.onClick.Invoke();
             yield return null;
             AssertOrderedByAttack(descending: false);
+        }
+
+        [UnityTest]
+        public IEnumerator ClickingReset_RestoresTheUnfilteredUnsortedGrid()
+        {
+            int allCount = GridContent().GetComponentsInChildren<Button>().Length;
+            string[] originalOrder = GridContent().GetComponentsInChildren<Button>().Select(b => b.gameObject.name).ToArray();
+
+            var canvas = GameObject.Find("Canvas").transform;
+            var typeFilterDropdown = canvas.Find("ToolbarBar/TypeFilterDropdown").GetComponent<Dropdown>();
+            var sortAttackButton = canvas.Find("ToolbarBar/SortAttackButton").GetComponent<Button>();
+            var resetButton = canvas.Find("ToolbarBar/ResetFiltersButton").GetComponent<Button>();
+
+            typeFilterDropdown.value = 1;
+            sortAttackButton.onClick.Invoke();
+            yield return null;
+
+            // Sanity-check the filter+sort actually did something before relying on Reset to undo it.
+            Assert.Less(GridContent().GetComponentsInChildren<Button>().Length, allCount);
+
+            resetButton.onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(0, typeFilterDropdown.value, "Reset should put the Type filter back to 'All Types'");
+            string[] resetOrder = GridContent().GetComponentsInChildren<Button>().Select(b => b.gameObject.name).ToArray();
+            CollectionAssert.AreEqual(originalOrder, resetOrder, "Reset should restore both the full roster and its original (unsorted) order");
         }
 
         private static void AssertOrderedByAttack(bool descending)
@@ -150,6 +186,49 @@ namespace Pets.Tests
                 }
                 previous = attack;
             }
+        }
+
+        /// <summary>Regression test for a real bug: the dropdown's popup list rendered with every
+        /// option scrolled out of the visible viewport (Content's computed height came out ~2x-4x
+        /// too tall — first from a stray LayoutGroup fighting Dropdown.Show()'s own item-layout
+        /// code, then from Content's pre-Show() sizeDelta being wrong), so opening the Type filter
+        /// showed an empty-looking box with no visible option text. Nothing else in this suite
+        /// actually opens the dropdown, so this is the only test that would have caught it.</summary>
+        [UnityTest]
+        public IEnumerator OpeningTheTypeFilterDropdown_LaysOutEveryOptionWithinItsScrollContent()
+        {
+            var canvas = GameObject.Find("Canvas").transform;
+            var dropdown = canvas.Find("ToolbarBar/TypeFilterDropdown").GetComponent<Dropdown>();
+            int optionCount = dropdown.options.Count;
+
+            dropdown.Show();
+            yield return null;
+            yield return null;
+
+            var dropdownList = GameObject.Find("Dropdown List");
+            Assert.IsNotNull(dropdownList, "Show() should have created the popup 'Dropdown List'");
+
+            const float itemHeight = 28f;
+            var content = dropdownList.transform.Find("Viewport/Content").GetComponent<RectTransform>();
+            Assert.AreEqual(optionCount * itemHeight, content.rect.height, 1f,
+                "Content's laid-out height should be exactly option count * item height — an inflated " +
+                "height here means every option gets scrolled out of the visible viewport");
+
+            var activeToggles = dropdownList.GetComponentsInChildren<Toggle>(true)
+                .Where(t => t.gameObject.activeInHierarchy)
+                .OrderByDescending(t => t.GetComponent<RectTransform>().anchoredPosition.y)
+                .ToArray();
+            Assert.AreEqual(optionCount, activeToggles.Length, "every option should produce one visible item");
+
+            for (int i = 1; i < activeToggles.Length; i++)
+            {
+                float gap = activeToggles[i - 1].GetComponent<RectTransform>().anchoredPosition.y
+                    - activeToggles[i].GetComponent<RectTransform>().anchoredPosition.y;
+                Assert.AreEqual(itemHeight, gap, 0.5f, $"items {i - 1} and {i} should be exactly one item-height apart, not overlapping or gapped");
+            }
+
+            var topItemLabel = activeToggles[0].GetComponentInChildren<Text>();
+            Assert.AreEqual("All Types", topItemLabel.text, "the first (unfiltered) option should be the topmost, visible item");
         }
     }
 }

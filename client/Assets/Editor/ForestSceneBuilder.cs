@@ -102,6 +102,12 @@ namespace Pets.EditorTools
             SetField(pveController, "outcomeText", outcomeText);
             SetField(pveController, "catchButtonsContainer", catchContainer);
             SetField(pveController, "continueButton", pveContinueButton);
+            // Must rebuild layout while still active — an inactive GameObject's layout groups
+            // aren't included in a later rebuild pass run on an active ancestor (see
+            // ForceLayoutRebuild's doc comment). catchContainer is keepLive: PvEClashController
+            // adds/removes catch buttons into it at runtime, so its HorizontalLayoutGroup must
+            // stay alive rather than get baked-and-destroyed like the rest of this panel.
+            ForceLayoutRebuild(pveOverlay, catchContainer);
             pveOverlay.gameObject.SetActive(false);
 
             var campOverlay = CreatePanel(canvasRect, "CampOverlay", Theme.PanelBg, Vector2.zero, Vector2.one);
@@ -111,6 +117,7 @@ namespace Pets.EditorTools
             var campContinueButton = CreateButton(campOverlay, "ContinueButton", "Continue", Theme.ButtonStyle.Primary);
             var campController = campOverlay.gameObject.AddComponent<CampPanelController>();
             SetField(campController, "resultText", campResultText);
+            ForceLayoutRebuild(campOverlay);
             campOverlay.gameObject.SetActive(false);
 
             var runOverOverlay = CreatePanel(canvasRect, "RunOverOverlay", Theme.PanelBg, Vector2.zero, Vector2.one);
@@ -118,6 +125,7 @@ namespace Pets.EditorTools
             AddPanelHeader(runOverOverlay, "Run Over");
             var runOverText = CreateText(runOverOverlay, "RunOverText", "Your Morale ran out.", Theme.FontSizeHeading, TextAnchor.MiddleCenter, 80);
             runOverText.color = Theme.Danger;
+            ForceLayoutRebuild(runOverOverlay);
             runOverOverlay.gameObject.SetActive(false);
 
             var hub = new GameObject("LocationHub").AddComponent<LocationHubController>();
@@ -150,6 +158,11 @@ namespace Pets.EditorTools
             UnityEventTools.AddVoidPersistentListener(goButton.onClick, mapController.OnGoClicked);
             UnityEventTools.AddVoidPersistentListener(pveContinueButton.onClick, pveController.OnContinueClicked);
             UnityEventTools.AddVoidPersistentListener(campContinueButton.onClick, campController.OnContinueClicked);
+
+            // Covers everything still active (ResourceBar, TabBar, Content's four tab panels) —
+            // see ForceLayoutRebuild's doc comment for why this is needed at all in a batchmode
+            // Editor script.
+            ForceLayoutRebuild(canvasRect);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);

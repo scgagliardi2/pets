@@ -15,10 +15,10 @@ namespace Pets.Gameplay
     /// "3 secondary options" narrowing and cosmetic customization aren't implemented — this current
     /// build shows the whole roster for both picks instead, per explicit scoping for this pass.
     ///
-    /// A Type filter (cycles through the 18 types plus "All") and Attack/Speed/Health sort toggles
-    /// sit above the grid and apply to whichever pick (Starter or Secondary) is currently showing —
-    /// state carries over between the two picks rather than resetting, since a player filtering for
-    /// e.g. Water types likely wants that for both picks.</summary>
+    /// A Type filter Dropdown ("All Types" plus each of the 18 types) and Attack/Speed/Health sort
+    /// toggles sit above the grid and apply to whichever pick (Starter or Secondary) is currently
+    /// showing — state carries over between the two picks rather than resetting, since a player
+    /// filtering for e.g. Water types likely wants that for both picks.</summary>
     public sealed class CharacterSelectController : MonoBehaviour
     {
         private const string GameSceneName = "Game";
@@ -31,7 +31,7 @@ namespace Pets.Gameplay
         [SerializeField] private RectTransform gridContainer;
         [SerializeField] private Button confirmButton;
         [SerializeField] private Text confirmButtonLabel;
-        [SerializeField] private Button typeFilterButton;
+        [SerializeField] private Dropdown typeFilterDropdown;
         [SerializeField] private Button sortAttackButton;
         [SerializeField] private Button sortSpeedButton;
         [SerializeField] private Button sortHealthButton;
@@ -48,6 +48,10 @@ namespace Pets.Gameplay
         private void Start()
         {
             confirmButton.gameObject.SetActive(false);
+            // Wired here rather than as a scene-builder persistent listener: Dropdown.onValueChanged
+            // is a UnityEvent<int> and UnityEventTools' Editor-time helpers only support baking a
+            // fixed constant int, not passing the dropdown's actual selected value through.
+            typeFilterDropdown.onValueChanged.AddListener(OnTypeFilterChanged);
             ShowStarterGrid();
         }
 
@@ -89,19 +93,30 @@ namespace Pets.Gameplay
             SceneManager.LoadScene(GameSceneName);
         }
 
-        public void OnTypeFilterClicked()
+        /// <summary>Wired to typeFilterDropdown.onValueChanged. Dropdown option 0 is "All Types";
+        /// options 1..AllTypes.Length map 1:1 onto AllTypes, so the dropdown's own value is always
+        /// one ahead of the AllTypes index.</summary>
+        public void OnTypeFilterChanged(int dropdownValue)
         {
-            typeFilterIndex++;
-            if (typeFilterIndex >= AllTypes.Length)
-            {
-                typeFilterIndex = -1;
-            }
+            typeFilterIndex = dropdownValue - 1;
             RefreshGrid();
         }
 
         public void OnSortAttackClicked() => OnSortClicked(SortKey.Attack);
         public void OnSortSpeedClicked() => OnSortClicked(SortKey.Speed);
         public void OnSortHealthClicked() => OnSortClicked(SortKey.Health);
+
+        public void OnResetClicked()
+        {
+            // SetValueWithoutNotify rather than the value setter: we're about to call RefreshGrid
+            // ourselves below, so we don't also want the dropdown's onValueChanged firing
+            // OnTypeFilterChanged and triggering a second, redundant refresh.
+            typeFilterDropdown.SetValueWithoutNotify(0);
+            typeFilterIndex = -1;
+            sortKey = SortKey.None;
+            sortDescending = true;
+            RefreshGrid();
+        }
 
         private void OnSortClicked(SortKey key)
         {
@@ -156,8 +171,6 @@ namespace Pets.Gameplay
 
         private void UpdateToolbarVisuals()
         {
-            typeFilterButton.GetComponentInChildren<Text>().text = typeFilterIndex < 0 ? "Type: All" : $"Type: {AllTypes[typeFilterIndex]}";
-
             SetSortButtonVisual(sortAttackButton, SortKey.Attack, "ATK");
             SetSortButtonVisual(sortSpeedButton, SortKey.Speed, "SPD");
             SetSortButtonVisual(sortHealthButton, SortKey.Health, "HP");

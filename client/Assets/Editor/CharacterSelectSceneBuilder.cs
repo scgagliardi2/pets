@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
@@ -5,6 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Pets.Data;
 using Pets.Gameplay;
+using Pets.Simulation;
 using Pets.UI;
 using static Pets.EditorTools.SceneBuilderUtils;
 
@@ -38,13 +41,27 @@ namespace Pets.EditorTools
             AnchorFullRect(promptText.GetComponent<RectTransform>(), new Vector2(0f, 0.9f), Vector2.one);
 
             var toolbar = CreatePanel(canvasRect, "ToolbarBar", Theme.ChromeBg, new Vector2(0f, 0.81f), new Vector2(1f, 0.9f));
-            AddHorizontalLayout(toolbar, expandHeight: true, padding: new RectOffset(12, 12, 8, 8));
-            var typeFilterButton = CreateButton(toolbar, "TypeFilterButton", "Type: All", Theme.ButtonStyle.Secondary);
+            // controlWidth: true here (unlike the tab bar / other button rows) so the Dropdown's
+            // and sort buttons' explicit LayoutElement widths below actually take effect instead
+            // of falling back to each child's raw default RectTransform size.
+            AddHorizontalLayout(toolbar, expandHeight: true, padding: new RectOffset(12, 12, 8, 8), controlWidth: true);
+
+            var typeOptions = new List<string> { "All Types" };
+            typeOptions.AddRange(Enum.GetNames(typeof(PokemonType)));
+            var typeFilterDropdown = CreateDropdown(toolbar, "TypeFilterDropdown", typeOptions);
+
             var sortAttackButton = CreateButton(toolbar, "SortAttackButton", "ATK", Theme.ButtonStyle.Secondary);
             var sortSpeedButton = CreateButton(toolbar, "SortSpeedButton", "SPD", Theme.ButtonStyle.Secondary);
             var sortHealthButton = CreateButton(toolbar, "SortHealthButton", "HP", Theme.ButtonStyle.Secondary);
+            var resetButton = CreateButton(toolbar, "ResetFiltersButton", "Reset", Theme.ButtonStyle.Danger);
+            foreach (var sortButton in new[] { sortAttackButton, sortSpeedButton, sortHealthButton, resetButton })
+            {
+                var sortButtonLayout = sortButton.GetComponent<LayoutElement>();
+                sortButtonLayout.flexibleWidth = 0f;
+                sortButtonLayout.preferredWidth = 90f;
+            }
 
-            var (_, _, content) = CreateScrollView(canvasRect, "SpeciesScroll", new Vector2(0.02f, 0.15f), new Vector2(0.98f, 0.81f), horizontal: false, vertical: true);
+            var (speciesScrollRect, _, content) = CreateScrollView(canvasRect, "SpeciesScroll", new Vector2(0.02f, 0.15f), new Vector2(0.98f, 0.81f), horizontal: false, vertical: true);
             content.anchorMin = new Vector2(0, 1);
             content.anchorMax = new Vector2(1, 1);
             content.pivot = new Vector2(0.5f, 1f);
@@ -71,16 +88,29 @@ namespace Pets.EditorTools
             SetField(controller, "gridContainer", content);
             SetField(controller, "confirmButton", confirmButton);
             SetField(controller, "confirmButtonLabel", confirmLabel);
-            SetField(controller, "typeFilterButton", typeFilterButton);
+            SetField(controller, "typeFilterDropdown", typeFilterDropdown);
             SetField(controller, "sortAttackButton", sortAttackButton);
             SetField(controller, "sortSpeedButton", sortSpeedButton);
             SetField(controller, "sortHealthButton", sortHealthButton);
 
+            // Dropdown.onValueChanged is a UnityEvent<int> — UnityEventTools only exposes
+            // baked-constant persistent listeners (AddIntPersistentListener requires a fixed
+            // int), not a dynamic passthrough, so this one is wired at runtime in
+            // CharacterSelectController.Start() instead of here.
             UnityEventTools.AddVoidPersistentListener(confirmButton.onClick, controller.OnConfirmClicked);
-            UnityEventTools.AddVoidPersistentListener(typeFilterButton.onClick, controller.OnTypeFilterClicked);
             UnityEventTools.AddVoidPersistentListener(sortAttackButton.onClick, controller.OnSortAttackClicked);
             UnityEventTools.AddVoidPersistentListener(sortSpeedButton.onClick, controller.OnSortSpeedClicked);
             UnityEventTools.AddVoidPersistentListener(sortHealthButton.onClick, controller.OnSortHealthClicked);
+            UnityEventTools.AddVoidPersistentListener(resetButton.onClick, controller.OnResetClicked);
+
+            // Bakes the toolbar's Dropdown/sort/reset controls into an actual row (see
+            // ForceLayoutRebuild's doc comment). Two things kept live, not baked-and-destroyed:
+            // `content` (GridLayoutGroup) since CharacterSelectController repopulates it with
+            // species cards at runtime, and `speciesScrollRect` — ScrollRect itself implements
+            // ILayoutGroup (confirmed in UGUI source), so without listing it explicitly it gets
+            // silently destroyed by the same bake pass, which is exactly what broke scrolling the
+            // starter/secondary grid the first time this shipped.
+            ForceLayoutRebuild(canvasRect, content, (RectTransform)speciesScrollRect.transform);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
