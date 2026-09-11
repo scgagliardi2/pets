@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Pets.Data;
+using Pets.UI;
 
 namespace Pets.Gameplay
 {
@@ -89,7 +90,7 @@ namespace Pets.Gameplay
             go.transform.SetParent(gridContainer, false);
 
             var image = go.AddComponent<Image>();
-            image.color = new Color(0.85f, 0.85f, 0.8f);
+            image.color = new Color(0.97f, 0.96f, 0.90f);
             var button = go.AddComponent<Button>();
             button.targetGraphic = image;
             button.onClick.AddListener(() => onChosen(species));
@@ -108,11 +109,11 @@ namespace Pets.Gameplay
             AddCardSprite(go.transform, species);
 
             string typeLabel = species.HasSecondType ? $"{species.Type1}/{species.Type2}" : species.Type1.ToString();
-            AddCardLine(go.transform, species.DisplayName, 18, FontStyle.Bold);
-            AddCardLine(go.transform, typeLabel, 14, FontStyle.Italic);
-            AddCardLine(go.transform, $"ATK {species.BaseAttack}", 14, FontStyle.Normal);
-            AddCardLine(go.transform, $"HP {species.BaseHealth}", 14, FontStyle.Normal);
-            AddCardLine(go.transform, $"SPD {species.BaseSpeed}", 14, FontStyle.Normal);
+            AddCardLine(go.transform, species.DisplayName, 18, FontStyle.Bold, Theme.TextDark);
+            AddCardLine(go.transform, typeLabel, 14, FontStyle.Bold, Theme.GetTypeColor(species.Type1));
+            AddCardLine(go.transform, $"ATK {species.BaseAttack}", 14, FontStyle.Normal, Theme.TextDark);
+            AddCardLine(go.transform, $"HP {species.BaseHealth}", 14, FontStyle.Normal, Theme.TextDark);
+            AddCardLine(go.transform, $"SPD {species.BaseSpeed}", 14, FontStyle.Normal, Theme.TextDark);
         }
 
         private static void AddCardSprite(Transform parent, PokemonSpeciesDefinitionAsset species)
@@ -126,7 +127,7 @@ namespace Pets.Gameplay
             layoutElement.preferredHeight = 96;
         }
 
-        private static void AddCardLine(Transform parent, string content, int fontSize, FontStyle style)
+        private static void AddCardLine(Transform parent, string content, int fontSize, FontStyle style, Color color)
         {
             var go = new GameObject("Line", typeof(RectTransform));
             go.transform.SetParent(parent, false);
@@ -135,7 +136,7 @@ namespace Pets.Gameplay
             text.fontSize = fontSize;
             text.fontStyle = style;
             text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.black;
+            text.color = color;
             text.text = content;
             var layoutElement = go.AddComponent<LayoutElement>();
             layoutElement.preferredHeight = fontSize + 6;

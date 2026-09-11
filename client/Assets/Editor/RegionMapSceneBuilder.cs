@@ -3,6 +3,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UI;
 using Pets.Gameplay;
+using Pets.UI;
 using static Pets.EditorTools.SceneBuilderUtils;
 
 namespace Pets.EditorTools
@@ -22,11 +23,13 @@ namespace Pets.EditorTools
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            CreateMainCamera(new Color(0.1f, 0.12f, 0.1f));
+            CreateMainCamera(Theme.ChromeBg);
             CreateEventSystem();
             var canvasRect = CreateCanvas();
 
-            var titleText = CreateText(canvasRect, "TitleText", "Region Map (Preview)", 24, TextAnchor.MiddleCenter, 50);
+            CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0, 0.94f), Vector2.one);
+            var titleText = CreatePlainText(canvasRect, "TitleText", "Region Map (Preview)", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
+            titleText.fontStyle = FontStyle.Bold;
             AnchorFullRect(titleText.GetComponent<RectTransform>(), new Vector2(0, 0.94f), Vector2.one);
 
             var (_, _, content) = CreateScrollView(canvasRect, "MapScroll", new Vector2(0.02f, 0f), new Vector2(0.98f, 0.94f), horizontal: false, vertical: true);

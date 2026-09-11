@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using Pets.Data;
 using Pets.Meta;
 using Pets.Simulation;
+using Pets.UI;
 
 namespace Pets.Gameplay
 {
@@ -99,6 +100,7 @@ namespace Pets.Gameplay
         {
             lastOutcomeWon = outcome == BattleOutcome.SideAWins;
             outcomeText.text = lastOutcomeWon ? "Victory!" : outcome == BattleOutcome.Draw ? "Draw." : "Defeat...";
+            outcomeText.color = lastOutcomeWon ? Theme.Positive : outcome == BattleOutcome.Draw ? Theme.TextMuted : Theme.Danger;
 
             if (lastOutcomeWon)
             {
@@ -120,16 +122,26 @@ namespace Pets.Gameplay
             var species = library.GetById(defeated.SpeciesId);
             var go = new GameObject($"Catch_{species?.DisplayName}", typeof(RectTransform));
             go.transform.SetParent(catchButtonsContainer, false);
+            go.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 36);
 
-            var text = go.AddComponent<Text>();
+            var image = go.AddComponent<Image>();
+            image.color = Theme.ButtonConfirmBg;
+
+            var textGO = new GameObject("Text", typeof(RectTransform));
+            textGO.transform.SetParent(go.transform, false);
+            var text = textGO.AddComponent<Text>();
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.black;
+            text.color = Theme.TextLight;
             text.text = $"Catch {species?.DisplayName}";
-            go.GetComponent<RectTransform>().sizeDelta = new Vector2(180, 32);
+            var textRect = textGO.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
 
             var button = go.AddComponent<Button>();
-            button.targetGraphic = text;
+            button.targetGraphic = image;
             button.onClick.AddListener(() =>
             {
                 CatchResolver.Catch(state, defeated, library);

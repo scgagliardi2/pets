@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
+using Pets.UI;
 
 namespace Pets.EditorTools
 {
@@ -11,11 +12,11 @@ namespace Pets.EditorTools
     /// ForestSceneBuilder, CharacterSelectSceneBuilder, RegionMapSceneBuilder) — these scenes are
     /// built from code rather than hand-edited so their structure stays in lockstep with the
     /// Gameplay controllers' serialized fields; re-run the relevant Pets &gt; Build ... menu item
-    /// after changing a controller's fields.</summary>
+    /// after changing a controller's fields. Colors/typography come from Pets.UI.Theme, which is
+    /// the flat-color approximation of the "Monster Trails" style guide's palette — see PLAN.md
+    /// for the real sprite/icon work this doesn't attempt to replace.</summary>
     public static class SceneBuilderUtils
     {
-        public static readonly Color ButtonBg = new Color(0.7f, 0.8f, 0.9f);
-
         public static void CreateMainCamera(Color? backgroundColor = null)
         {
             // Screen Space - Overlay UI doesn't need a camera to render, but the Game view shows
@@ -73,7 +74,7 @@ namespace Pets.EditorTools
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             text.fontSize = fontSize;
             text.alignment = anchor;
-            text.color = Color.black;
+            text.color = Theme.TextDark;
             text.text = content;
             var layoutElement = go.AddComponent<LayoutElement>();
             layoutElement.preferredHeight = preferredHeight;
@@ -96,14 +97,17 @@ namespace Pets.EditorTools
             return text;
         }
 
-        public static Button CreateButton(Transform parent, string name, string label)
+        public static Button CreateButton(Transform parent, string name, string label, Theme.ButtonStyle style = Theme.ButtonStyle.Primary)
         {
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var image = go.AddComponent<Image>();
-            image.color = ButtonBg;
+            image.color = Theme.ButtonBackground(style);
             var button = go.AddComponent<Button>();
             button.targetGraphic = image;
+            var colors = button.colors;
+            colors.disabledColor = Theme.ButtonDisabledBg;
+            button.colors = colors;
             var layoutElement = go.AddComponent<LayoutElement>();
             layoutElement.preferredHeight = 44;
             layoutElement.flexibleWidth = 1;
@@ -114,7 +118,7 @@ namespace Pets.EditorTools
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             text.fontSize = 18;
             text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.black;
+            text.color = Theme.ButtonText(style);
             text.text = label;
             var textRect = textGO.GetComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
@@ -123,6 +127,55 @@ namespace Pets.EditorTools
             textRect.offsetMax = Vector2.zero;
 
             return button;
+        }
+
+        /// <summary>Inserts a dark title-bar strip as the first child of a panel that already has
+        /// AddVerticalLayout applied, approximating the style guide's "Large Panel (9-slice) with
+        /// Panel Title" component (section 1) with a flat color block in place of a real 9-slice
+        /// sprite. Deliberately does NOT wrap the panel's existing children in a new hierarchy
+        /// level — it just adds one more layout child — so callers (and the PlayMode tests that
+        /// Transform.Find into these panels, e.g. "Content/TeamPanel/LineUpText") don't need to
+        /// change their child paths.</summary>
+        public static void AddPanelHeader(RectTransform panel, string title)
+        {
+            var header = CreatePanel(panel, "Header", Theme.PanelHeaderBg, Vector2.zero, Vector2.one);
+            header.SetAsFirstSibling();
+            var headerLayoutElement = header.gameObject.AddComponent<LayoutElement>();
+            headerLayoutElement.preferredHeight = 36;
+            headerLayoutElement.flexibleWidth = 1;
+
+            var titleText = CreatePlainText(header, "Title", title, Theme.FontSizeHeading, TextAnchor.MiddleLeft, Theme.TextLight);
+            titleText.fontStyle = FontStyle.Bold;
+            var titleRect = titleText.GetComponent<RectTransform>();
+            titleRect.anchorMin = Vector2.zero;
+            titleRect.anchorMax = Vector2.one;
+            titleRect.offsetMin = new Vector2(12f, 0f);
+            titleRect.offsetMax = new Vector2(-12f, 0f);
+        }
+
+        /// <summary>A dark chrome strip of label/value readouts (guide section 8's "Run Resource
+        /// Icons" row — Money, Morale, Badge, etc.) using text labels in place of the guide's
+        /// icon set. Returns each item's value Text in the same order as <paramref name="labels"/>
+        /// so a controller can update them as run state changes.</summary>
+        public static (RectTransform bar, Text[] values) CreateResourceBar(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, string[] labels)
+        {
+            var bar = CreatePanel(parent, name, Theme.ChromeBg, anchorMin, anchorMax);
+            AddHorizontalLayout(bar, expandHeight: true, padding: new RectOffset(20, 20, 6, 6));
+            var layout = bar.gameObject.GetComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.spacing = 28;
+
+            var values = new Text[labels.Length];
+            for (int i = 0; i < labels.Length; i++)
+            {
+                var itemText = CreatePlainText(bar, $"{labels[i]}Value", labels[i], Theme.FontSizeBody, TextAnchor.MiddleLeft, Theme.TextLight);
+                itemText.fontStyle = FontStyle.Bold;
+                var le = itemText.gameObject.AddComponent<LayoutElement>();
+                le.preferredWidth = 120;
+                le.preferredHeight = 28;
+                values[i] = itemText;
+            }
+            return (bar, values);
         }
 
         public static void AddVerticalLayout(RectTransform panel, RectOffset padding = null, int spacing = 10)
@@ -167,10 +220,11 @@ namespace Pets.EditorTools
             return (scrollRect, viewport, content);
         }
 
-        public static void AddHorizontalLayout(RectTransform panel, bool expandHeight)
+        public static void AddHorizontalLayout(RectTransform panel, bool expandHeight, RectOffset padding = null)
         {
             var layout = panel.gameObject.AddComponent<HorizontalLayoutGroup>();
             layout.spacing = 10;
+            layout.padding = padding ?? new RectOffset(0, 0, 0, 0);
             layout.childForceExpandWidth = false;
             layout.childForceExpandHeight = expandHeight;
             layout.childControlWidth = false;

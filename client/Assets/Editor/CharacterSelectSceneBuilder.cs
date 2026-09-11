@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Pets.Data;
 using Pets.Gameplay;
+using Pets.UI;
 using static Pets.EditorTools.SceneBuilderUtils;
 
 namespace Pets.EditorTools
@@ -16,21 +17,25 @@ namespace Pets.EditorTools
     public static class CharacterSelectSceneBuilder
     {
         public const string ScenePath = "Assets/Scenes/CharacterSelect.unity";
-        private static readonly Color BackgroundBg = new Color(0.9f, 0.92f, 0.86f);
 
         [MenuItem("Pets/Build Character Select Scene")]
         public static void Build()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            CreateMainCamera(new Color(0.15f, 0.18f, 0.15f));
+            CreateMainCamera(Theme.ChromeBg);
             CreateEventSystem();
             var canvasRect = CreateCanvas();
 
-            CreatePanel(canvasRect, "Background", BackgroundBg, Vector2.zero, Vector2.one);
+            CreatePanel(canvasRect, "Background", Theme.ScreenBg, Vector2.zero, Vector2.one);
 
-            var promptText = CreateText(canvasRect, "PromptText", "Choose your Starter", 26, TextAnchor.MiddleCenter, 60);
-            AnchorFullRect(promptText.GetComponent<RectTransform>(), new Vector2(0, 0.9f), Vector2.one);
+            // TitleBar and PromptText are separate Canvas-level siblings (rather than PromptText
+            // nested inside TitleBar) so CharacterSelectScenePlayModeTests.cs's
+            // canvas.Find("PromptText") keeps resolving.
+            CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 0.9f), Vector2.one);
+            var promptText = CreatePlainText(canvasRect, "PromptText", "Choose your Starter", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
+            promptText.fontStyle = FontStyle.Bold;
+            AnchorFullRect(promptText.GetComponent<RectTransform>(), new Vector2(0f, 0.9f), Vector2.one);
 
             var (_, _, content) = CreateScrollView(canvasRect, "SpeciesScroll", new Vector2(0.02f, 0.15f), new Vector2(0.98f, 0.9f), horizontal: false, vertical: true);
             content.anchorMin = new Vector2(0, 1);
@@ -47,7 +52,7 @@ namespace Pets.EditorTools
             var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var confirmButton = CreateButton(canvasRect, "ConfirmButton", "Begin Adventure");
+            var confirmButton = CreateButton(canvasRect, "ConfirmButton", "Begin Adventure", Theme.ButtonStyle.Confirm);
             AnchorFullRect(confirmButton.GetComponent<RectTransform>(), new Vector2(0.3f, 0.02f), new Vector2(0.7f, 0.12f));
             var confirmLabel = confirmButton.GetComponentInChildren<Text>();
 

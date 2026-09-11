@@ -14,6 +14,7 @@ namespace Pets.Gameplay
         [SerializeField] private TeamPanelController teamPanel;
         [SerializeField] private PvEClashController pveController;
         [SerializeField] private CampPanelController campController;
+        [SerializeField] private ResourceBarController resourceBar;
 
         private RunState state;
 
@@ -28,6 +29,7 @@ namespace Pets.Gameplay
         {
             mapPanel.Refresh(state);
             teamPanel.Refresh(state, RunBootstrapper.Instance.SpeciesLibrary);
+            resourceBar.Refresh(state);
         }
 
         public void OnGoClicked()

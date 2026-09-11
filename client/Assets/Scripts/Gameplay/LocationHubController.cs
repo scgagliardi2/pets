@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.UI;
+using Pets.UI;
 
 namespace Pets.Gameplay
 {
@@ -15,6 +17,7 @@ namespace Pets.Gameplay
         [SerializeField] private GameObject pveOverlay;
         [SerializeField] private GameObject campOverlay;
         [SerializeField] private GameObject runOverOverlay;
+        [SerializeField] private Button[] tabButtons;
 
         private GameObject[] tabPanels;
 
@@ -33,6 +36,14 @@ namespace Pets.Gameplay
             for (int i = 0; i < tabPanels.Length; i++)
             {
                 tabPanels[i].SetActive(i == index);
+            }
+
+            for (int i = 0; i < tabButtons.Length; i++)
+            {
+                bool selected = i == index;
+                tabButtons[i].image.color = selected ? Theme.TabSelectedBg : Theme.TabUnselectedBg;
+                var label = tabButtons[i].GetComponentInChildren<Text>();
+                label.color = selected ? Theme.TextDark : Theme.TextLight;
             }
         }
 

@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using Pets.Meta;
+using Pets.UI;
 
 namespace Pets.Gameplay
 {
@@ -17,13 +18,16 @@ namespace Pets.Gameplay
         private const float EdgePadding = 100f;
         private const float NodeSize = 64f;
 
+        // Node colors reuse Theme's semantic accents (guide section 6's "Map Nodes & Paths" —
+        // Wild Battle/Event/Camp/Shop/Center/PvP/Gym icons — approximated here as flat color
+        // since no node-icon sprites exist yet, see PLAN.md).
         private static readonly Dictionary<NodeType, Color> NodeColors = new Dictionary<NodeType, Color>
         {
-            { NodeType.PvE, new Color(0.55f, 0.75f, 0.45f) },
-            { NodeType.Event, new Color(0.85f, 0.75f, 0.35f) },
-            { NodeType.PvP, new Color(0.8f, 0.4f, 0.4f) },
-            { NodeType.Camp, new Color(0.45f, 0.65f, 0.85f) },
-            { NodeType.Gym, new Color(0.75f, 0.45f, 0.85f) }
+            { NodeType.PvE, Theme.Positive },
+            { NodeType.Event, Theme.ButtonConfirmBg },
+            { NodeType.PvP, Theme.Danger },
+            { NodeType.Camp, Theme.ButtonPrimaryBg },
+            { NodeType.Gym, Theme.Special }
         };
 
         [SerializeField] private RectTransform content;
@@ -104,22 +108,28 @@ namespace Pets.Gameplay
             var go = new GameObject($"Node_{node.Id}_{node.Type}", typeof(RectTransform));
             go.transform.SetParent(content, false);
 
+            // The Gym is always the map's mandatory finale, so it reads as the visually bigger
+            // "boss" node even without a real icon (guide's Gym Battle screen treats it the same
+            // way — the one node every path converges on).
+            float size = node.Type == NodeType.Gym ? NodeSize * 1.4f : NodeSize;
+
             var rect = go.GetComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(NodeSize, NodeSize);
+            rect.sizeDelta = new Vector2(size, size);
             rect.anchoredPosition = position;
 
             var image = go.AddComponent<Image>();
-            image.color = NodeColors.TryGetValue(node.Type, out var color) ? color : Color.gray;
+            image.color = NodeColors.TryGetValue(node.Type, out var color) ? color : Theme.TextMuted;
 
             var textGO = new GameObject("Label", typeof(RectTransform));
             textGO.transform.SetParent(go.transform, false);
             var text = textGO.AddComponent<Text>();
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             text.fontSize = 14;
+            text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.black;
+            text.color = Theme.TextLight;
             text.text = Abbreviate(node.Type);
             var textRect = textGO.GetComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
