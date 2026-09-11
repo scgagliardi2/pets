@@ -2,259 +2,391 @@ using System.Collections.Generic;
 
 namespace Pets.Simulation
 {
-    /// <summary>
-    /// Pure, deterministic (teamA, teamB, seed) -> BattleLog resolver. See battle-sim-spec.md for
-    /// the exact rules this implements.
-    /// </summary>
+    /// <summary>Pure per-Step battle logic: AdvanceStep(BattleState) -> StepEvent[], mutating the
+    /// given state in place. See battle-sim-spec.md §3 for the exact ordering this implements.
+    /// Two thin runners (BattleRunner.cs) call this in a loop — neither duplicates Step logic.</summary>
     public static class BattleSimulator
     {
-        private const int RoundCap = 50;
-        private const int EventCap = 10000;
-
-        private sealed class EventCapExceededException : System.Exception
+        public static List<StepEvent> AdvanceStep(BattleState state, DeterministicRandom rng)
         {
-        }
+            state.StepNumber++;
+            int step = state.StepNumber;
+            var events = new List<StepEvent>();
 
-        private sealed class BattleContext
-        {
-            public BattleLog Log;
-            public DeterministicRandom Rng;
-            public int SummonCounter;
-        }
+            // Captured once at the top of the Step: promotion only happens in step 4 below, so
+            // these references are stable for the whole Step even if a mon's HP drops to 0 in
+            // step 1 or step 3 — battle-sim-spec.md §3 explicitly defers all faint handling to
+            // one place ("since a passive can deal damage that causes a faint").
+            var leadA = state.LeadA;
+            var supportA = state.SupportA;
+            var leadB = state.LeadB;
+            var supportB = state.SupportB;
 
-        public static BattleLog Run(TeamState teamA, TeamState teamB, int seed)
-        {
-            var ctx = new BattleContext { Log = new BattleLog(), Rng = new DeterministicRandom(seed) };
-
-            try
+            // 1. Attack exchange — simultaneous, flat attack-vs-attack, gated only by both Leads
+            //    existing. Speed plays no part here.
+            if (leadA != null && leadB != null)
             {
-                FireBattleStartForTeam(teamA, Team.A, teamB, ctx);
-                FireBattleStartForTeam(teamB, Team.B, teamA, ctx);
+                int dmgToB = leadA.CurrentStats.Attack;
+                int dmgToA = leadB.CurrentStats.Attack;
+                ApplyDamage(leadB, Side.B, dmgToB, leadA, Side.A, events, step);
+                ApplyDamage(leadA, Side.A, dmgToA, leadB, Side.B, events, step);
+            }
 
-                int round = 0;
-                while (!teamA.IsEmpty && !teamB.IsEmpty)
+            // 2. Charge accumulation — all currently-active mons, regardless of HP dropped to 0
+            //    in step 1 above (see note on the captured references).
+            AccrueCharge(leadA);
+            AccrueCharge(supportA);
+            AccrueCharge(leadB);
+            AccrueCharge(supportB);
+
+            // 3. Passive resolution. The trigger set is fixed from this Step's charge values and
+            //    doesn't grow mid-resolution even if an earlier passive speeds up a later mon's
+            //    charge rate. Same-Step tie-break order (battle-sim-spec.md §6, provisional):
+            //    attacking Leads before waiting Supports; ties within a role broken by Speed
+            //    (higher first); further ties broken by Side A before Side B.
+            var triggering = new List<Triggerer>();
+            AddIfTriggering(leadA, Side.A, 0, triggering);
+            AddIfTriggering(supportA, Side.A, 1, triggering);
+            AddIfTriggering(leadB, Side.B, 0, triggering);
+            AddIfTriggering(supportB, Side.B, 1, triggering);
+            triggering.Sort(CompareTriggerOrder);
+
+            foreach (var t in triggering)
+            {
+                events.Add(new StepEvent
                 {
-                    round++;
-                    if (round > RoundCap)
+                    Step = step,
+                    Kind = StepEventKind.PassiveTriggered,
+                    SourceSide = t.Side,
+                    SourceInstanceId = t.Instance.InstanceId
+                });
+                t.Instance.Charge = 0;
+                if (t.Instance.ResolvedPassive != null)
+                {
+                    foreach (var effect in t.Instance.ResolvedPassive.Effects)
                     {
-                        return EndBattle(ctx, BattleOutcome.Draw);
+                        ApplyEffect(effect, t.Instance, t.Side, state, events, step);
                     }
-
-                    RunAttackExchange(teamA, teamB, ctx);
-                }
-
-                var outcome = teamA.IsEmpty && teamB.IsEmpty ? BattleOutcome.Draw
-                    : teamA.IsEmpty ? BattleOutcome.TeamBWins
-                    : BattleOutcome.TeamAWins;
-
-                return EndBattle(ctx, outcome);
-            }
-            catch (EventCapExceededException)
-            {
-                return EndBattle(ctx, BattleOutcome.Draw);
-            }
-        }
-
-        private static BattleLog EndBattle(BattleContext ctx, BattleOutcome outcome)
-        {
-            ctx.Log.Outcome = outcome;
-            ctx.Log.Events.Add(new BattleEvent { Kind = BattleEventKind.BattleEnd, Outcome = outcome });
-            return ctx.Log;
-        }
-
-        private static void RunAttackExchange(TeamState teamA, TeamState teamB, BattleContext ctx)
-        {
-            var frontA = teamA.Front;
-            var frontB = teamB.Front;
-            int dmgToB = frontA.Attack;
-            int dmgToA = frontB.Attack;
-
-            // Both damage applications happen before either side's OnHurt/faint — see spec §6.3.
-            frontA.Health -= dmgToA;
-            frontB.Health -= dmgToB;
-            Log(ctx, new BattleEvent { Kind = BattleEventKind.Damage, SourceTeam = Team.A, SourceInstanceId = frontA.InstanceId, TargetTeam = Team.B, TargetInstanceId = frontB.InstanceId, Amount = dmgToB });
-            Log(ctx, new BattleEvent { Kind = BattleEventKind.Damage, SourceTeam = Team.B, SourceInstanceId = frontB.InstanceId, TargetTeam = Team.A, TargetInstanceId = frontA.InstanceId, Amount = dmgToA });
-
-            if (dmgToA > 0)
-            {
-                FireTrigger(frontA, TriggerType.OnHurt, Team.A, teamA, teamB, ctx);
-            }
-            if (dmgToB > 0)
-            {
-                FireTrigger(frontB, TriggerType.OnHurt, Team.B, teamB, teamA, ctx);
-            }
-
-            if (frontA.Health <= 0 && teamA.Slots.Contains(frontA))
-            {
-                ResolveFaint(frontA, Team.A, teamA, teamB, ctx);
-            }
-            if (frontB.Health <= 0 && teamB.Slots.Contains(frontB))
-            {
-                ResolveFaint(frontB, Team.B, teamB, teamA, ctx);
-            }
-        }
-
-        private static void FireBattleStartForTeam(TeamState team, Team teamId, TeamState enemyTeam, BattleContext ctx)
-        {
-            foreach (var creature in new List<CreatureState>(team.Slots))
-            {
-                if (!creature.IsAlive)
-                {
-                    continue;
-                }
-                FireTrigger(creature, TriggerType.OnBattleStart, teamId, team, enemyTeam, ctx);
-            }
-        }
-
-        private static void FireTrigger(CreatureState creature, TriggerType trigger, Team teamId, TeamState team, TeamState enemyTeam, BattleContext ctx)
-        {
-            foreach (var ability in creature.AbilitiesWithTrigger(trigger))
-            {
-                Log(ctx, new BattleEvent { Kind = BattleEventKind.AbilityTriggered, SourceTeam = teamId, SourceInstanceId = creature.InstanceId, Trigger = trigger });
-                ApplyEffects(ability.Effects, creature, teamId, team, enemyTeam, ctx);
-            }
-        }
-
-        private static void ApplyEffects(List<EffectData> effects, CreatureState source, Team sourceTeamId, TeamState sourceTeam, TeamState enemyTeam, BattleContext ctx)
-        {
-            foreach (var effect in effects)
-            {
-                if (effect.Type == EffectType.Summon)
-                {
-                    ApplySummon(effect, sourceTeamId, sourceTeam, ctx);
-                    continue;
-                }
-
-                var (target, targetTeamId, targetTeam, opposingTeam) = ResolveTarget(effect.Target, source, sourceTeamId, sourceTeam, enemyTeam, ctx.Rng);
-                if (target == null)
-                {
-                    continue;
-                }
-
-                switch (effect.Type)
-                {
-                    case EffectType.DealDamage:
-                        ApplyDamage(target, targetTeamId, targetTeam, opposingTeam, effect.Amount, sourceTeamId, source.InstanceId, ctx);
-                        break;
-                    case EffectType.Heal:
-                        ApplyHeal(target, targetTeamId, effect.Amount, sourceTeamId, source.InstanceId, ctx);
-                        break;
-                    case EffectType.BuffAttack:
-                        target.Attack += effect.Amount;
-                        Log(ctx, new BattleEvent { Kind = BattleEventKind.BuffAttack, SourceTeam = sourceTeamId, SourceInstanceId = source.InstanceId, TargetTeam = targetTeamId, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
-                        break;
-                    case EffectType.BuffHealth:
-                        target.Health += effect.Amount;
-                        target.MaxHealth += effect.Amount;
-                        Log(ctx, new BattleEvent { Kind = BattleEventKind.BuffHealth, SourceTeam = sourceTeamId, SourceInstanceId = source.InstanceId, TargetTeam = targetTeamId, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
-                        break;
                 }
             }
+
+            // 3.5. Status ticks — Poisoned/Burned deal flat damage at the end of every Step this
+            //      mon is active (battle-sim-spec.md §5). This bypasses Shield/DamageReduction
+            //      (it's self-inflicted DOT, not an attack) and never procs Lifesteal.
+            ApplyStatusTick(leadA, Side.A, events, step);
+            ApplyStatusTick(supportA, Side.A, events, step);
+            ApplyStatusTick(leadB, Side.B, events, step);
+            ApplyStatusTick(supportB, Side.B, events, step);
+
+            // 4. Faint check & promotion — the only point removal/promotion happens, batching
+            //    every faint this Step caused (attack exchange, passives, and status ticks alike).
+            ResolveFaintsAndPromotions(state, Side.A, events, step);
+            ResolveFaintsAndPromotions(state, Side.B, events, step);
+
+            return events;
         }
 
-        private static void ApplyDamage(CreatureState target, Team targetTeamId, TeamState targetTeam, TeamState opposingTeam, int amount, Team sourceTeamId, string sourceInstanceId, BattleContext ctx)
+        /// <summary>Battle-end condition per battle-sim-spec.md §9. Callers (BattleRunner) invoke
+        /// this once a Step leaves a line-up empty, or a safety cap is hit.</summary>
+        public static BattleOutcome DetermineOutcome(BattleState state)
         {
-            target.Health -= amount;
-            Log(ctx, new BattleEvent { Kind = BattleEventKind.Damage, SourceTeam = sourceTeamId, SourceInstanceId = sourceInstanceId, TargetTeam = targetTeamId, TargetInstanceId = target.InstanceId, Amount = amount });
-
-            if (amount > 0)
+            bool aEmpty = state.LineUpA.Count == 0;
+            bool bEmpty = state.LineUpB.Count == 0;
+            if (aEmpty && bEmpty)
             {
-                FireTrigger(target, TriggerType.OnHurt, targetTeamId, targetTeam, opposingTeam, ctx);
+                return BattleOutcome.Draw;
             }
-
-            if (target.Health <= 0 && targetTeam.Slots.Contains(target))
+            if (aEmpty)
             {
-                ResolveFaint(target, targetTeamId, targetTeam, opposingTeam, ctx);
+                return BattleOutcome.SideBWins;
+            }
+            if (bEmpty)
+            {
+                return BattleOutcome.SideAWins;
+            }
+            return BattleOutcome.Draw;
+        }
+
+        private readonly struct Triggerer
+        {
+            public readonly PokemonInstance Instance;
+            public readonly Side Side;
+            public readonly int Role; // 0 = Lead, 1 = Support
+
+            public Triggerer(PokemonInstance instance, Side side, int role)
+            {
+                Instance = instance;
+                Side = side;
+                Role = role;
             }
         }
 
-        private static void ApplyHeal(CreatureState target, Team targetTeamId, int amount, Team sourceTeamId, string sourceInstanceId, BattleContext ctx)
+        private static void AddIfTriggering(PokemonInstance instance, Side side, int role, List<Triggerer> list)
         {
-            int healAmount = System.Math.Min(amount, target.MaxHealth - target.Health);
-            if (healAmount <= 0)
+            if (instance != null && instance.Charge >= BattleConfig.ChargeThreshold)
+            {
+                list.Add(new Triggerer(instance, side, role));
+            }
+        }
+
+        private static int CompareTriggerOrder(Triggerer x, Triggerer y)
+        {
+            int roleCompare = x.Role.CompareTo(y.Role);
+            if (roleCompare != 0)
+            {
+                return roleCompare;
+            }
+            int speedCompare = y.Instance.CurrentStats.Speed.CompareTo(x.Instance.CurrentStats.Speed);
+            if (speedCompare != 0)
+            {
+                return speedCompare;
+            }
+            return x.Side.CompareTo(y.Side);
+        }
+
+        private static void AccrueCharge(PokemonInstance instance)
+        {
+            if (instance == null)
             {
                 return;
             }
-            target.Health += healAmount;
-            Log(ctx, new BattleEvent { Kind = BattleEventKind.Heal, SourceTeam = sourceTeamId, SourceInstanceId = sourceInstanceId, TargetTeam = targetTeamId, TargetInstanceId = target.InstanceId, Amount = healAmount });
+            if (instance.Status == StatusType.Asleep)
+            {
+                return;
+            }
+            float multiplier = instance.ChargeRateMultiplier;
+            if (instance.Status == StatusType.Paralyzed)
+            {
+                multiplier *= BattleConfig.ParalyzedChargeMultiplier;
+            }
+            instance.Charge += (int)(instance.CurrentStats.Speed * BattleConfig.DefaultStepDurationMs * multiplier);
         }
 
-        private static void ResolveFaint(CreatureState creature, Team teamId, TeamState team, TeamState enemyTeam, BattleContext ctx)
+        private static void ApplyStatusTick(PokemonInstance instance, Side side, List<StepEvent> events, int step)
         {
-            team.Slots.Remove(creature);
-            Log(ctx, new BattleEvent { Kind = BattleEventKind.Faint, SourceTeam = teamId, SourceInstanceId = creature.InstanceId });
-            FireTrigger(creature, TriggerType.OnFaint, teamId, team, enemyTeam, ctx);
-        }
-
-        private static void ApplySummon(EffectData effect, Team teamId, TeamState team, BattleContext ctx)
-        {
-            if (effect.SummonTemplate == null)
+            if (instance == null || instance.Status == null)
             {
                 return;
             }
 
-            var summoned = new CreatureState
+            if (instance.Status == StatusType.Poisoned)
             {
-                InstanceId = $"{effect.SummonTemplate.Id}#summon{ctx.SummonCounter++}",
-                TemplateId = effect.SummonTemplate.Id,
-                DisplayName = effect.SummonTemplate.DisplayName,
-                Attack = effect.SummonTemplate.Attack,
-                Health = effect.SummonTemplate.Health,
-                MaxHealth = effect.SummonTemplate.Health,
-                Level = 1,
-            };
-            team.InsertFront(summoned);
-            Log(ctx, new BattleEvent { Kind = BattleEventKind.Summon, SourceTeam = teamId, SourceInstanceId = summoned.InstanceId, TargetTeam = teamId, TargetInstanceId = summoned.InstanceId });
+                int dmg = instance.StatusTickDamage * System.Math.Max(1, instance.PoisonStacks);
+                instance.CurrentHP -= dmg;
+                events.Add(new StepEvent
+                {
+                    Step = step,
+                    Kind = StepEventKind.StatusTick,
+                    SourceSide = side,
+                    SourceInstanceId = instance.InstanceId,
+                    TargetSide = side,
+                    TargetInstanceId = instance.InstanceId,
+                    Amount = dmg,
+                    Status = StatusType.Poisoned
+                });
+                instance.PoisonStacks++;
+            }
+            else if (instance.Status == StatusType.Burned)
+            {
+                int dmg = instance.StatusTickDamage;
+                instance.CurrentHP -= dmg;
+                events.Add(new StepEvent
+                {
+                    Step = step,
+                    Kind = StepEventKind.StatusTick,
+                    SourceSide = side,
+                    SourceInstanceId = instance.InstanceId,
+                    TargetSide = side,
+                    TargetInstanceId = instance.InstanceId,
+                    Amount = dmg,
+                    Status = StatusType.Burned
+                });
+            }
+            // Paralyzed/Asleep have no per-Step tick damage.
         }
 
-        private static (CreatureState creature, Team teamId, TeamState team, TeamState opposing) ResolveTarget(
-            TargetSelector selector, CreatureState source, Team sourceTeamId, TeamState sourceTeam, TeamState enemyTeam, DeterministicRandom rng)
+        private static void ResolveFaintsAndPromotions(BattleState state, Side side, List<StepEvent> events, int step)
+        {
+            var lineUp = state.LineUp(side);
+            var oldLead = lineUp.Count > 0 ? lineUp[0] : null;
+            var oldSupport = lineUp.Count > 1 ? lineUp[1] : null;
+
+            if (oldSupport != null && oldSupport.CurrentHP <= 0)
+            {
+                lineUp.Remove(oldSupport);
+                events.Add(new StepEvent { Step = step, Kind = StepEventKind.Faint, SourceSide = side, SourceInstanceId = oldSupport.InstanceId });
+            }
+            if (oldLead != null && oldLead.CurrentHP <= 0)
+            {
+                lineUp.Remove(oldLead);
+                events.Add(new StepEvent { Step = step, Kind = StepEventKind.Faint, SourceSide = side, SourceInstanceId = oldLead.InstanceId });
+            }
+
+            var newLead = lineUp.Count > 0 ? lineUp[0] : null;
+            var newSupport = lineUp.Count > 1 ? lineUp[1] : null;
+
+            if (newLead != null && newLead != oldLead)
+            {
+                events.Add(new StepEvent { Step = step, Kind = StepEventKind.Promotion, SourceSide = side, SourceInstanceId = newLead.InstanceId });
+            }
+            if (newSupport != null && newSupport != oldSupport)
+            {
+                events.Add(new StepEvent { Step = step, Kind = StepEventKind.Promotion, SourceSide = side, SourceInstanceId = newSupport.InstanceId });
+            }
+        }
+
+        private static void ApplyEffect(EffectDefinition effect, PokemonInstance self, Side selfSide, BattleState state, List<StepEvent> events, int step)
+        {
+            var (target, targetSide) = ResolveTarget(effect.Target, self, selfSide, state);
+            if (target == null)
+            {
+                return;
+            }
+
+            switch (effect.Type)
+            {
+                case EffectType.DealDamage:
+                    ApplyDamage(target, targetSide, effect.Amount, self, selfSide, events, step);
+                    break;
+
+                case EffectType.Heal:
+                    ApplyHeal(target, targetSide, effect.Amount, self, selfSide, events, step);
+                    break;
+
+                case EffectType.Shield:
+                    target.Shield += effect.Amount;
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.Shield, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
+                    break;
+
+                case EffectType.ApplyStatus:
+                    ApplyStatus(target, targetSide, effect.Status, effect.Amount, self, selfSide, events, step);
+                    break;
+
+                case EffectType.ClearStatus:
+                    ClearStatus(target, targetSide, self, selfSide, events, step);
+                    break;
+
+                case EffectType.BuffAttack:
+                    target.CurrentStats.Attack += effect.Amount;
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.BuffAttack, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
+                    break;
+
+                case EffectType.BuffSpeed:
+                    target.CurrentStats.Speed += effect.Amount;
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.BuffSpeed, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
+                    break;
+
+                case EffectType.ModifyChargeRate:
+                    // Amount is a percentage delta (e.g. 50 => x1.5, -50 => x0.5), floored at 0.
+                    target.ChargeRateMultiplier = System.Math.Max(0f, target.ChargeRateMultiplier + effect.Amount / 100f);
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.ChargeRateModified, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
+                    break;
+
+                case EffectType.DamageReduction:
+                    target.DamageReductionFlat += effect.Amount;
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.DamageReductionApplied, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
+                    break;
+
+                case EffectType.Lifesteal:
+                    // Amount is a percentage (e.g. 30 => 0.3 of HP damage dealt heals back).
+                    target.LifestealPercent += effect.Amount / 100f;
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.Lifesteal, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
+                    break;
+            }
+        }
+
+        private static (PokemonInstance target, Side side) ResolveTarget(TargetSelector selector, PokemonInstance self, Side selfSide, BattleState state)
         {
             switch (selector)
             {
                 case TargetSelector.Self:
-                    return (source, sourceTeamId, sourceTeam, enemyTeam);
-                case TargetSelector.FrontEnemy:
-                    var front = enemyTeam.Front;
-                    return (front != null && front.IsAlive ? front : null, Opposite(sourceTeamId), enemyTeam, sourceTeam);
-                case TargetSelector.RandomAlly:
-                    return (PickRandomOther(sourceTeam, source, rng), sourceTeamId, sourceTeam, enemyTeam);
-                case TargetSelector.RandomEnemy:
-                    return (PickRandomOther(enemyTeam, null, rng), Opposite(sourceTeamId), enemyTeam, sourceTeam);
+                    return IsValidTarget(self) ? (self, selfSide) : (null, selfSide);
+
+                case TargetSelector.Ally:
+                    var ally = selfSide == Side.A
+                        ? (self == state.LeadA ? state.SupportA : state.LeadA)
+                        : (self == state.LeadB ? state.SupportB : state.LeadB);
+                    return IsValidTarget(ally) ? (ally, selfSide) : (null, selfSide);
+
+                case TargetSelector.EnemyLead:
+                    var enemySideLead = selfSide == Side.A ? Side.B : Side.A;
+                    var enemyLead = selfSide == Side.A ? state.LeadB : state.LeadA;
+                    return IsValidTarget(enemyLead) ? (enemyLead, enemySideLead) : (null, enemySideLead);
+
+                case TargetSelector.EnemySupport:
+                    var enemySideSupport = selfSide == Side.A ? Side.B : Side.A;
+                    var enemySupport = selfSide == Side.A ? state.SupportB : state.SupportA;
+                    return IsValidTarget(enemySupport) ? (enemySupport, enemySideSupport) : (null, enemySideSupport);
+
                 default:
-                    return (null, sourceTeamId, sourceTeam, enemyTeam);
+                    return (null, selfSide);
             }
         }
 
-        private static Team Opposite(Team team)
+        private static bool IsValidTarget(PokemonInstance instance)
         {
-            return team == Team.A ? Team.B : Team.A;
+            return instance != null && instance.CurrentHP > 0;
         }
 
-        private static CreatureState PickRandomOther(TeamState team, CreatureState exclude, DeterministicRandom rng)
+        private static void ApplyDamage(PokemonInstance target, Side targetSide, int rawAmount, PokemonInstance attacker, Side attackerSide, List<StepEvent> events, int step)
         {
-            var candidates = new List<CreatureState>();
-            foreach (var creature in team.Slots)
+            int afterReduction = System.Math.Max(0, rawAmount - target.DamageReductionFlat);
+            int shieldAbsorbed = System.Math.Min(target.Shield, afterReduction);
+            target.Shield -= shieldAbsorbed;
+            int hpDamage = afterReduction - shieldAbsorbed;
+            target.CurrentHP -= hpDamage;
+
+            events.Add(new StepEvent { Step = step, Kind = StepEventKind.Damage, SourceSide = attackerSide, SourceInstanceId = attacker.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = hpDamage });
+
+            if (shieldAbsorbed > 0)
             {
-                if (creature != exclude && creature.IsAlive)
+                events.Add(new StepEvent { Step = step, Kind = StepEventKind.ShieldAbsorbed, SourceSide = targetSide, SourceInstanceId = target.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = shieldAbsorbed });
+            }
+
+            if (attacker.LifestealPercent > 0f && hpDamage > 0)
+            {
+                int healAmount = (int)System.Math.Round(hpDamage * attacker.LifestealPercent, System.MidpointRounding.AwayFromZero);
+                int actualHeal = System.Math.Min(healAmount, attacker.CurrentStats.Health - attacker.CurrentHP);
+                if (actualHeal > 0)
                 {
-                    candidates.Add(creature);
+                    attacker.CurrentHP += actualHeal;
+                    events.Add(new StepEvent { Step = step, Kind = StepEventKind.LifestealHeal, SourceSide = attackerSide, SourceInstanceId = attacker.InstanceId, TargetSide = attackerSide, TargetInstanceId = attacker.InstanceId, Amount = actualHeal });
                 }
             }
-            if (candidates.Count == 0)
-            {
-                return null;
-            }
-            return candidates[rng.NextInt(candidates.Count)];
         }
 
-        private static void Log(BattleContext ctx, BattleEvent evt)
+        private static void ApplyHeal(PokemonInstance target, Side targetSide, int amount, PokemonInstance source, Side sourceSide, List<StepEvent> events, int step)
         {
-            if (ctx.Log.Events.Count >= EventCap)
+            int healAmount = System.Math.Min(amount, target.CurrentStats.Health - target.CurrentHP);
+            if (healAmount <= 0)
             {
-                throw new EventCapExceededException();
+                return;
             }
-            ctx.Log.Events.Add(evt);
+            target.CurrentHP += healAmount;
+            events.Add(new StepEvent { Step = step, Kind = StepEventKind.Heal, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = healAmount });
+        }
+
+        private static void ApplyStatus(PokemonInstance target, Side targetSide, StatusType status, int amount, PokemonInstance source, Side sourceSide, List<StepEvent> events, int step)
+        {
+            target.Status = status;
+            target.StatusTickDamage = status == StatusType.Poisoned || status == StatusType.Burned ? amount : 0;
+            target.PoisonStacks = status == StatusType.Poisoned ? 1 : 0;
+
+            events.Add(new StepEvent { Step = step, Kind = StepEventKind.StatusApplied, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Status = status });
+        }
+
+        private static void ClearStatus(PokemonInstance target, Side targetSide, PokemonInstance source, Side sourceSide, List<StepEvent> events, int step)
+        {
+            if (target.Status == null)
+            {
+                return;
+            }
+            var cleared = target.Status.Value;
+            target.Status = null;
+            target.StatusTickDamage = 0;
+            target.PoisonStacks = 0;
+
+            events.Add(new StepEvent { Step = step, Kind = StepEventKind.StatusCleared, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Status = cleared });
         }
     }
 }

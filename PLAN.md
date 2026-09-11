@@ -1,98 +1,117 @@
-# PLAN.md — Auto-Battler Mobile Game
+# PLAN.md — Pokémon Roguelite Autobattler
+
+> **Pivot note (2026-09-10):** This plan supersedes the earlier "generic shop-drafting
+> auto-battler" plan. See [`docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`](docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md)
+> for why, and for what happens to the Phase 0–2 code already built against the old design (short
+> version: kept for reference, not the source of truth). The full, detailed design lives in
+> [`docs/pokemon-roguelite-autobattler-design-doc.md`](docs/pokemon-roguelite-autobattler-design-doc.md)
+> — this file is the condensed plan + roadmap; go to the design doc for exhaustive mechanics
+> detail (exact node types, catch-chance formula, screen inventory, etc.).
 
 ## 1. Overview & Vision
 
-A mobile auto-battler in the spirit of *Super Auto Pets*: players draft creatures into a shop
-phase, build and upgrade a small team, then watch automated battles resolve turn by turn.
-Progression is driven by economy management (gold, rerolls, upgrades) and team composition
-rather than direct combat input.
+A single-player roguelite (Slay the Spire–style meta-layer) wrapped around a collect-and-auto-
+battle combat layer (Super Auto Pets–style Lead/Support Steps), themed with Pokémon species,
+types, and assets. Playable solo, with an asynchronous PvP node inside each run.
 
-**Working name:** TBD — use a placeholder codename (e.g. `Critterbrawl`) in code/assets.
-**Note on IP:** we are building an original game *inspired by* the genre's mechanics (drafting,
-auto-combat, tier/upgrade systems are not protectable expression), but we should use our own
-creature roster, names, art style, and UI rather than reproducing Super Auto Pets' specific pets,
-names, icons, or text verbatim. Treat this as a design constraint from day one, not a later
-cleanup pass.
+**Working title:** TBD (design doc suggests "Astromon" as a placeholder codename — Pokémon
+mechanics, no Pokémon name, for anywhere a non-Pokémon-branded string is useful in code/assets).
+
+**Scope note — read this before adding content or talking about distribution:** this is a
+personal/friends fan project using Pokémon (Nintendo/Game Freak/Creatures) characters, types, and
+assets, with **no monetization planned**. Treat it as private/non-commercial — don't publish it
+widely or monetize it — to stay on the safe side of IP concerns. [PokeAPI](https://pokeapi.co/) is
+the intended source for species base data, types, evolution chains, and sprites; check their
+fair-use guidelines for attribution/caching etiquette before pulling from it in bulk.
 
 **Project profile (confirmed):**
 - Solo hobby project, no fixed deadline — optimize for low running cost, low maintenance burden,
   and always having a small but *complete and playable* slice rather than a large unfinished one.
-- Client: Unity (C#).
-- Backend: custom Node.js/TypeScript + PostgreSQL, introduced once single-player is solid.
-- MVP battle mode: single-player vs. scripted/data-driven AI opponents (no live multiplayer yet).
+- **Client: Unity (C#).** (The design doc's own §18 suggests React + TypeScript; we're
+  overriding that and staying on Unity — see ADR 0001.)
+- Backend: custom Node.js/TypeScript + PostgreSQL, introduced once the solo roguelite loop is
+  solid (async PvP needs it; solo play doesn't).
+- MVP: one hand-authored Location, a small curated slice of species, no backend.
 
 ## 2. Core Game Design
 
-### 2.1 Loop
-1. **Shop phase** (untimed or soft-timed): player has gold to spend. Shop offers N creatures
-   drawn from a pool gated by the current "tier" (unlocked by turn number). Actions: buy, sell,
-   reroll shop, freeze a slot, reorder/arrange board, combine 3 copies of the same creature at
-   the same level to upgrade it.
-2. **Battle phase**: player's board auto-battles an opponent's board with no further input.
-   Creatures act based on stats (attack/health) and triggered abilities (e.g. on-faint, on-hurt,
-   start-of-battle, on-level-up).
-3. Loop repeats with increasing gold cap, shop tier, and opponent difficulty until the player
-   loses all lives/hearts or reaches a win condition (survive N rounds / beat all opponents).
+Full detail lives in the design doc; this is the shape of it:
 
-### 2.2 MVP opponent model
-Opponents are **data-driven scripted teams** keyed by round number (a curated "bot roster"),
-mirroring the fallback bots the genre uses when no live match is available. This is intentional:
-the same data format (a serialized team snapshot) will later double as the format for real
-player snapshots in async PvP, so we aren't building throwaway systems.
-
-### 2.3 Content model
-All creatures, abilities, tiers, and bot rosters are **data, not code**: defined in Unity
-ScriptableObjects (source of truth in-editor) with a JSON export/import path so the same content
-can eventually be validated against or served by the backend. Abilities are composed from a small
-set of triggers (OnBattleStart, OnHurt, OnFaint, OnLevelUp, OnBuy, OnSell, OnTurnStart) and
-effects (buff stat, deal damage, summon, gain gold, etc.) rather than one-off scripts per
-creature, so adding content doesn't require new code per pet.
+- **Run structure:** Region (procedurally chosen from available Locations) → pick a Location →
+  Trailblazer travel minigame → Location's node-map (PvE / Event / PvP / Camp nodes, all
+  eventually funneling into a mandatory Gym) → badge → back to Region Hub. Morale is the run's
+  life total; hitting 0 ends the run. See design doc §2–§5, §14–§15.
+- **Roster & Box:** catch mons in the wild (PvE only, drag-a-Pokéball-onto-the-enemy-Lead), adopt
+  them at a Pokémon Center (every Location, luck-independent), grow them via EXP/level, evolve
+  them along real Pokémon evolution chains, combine duplicates for EXP. See design doc §7–§8,
+  §12.
+- **Combat:** Lead/Support formation (only the front two mons per side are ever mechanically
+  active); battle proceeds as discrete **Steps** where both sides' Leads trade damage
+  simultaneously while all four active mons' passives charge on their own Speed-driven meter and
+  fire independently when full. See design doc §10 — this is the part
+  `docs/battle-sim-spec.md` implements in detail.
+- **Team synergy:** TFT-style type-count bonuses for your active line-up (design doc §11).
+- **Async PvP:** deterministic Step-log simulation means a Gym/PvP fight can be computed once,
+  server-side or client-side against a signed snapshot, and just played back — no need for both
+  players online at once (design doc §16).
 
 ## 3. Architecture
 
 ```
-+-------------------+          +--------------------------+
-|   Unity Client     |          |   Node/TS Backend        |
-|  (C#, MVP: fully   |  HTTPS   | (introduced in Phase 3)  |
-|   offline capable) | <------> | Auth, cloud save,        |
-|                    |  JSON    | leaderboards, later:     |
-|  - Shop/board UI   |  API     | matchmaking + snapshot   |
-|  - Battle sim      |          | storage for async PvP    |
-|  - Battle sim      |          |                          |
-|  - Local save      |          | PostgreSQL               |
-+-------------------+          +--------------------------+
++----------------------+          +--------------------------+
+|   Unity Client        |          |   Node/TS Backend         |
+|  (C#, MVP: fully      |  HTTPS   | (introduced once solo     |
+|   offline capable)    | <------> | loop is solid)            |
+|                        |  JSON    | Auth, cloud save,         |
+|  - Region/Location/    |  API     | PvP snapshot storage +    |
+|    node-map UI         |          | matchmaking, server-side  |
+|  - Trailblazer         |          | battle-sim reimpl. for    |
+|    minigame            |          | authoritative PvP         |
+|  - Battle sim +        |          |                            |
+|    runners             |          | PostgreSQL                |
+|  - Local save          |          |                            |
++------------------------+          +---------------------------+
 ```
 
-Key principle: the **battle simulator is a pure, deterministic function** of
-`(teamA, teamB, rngSeed) -> battleLog`, isolated from Unity's MonoBehaviour/rendering layer. This
-is critical for:
-- Unit testing without spinning up scenes.
-- Replaying a battle log as an animation independent of simulation speed.
-- Eventually reimplementing the same algorithm server-side (Phase 5+) for anti-cheat validation
-  in PvP, without fighting engine coupling.
+Key principle, carried over from the original plan and reinforced by the design doc's own
+suggested split (§18): the **battle simulator is a pure, deterministic function** of one Step at
+a time — `(battleState) -> nextBattleState`, with two thin runners on top (§10.5 of the design
+doc):
+- A **precomputed Step-log runner** for Gym/PvP fights (no catching possible, so the whole fight
+  can be computed up front as `simulateBattle(leadA, supportA, ..., leadB, supportB, ..., seed)
+  -> Step[]` and played back — this is exactly what a server-authoritative async-PvP result
+  needs).
+- An **on-demand Step runner** for PvE fights (a successful catch changes the board, so Steps are
+  generated one at a time as the player advances).
 
-Because the client is C# and the eventual server is TypeScript, we cannot literally share code
-between them. Mitigation: the battle-sim rules live in one written spec
-(`docs/battle-sim-spec.md`) plus a shared set of **golden test fixtures** (JSON: input teams +
-seed -> expected battle log) that both the Unity test suite and the future Node test suite run
-against, so both implementations are verified against the same ground truth and drift is caught
-immediately.
+Both runners call the same underlying per-Step logic, isolated from Unity's
+MonoBehaviour/rendering layer, for the same reasons as before: unit-testable without spinning up
+scenes, replayable as an animation independent of simulation speed, and eventually
+reimplementable server-side (TypeScript) for anti-cheat/authoritative PvP without fighting engine
+coupling. Because the client is C# and the eventual server is TypeScript, we still can't literally
+share code between them — mitigation is the same as before: one written spec
+(`docs/battle-sim-spec.md`) plus golden test fixtures in `/shared/fixtures` that both suites run
+against.
 
 ## 4. Tech Stack
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Client engine | Unity (LTS version, C#) | 2D, uGUI or UI Toolkit for shop/board UI |
+| Client engine | Unity (LTS version, C#) | 2D, uGUI or UI Toolkit for hub/map/battle UI |
 | Client testing | Unity Test Framework (NUnit), EditMode for sim logic, PlayMode for integration | |
-| Backend runtime | Node.js + TypeScript | Introduced Phase 3 |
+| Species/type data | PokeAPI, cached locally at build/content-import time | Filtered to the curated Gen 1–3 roster (§8 of the design doc, `docs/pokemon_stats_unique.xlsx`) |
+| Backend runtime | Node.js + TypeScript | Introduced once solo loop is solid (design doc Phase 3) |
 | Backend framework | Fastify (or Express) | REST JSON API |
-| Database | PostgreSQL | Accounts, cloud saves, later: snapshots/leaderboards |
+| Database | PostgreSQL | Accounts, PvP snapshots, matchmaking |
 | Backend testing | Vitest + Supertest, test DB via Docker Compose | |
 | CI | GitHub Actions | Lint + test on push/PR for both client and server |
 | Source control | Git (this repo), trunk-based on `main` with short-lived feature branches | |
-| Placeholder art | Free/CC0 asset packs or primitive sprites, clearly marked as placeholder | Swap later |
+| Placeholder art | Free/CC0 packs or primitives until real Pokémon-style sprites are sourced (PokeAPI sprites are the eventual real asset source) | |
 
 ## 5. Repository Structure
+
+The design doc's own suggested layout (§18) is written for a React/TS frontend; this is the same
+conceptual split re-expressed for Unity:
 
 ```
 /pets
@@ -102,134 +121,189 @@ immediately.
   /client                 # Unity project
     /Assets
       /Scripts
-        /Simulation        # Pure C#, no MonoBehaviour deps — the battle sim engine
-        /Data              # ScriptableObject definitions (Creature, Ability, Tier, BotRoster)
-        /Gameplay           # MonoBehaviours: shop, board, turn flow
+        /Simulation        # Pure C#, no MonoBehaviour deps — per-Step battle logic (§10 of the design doc)
+        /BattleRunner      # Precomputed Step-log runner (Gym/PvP) + on-demand runner (PvE)
+        /Data              # ScriptableObject content: species, passives, items, locations, gyms
+        /Meta              # Region/Location generation, run state (roster, map position, morale, money)
+        /Minigame          # Trailblazer canvas/lane module — no dependency on Simulation
+        /Gameplay          # MonoBehaviours: hub screens, node-map, camp, shop, catching interaction
         /UI
-        /Tests              # EditMode + PlayMode tests
-      /Content              # ScriptableObject assets (data instances)
-      /Art                  # Placeholder sprites
-  /server                  # Node/TS backend (added Phase 3)
+        /Tests             # EditMode + PlayMode tests
+      /Content              # ScriptableObject data instances (curated species, passives, items)
+      /Art                  # Placeholder + eventual PokeAPI-sourced sprites
+  /server                  # Node/TS backend (added once solo loop is solid)
     /src
       /routes
       /services
       /db
     /test
   /shared                  # Language-agnostic specs & fixtures both sides test against
-    /fixtures               # Golden battle-sim test cases (JSON)
+    /fixtures               # Golden battle-sim Step-log test cases (JSON)
   /docs
+    pokemon-roguelite-autobattler-design-doc.md   # full design source
+    pokemon_stats_unique.xlsx                     # locked-in 183-species roster (stats are placeholders)
     battle-sim-spec.md
     content-schema.md
-    architecture-decisions/  # short ADRs for notable decisions
+    architecture-decisions/
 ```
 
 ## 6. Development Phases
 
 Phases are milestones, not deadlines — move on only when the current phase is genuinely playable
-end-to-end. Each phase should end with something you can actually play.
+end-to-end. Numbering resets from the old plan (see ADR 0001) since the actual combat/content
+code needs reworking to match the new Lead/Support model before any of it counts as "done" here.
 
-**Status (as of 2026-09-10):** Phase 0 and Phase 1 complete. Phase 2 in progress — Milestone 2A
-(shop-phase ability triggers + roster/bot-roster expansion) done; Milestone 2B (home screen, run
-history, stats screen) done.
+**Status (as of 2026-09-11):** Design pivot accepted (ADR 0001). Docs (this file, CLAUDE.md,
+README.md, battle-sim-spec.md, content-schema.md) describe the new direction. **Phase 0's exit
+criteria are met and the Forest Location is playable end to end:**
+- `client/Assets/Scripts/Simulation` implements the Lead/Support/Step model (battle-sim-spec.md),
+  with EditMode unit tests (`StepSimulatorTests.cs`) and golden fixtures in `/shared/fixtures`
+  (`GoldenFixtureTests.cs`).
+- Content for 13 curated species (with hand-authored passives) lives under `client/Assets/Content`
+  and is exercised by `PokemonContentTests.cs` (a full PvE-style fight against real content, start
+  to end).
+- `client/Assets/Scripts/Meta` (plain C#, EditMode-tested via `RunMetaTests.cs`) implements
+  `RunState`, a linear Forest node sequence (`ForestLocationFactory`: PvE/PvE/Camp/PvE/PvE — no
+  branching or Gym node yet, both Phase 1), seeded wild-encounter generation, EXP/level-up, Camp's
+  EXP+buff grant, and the stubbed "pick 1 from defeated" catch.
+- `client/Assets/Scripts/Gameplay` implements the Location Hub (Team/Map/Shop/Center tabs) and the
+  PvE Clash/Camp overlay screens as MonoBehaviours over the Meta layer. `client/Assets/Scenes/
+  Game.unity` is a real, working scene (Canvas/EventSystem + all panels and button wiring) — it's
+  generated from code by `Assets/Editor/ForestSceneBuilder.cs` (`Pets > Build Forest Scene`) rather
+  than hand-edited, so re-run that menu item after changing any Gameplay controller's serialized
+  fields instead of patching the scene by hand. `ForestScenePlayModeTests.cs` drives the actual
+  saved scene (clicking real buttons via `Transform.Find` + `Button.onClick.Invoke()`) to verify
+  the wiring itself, not just the underlying logic.
+- Shop and Pokémon Center tabs are static placeholder text — their real functionality is Phase 1+
+  (design doc §13, §12.2). Trailblazer isn't a screen at all yet (stubbed as instant/skipped, per
+  Phase 0's scope) — there's exactly one Location, so there's nothing to travel between yet.
+- The old 5-slot-model code (`Simulation`, `Data`, `Gameplay`, `UI`, `Editor` content-seeding) was
+  deleted rather than kept alongside, per the working decision to rebuild rather than preserve it.
 
-**Phase 0 — Project scaffolding**
-- Unity project created, folder structure above, git LFS or `.gitignore` tuned for Unity.
-- Empty backend scaffold (not wired up yet) so structure exists but MVP doesn't depend on it.
-- GitHub Actions CI skeleton (build/test client, lint/test server) even if server has nothing yet.
+**Not yet built (Phase 1):** starter selection/character creation, Team line-up reordering, the
+Gym/Badge node and mandatory-Gym map structure, branching node-map paths, the real drag-and-drop
+catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
+economy, and any save/load layer.
 
-**Phase 1 — Core loop, vertical slice (single player, ~5-8 creatures)** — *complete*
-- Data model for Creature/Ability/Tier (ScriptableObjects + JSON export).
-- Deterministic battle simulator with a handful of triggers/effects, fully unit tested.
-- Shop UI: buy/sell/freeze/reroll/upgrade, board arrangement.
-- One scripted bot roster spanning ~10 rounds.
-- Local save (PlayerPrefs or a save file) — no backend required to play.
-- **Exit criteria:** you can play a full run start to (win or lose) with placeholder art.
+**Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)**
+- Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step
+  loop, charge-meter passive triggers, both runners (precomputed + on-demand).
+- Import the first ~10–15 species from `docs/pokemon_stats_unique.xlsx` as content (stats only —
+  abilities are blank in the source sheet; hand-author a handful of type-flavored passives per
+  §10.3/§11 of the design doc for this slice).
+- One hand-authored Location (e.g. a Forest), PvE + Camp + Shop nodes, basic Step-based battles
+  watchable step-through or autoplay. No evolution, no real backend.
+- Catching stubbed as a simple end-of-fight "pick 1 from defeated" rather than full drag-and-drop.
+  Trailblazer stubbed as an instant auto-roll.
+- **Exit criteria:** a full PvE-node fight resolves deterministically via the new Step model and
+  is covered by golden fixtures in `/shared/fixtures`.
 
-**Phase 2 — Content & systems depth** — *in progress*
-- Expand roster (aim for enough creatures that team-building has real decisions — SAP launched
-  with a few dozen; don't block on hitting a specific number, expand until the loop feels good).
-  — *done (Milestone 2A): 14 creatures + token, `OnBuy`/`OnSell`/`OnLevelUp`/`OnTurnStart` wired
-  up in `ShopEconomy`, `GainGold` effect added.*
-- More ability triggers/effects, tier progression tuning, difficulty curve pass on bot rosters.
-  — *done (Milestone 2A): bot roster expanded 8 → 12 rounds.*
-- Basic meta: run history, simple stats screen. — *done (Milestone 2B): a home screen (Continue /
-  New Run / Stats) is now the app's entry point; run outcomes are logged to a cross-run history
-  file and shown on a Stats screen reachable from Home.*
+**Phase 1 — Full run loop**
+- Real Gym/Badge flow, Morale/win-loss loop, evolution (via PokeAPI evolution chains, restricted
+  to the curated roster), the full drag-and-drop catching system (Step-boundary throws,
+  HP%/status-based odds), Pokémon Center adoption, type synergy bonuses, and the real Trailblazer
+  minigame (lane obstacle-dodge, Speed/Type-driven per §6 of the design doc).
 
-**Phase 3 — Gameplay**
-- Update gameplay, assets, images, etc to make the game more fun and interesting.
+**Phase 2 — Content & breadth**
+- Events (narrative branches), the rest of the Location types (§4 of the design doc) and their
+  type-biased encounter pools, procedural Region generation, the rest of the curated 183-species
+  roster with hand-authored passives.
 
-**Phase 4 — Backend introduction**
-- Node/TS + Postgres service: account creation (or anonymous device-id accounts), cloud save,
-  basic leaderboard (best run length/score).
-- Unity client integrates HTTP client for auth + save sync; must still work fully offline
-  (local save is the source of truth, cloud sync is best-effort).
+**Phase 3 — Backend + async PvP**
+- Node/TS + Postgres: accounts (or anonymous device-id), PvP snapshot storage, matchmaking query.
+- Server-side battle-sim reimplementation in TypeScript, validated against the shared golden
+  fixtures for parity with the Unity sim (design doc §16).
 
-**Phase 5 — Polish & release prep**
-- Real art pass (replacing placeholders), audio, juice/animation polish.
-- Monetization decision (see §9) and store listing assets.
-- iOS/Android build pipeline, store submission (App Store, Google Play).
+**Phase 4 — Meta-progression & polish**
+- Achievements/meta-progression screen, run-finale/capstone decision (one of the Open Questions in
+  the design doc §20), real art pass (PokeAPI sprites or commissioned equivalents), balance pass
+  on stats/passives/synergy values (all currently placeholders), audio/juice polish.
 
-**Phase 6 — Async PvP**
-- Team "snapshot" format finalized (reuses the bot-roster data shape from Phase 1).
-- Server-side matchmaking pairs snapshots by rank/rating.
-- Battle sim reimplemented server-side in TypeScript, validated against the shared golden
-  fixtures from `/shared/fixtures` for parity with the client sim.
-- Client requests a match, downloads opponent snapshot + battle log (or recomputes locally from
-  the snapshot — decide based on anti-cheat needs at the time), plays the animated result.
+**Phase 5 — Release prep (if ever)**
+- Given the non-commercial scope note in §1, this phase is about *whether* and *how* to share the
+  project privately (friends/testers) rather than a store listing — revisit the scope note before
+  doing anything resembling a public release.
 
 ## 7. Testing Strategy
 
-- **Battle simulation (highest priority):** pure C# unit tests (EditMode) covering individual
-  abilities, trigger ordering, edge cases (simultaneous faints, empty board, max board size).
-  These are cheap, fast, and where the most subtle bugs will live — invest here first.
-- **Golden fixtures:** curated `(teamA, teamB, seed) -> expected log` cases in `/shared/fixtures`,
-  run by both the Unity suite and (from Phase 5) the Node suite, to guarantee parity.
-- **Integration/PlayMode tests:** shop transactions (buy/sell/gold math), save/load round-trip.
+- **Battle simulation (highest priority):** pure C# unit tests (EditMode) covering the Step loop,
+  charge-meter timing, simultaneous-Lead-exchange semantics, passive triggering, Lead/Support
+  promotion on faint, and the tie-breaking rule for same-Step meter fills (design doc §10.2, and
+  see the open question on that rule in §20 — write the test against whatever we lock in, and
+  update it if that question resolves differently).
+- **Golden fixtures:** curated `(leadA, supportA, ..., leadB, supportB, ..., seed) -> expected
+  Step log` cases in `/shared/fixtures`, run by both the Unity suite and (from Phase 3) the Node
+  suite, to guarantee parity. The fixture *shape* changes from the old plan (team-of-5 → ordered
+  line-up with explicit Lead/Support) — old fixtures don't carry forward as-is.
+- **Integration/PlayMode tests:** node-map traversal, catch-chance rolls, Pokémon Center
+  adoption, save/load round-trip of a run.
 - **Backend tests (Phase 3+):** Vitest + Supertest against routes, using a disposable Postgres
-  (Docker Compose) rather than mocks, so schema/query bugs surface in tests.
+  (Docker Compose) rather than mocks.
 - **CI gate:** PRs must pass client EditMode tests and (once it exists) server tests before merge.
 - No manual-only testing for simulation logic — if it's not covered by an automated test, assume
   it's broken.
 
-## 8. Data & Content Pipeline (placeholder phase)
+## 8. Data & Content Pipeline
 
-- Creatures/abilities authored as ScriptableObjects directly in the Unity editor — no external
-  tool needed yet.
-- Art: solid-color placeholder sprites or a free CC0 icon pack, one visually distinct shape/color
-  per creature so playtesting isn't confusing; clearly labeled as temporary in `/Art/README.md`.
-- Audio: none/system beeps for MVP.
-- A lightweight JSON export of content data should exist from Phase 1 on (even if unused until
-  Phase 3+) so the backend and shared fixtures have a real schema to target rather than guessing
-  at one later.
+- **Starting roster:** `docs/pokemon_stats_unique.xlsx` is the locked-in source for the 183
+  species (id, name, types, Attack/HP/Speed per evolution stage). Stats are explicit placeholders
+  — treat every number as a first draft. The sheet's Ability column is empty; passives are
+  hand-authored separately, following the Type-flavor seeds in design doc §11.
+- **Species/type/evolution/sprite data:** pulled from PokeAPI, filtered to the 183 curated
+  species, cached locally rather than hit at runtime. A content-import step turns the xlsx +
+  PokeAPI data into `PokemonSpeciesDefinition` ScriptableObject assets — see
+  `docs/content-schema.md` for the exact shape.
+- **Legendaries:** the 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre,
+  Groudon) currently have no rarity flag in the source sheet; per the design doc's carried-forward
+  assumption, treat them as Legendary-tier (ultra-rare, PvE-only, full-party-wipe-risk
+  encounters) unless a future decision says otherwise.
+- Art: placeholder sprites until PokeAPI sprites (or a commissioned equivalent) are wired into the
+  import pipeline.
 
-## 9. Monetization & Analytics (deferred, decide before Phase 4)
+## 9. Scope, IP & Distribution
 
-Not needed for a hobby MVP, but flagging now so architecture doesn't paint us into a corner:
-- Likely candidates: cosmetic-only IAP (skins), optional rewarded ads, or simply no monetization
-  for a personal project. Avoid pay-to-win mechanics (extra rerolls/gold for money) — they
-  undermine the design's skill expression.
-- Analytics: defer to Phase 4; if added, prefer a lightweight self-hosted or privacy-respecting
-  option over heavy SDKs, and gate behind a clear opt-in.
+Restating §1's scope note because it affects engineering decisions, not just legal ones:
+- No monetization of any kind is planned. Don't build IAP, ads, or store-listing infrastructure.
+- Treat this as private/non-commercial — don't publish it widely. If sharing with friends/testers
+  ever comes up, revisit this section first.
+- PokeAPI is the intended data/sprite source; follow their fair-use/attribution/caching guidance
+  when pulling from it, especially in bulk (the content-import pipeline in §8 should cache rather
+  than hit PokeAPI at runtime, partly for this reason and partly for offline play).
 
 ## 10. Risks & Open Questions
 
-- **Determinism across platforms:** confirm Unity's math (float rounding) is consistent enough
-  across target devices for battle replays to look identical to what the "server" would compute
-  once PvP arrives. Consider fixed-point or integer math for stats if this becomes an issue.
-- **Content balance:** with a small team (one person), full economy/ability balancing will be an
-  ongoing tuning effort, not a one-time task — budget for it every content phase.
-- **Backend cost:** even a minimal always-on Postgres + Node service has hosting cost; pick a
-  cheap/free tier (e.g. a small managed Postgres + a low-cost Node host) when Phase 3 starts.
-- **Scope creep:** the phase boundaries above exist specifically to prevent building PvP/backend
-  infrastructure before the core single-player loop is proven fun. Resist starting Phase 3+ work
-  early even if it's tempting.
+Project-level risks (mechanics-level open questions live in design doc §20 — don't duplicate them
+here, go there):
+- **Migration cost from the old code:** `Simulation`/`ShopEconomy` implement a materially
+  different combat model (5-slot turn-based vs. 2-slot Step-based). Phase 0's rework is a real
+  rewrite of the sim core, not a refactor — budget for it as such.
+- **Determinism across platforms:** same risk as before — confirm Unity's float math is
+  consistent enough across target devices for battle replays to match a future server-computed
+  result. The design doc's discrete-Step model (vs. continuous real-time) is actually friendlier
+  to this than the old model was (design doc §10.5).
+- **Content balance:** 183 species, all-placeholder stats, no abilities yet — this is a large
+  tuning surface. Don't try to hand-balance all 183 before Phase 0's exit criteria; balance the
+  first slice, ship it, iterate.
+- **Backend cost:** unchanged from before — pick a cheap/free tier when Phase 3 starts.
+- **Scope creep:** the phase boundaries exist specifically to prevent building PvP/backend
+  infrastructure before the core solo loop is proven fun. Resist starting Phase 3+ work early.
 
 ## 11. Next Steps
 
-Once this plan is approved:
-1. Scaffold `/client` Unity project and `/docs` with `battle-sim-spec.md` (first real design doc:
-   precise trigger ordering, tie-breaking rules, stat formulas).
-2. Define the first ~5 creatures and their abilities as a concrete worked example before writing
-   the generic ability system, so the system is designed against real cases, not guesses.
-3. Set up GitHub Actions CI skeleton.
+Phase 0 is done (sim rework, curated content, golden fixtures, and the playable Forest Location —
+see the Phase 0 status note in §6). Next up is Phase 1's full run loop:
+
+1. Character creation: cosmetic pick, starter mon, 3-secondary-mon choice (design doc §3) — replaces
+   `RunBootstrapper`'s currently-fixed Charmander/Squirtle starting pair.
+2. Team Management reordering (drag/reorder the Lead/Support line-up and Box) — Phase 0's Team tab
+   is read-only.
+3. The real drag-and-drop catching system (Step-boundary ball throws, HP%/status-based odds,
+   design doc §12.1) in place of the "pick 1 from defeated" stub.
+4. Gym/Badge node: a mandatory boss node at the end of a Location's map, Line-Up menu (scout the
+   opponent, reorder before the fight), badge-as-relic reward.
+5. Branching node-map paths (Slay the Spire style) in place of Forest's current linear sequence,
+   plus Event/PvP node types.
+6. Evolution (via PokeAPI evolution chains), the real Trailblazer minigame, Pokémon Center
+   adoption, and a real Shop economy.
+7. Continue expanding curated content past the first 13 species via the content-import pipeline
+   (§8) as more Locations/roster breadth are needed.
