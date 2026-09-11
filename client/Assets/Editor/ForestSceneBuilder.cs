@@ -110,15 +110,16 @@ namespace Pets.EditorTools
             ForceLayoutRebuild(pveOverlay, catchContainer);
             pveOverlay.gameObject.SetActive(false);
 
-            var campOverlay = CreatePanel(canvasRect, "CampOverlay", Theme.PanelBg, Vector2.zero, Vector2.one);
-            AddVerticalLayout(campOverlay);
-            AddPanelHeader(campOverlay, "Camp");
-            var campResultText = CreateText(campOverlay, "ResultText", string.Empty, Theme.FontSizeHeading, TextAnchor.MiddleCenter, 80);
-            var campContinueButton = CreateButton(campOverlay, "ContinueButton", "Continue", Theme.ButtonStyle.Primary);
-            var campController = campOverlay.gameObject.AddComponent<CampPanelController>();
-            SetField(campController, "resultText", campResultText);
-            ForceLayoutRebuild(campOverlay);
-            campOverlay.gameObject.SetActive(false);
+            // Camp is authored as a prefab (Assets/Prefabs/UI/CampOverlay.prefab, built by
+            // CampOverlayPrefabBuilder) rather than built inline like the other panels/overlays
+            // here — see that builder's doc comment for why. resultText's wiring and the Continue
+            // button's onClick listener already live on the prefab; `flow` is the only field this
+            // scene still has to set, since LocationFlowController is scene-only.
+            var campOverlayGO = (GameObject)PrefabUtility.InstantiatePrefab(
+                AssetDatabase.LoadAssetAtPath<GameObject>(CampOverlayPrefabBuilder.PrefabPath), canvasRect);
+            var campOverlay = campOverlayGO.GetComponent<RectTransform>();
+            var campController = campOverlayGO.GetComponent<CampPanelController>();
+            campOverlayGO.SetActive(false);
 
             var runOverOverlay = CreatePanel(canvasRect, "RunOverOverlay", Theme.PanelBg, Vector2.zero, Vector2.one);
             AddVerticalLayout(runOverOverlay);
@@ -159,7 +160,6 @@ namespace Pets.EditorTools
             UnityEventTools.AddIntPersistentListener(centerTabBtn.onClick, hub.ShowTab, 3);
             UnityEventTools.AddVoidPersistentListener(goButton.onClick, mapController.OnGoClicked);
             UnityEventTools.AddVoidPersistentListener(pveContinueButton.onClick, pveController.OnContinueClicked);
-            UnityEventTools.AddVoidPersistentListener(campContinueButton.onClick, campController.OnContinueClicked);
 
             // Covers everything still active (ResourceBar, TabBar, Content's four tab panels) —
             // see ForceLayoutRebuild's doc comment for why this is needed at all in a batchmode
