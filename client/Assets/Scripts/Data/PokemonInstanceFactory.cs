@@ -24,8 +24,34 @@ namespace Pets.Data
                     Speed = species.BaseSpeed
                 },
                 CurrentHP = species.BaseHealth,
+                ExpToNextLevel = BaseExpToNextLevel,
                 PassiveId = species.Passive != null ? species.Passive.Id : null,
                 ResolvedPassive = species.Passive != null ? ResolvePassive(species.Passive, stage) : null
+            };
+        }
+
+        /// <summary>Starting EXP threshold for a fresh Level 1 instance (Meta/ExperienceResolver
+        /// scales this up per level-up). No design-doc formula exists yet; a flat placeholder.</summary>
+        public const int BaseExpToNextLevel = 100;
+
+        /// <summary>Copies a persisted roster instance into a fresh-for-battle instance: same
+        /// identity/leveled stats, but with all battle-only transient state (HP, charge, status,
+        /// shields, buffs) reset, per line-up assembly (content-schema.md §8). Phase 0 has no
+        /// between-fight HP persistence, so every fight starts at full HP.</summary>
+        public static PokemonInstance ResetForBattle(PokemonInstance persisted)
+        {
+            return new PokemonInstance
+            {
+                InstanceId = persisted.InstanceId,
+                SpeciesId = persisted.SpeciesId,
+                Nickname = persisted.Nickname,
+                Level = persisted.Level,
+                Exp = persisted.Exp,
+                ExpToNextLevel = persisted.ExpToNextLevel,
+                CurrentStats = persisted.CurrentStats,
+                CurrentHP = persisted.CurrentStats.Health,
+                PassiveId = persisted.PassiveId,
+                ResolvedPassive = persisted.ResolvedPassive
             };
         }
 

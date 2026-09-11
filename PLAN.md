@@ -153,18 +153,37 @@ Phases are milestones, not deadlines — move on only when the current phase is 
 end-to-end. Numbering resets from the old plan (see ADR 0001) since the actual combat/content
 code needs reworking to match the new Lead/Support model before any of it counts as "done" here.
 
-**Status (as of 2026-09-10):** Design pivot accepted (ADR 0001). Docs (this file, CLAUDE.md,
-README.md, battle-sim-spec.md, content-schema.md) describe the new direction. **Phase 0 is
-partially built:** `client/Assets/Scripts/Simulation` has been fully reworked to the Lead/Support/
-Step model (battle-sim-spec.md), with EditMode unit tests (`StepSimulatorTests.cs`) and golden
-fixtures in `/shared/fixtures` (`GoldenFixtureTests.cs`). Content for 13 curated species (with
-hand-authored passives) has been authored under `client/Assets/Content` and is exercised by
-`PokemonContentTests.cs`, which runs a full PvE-style fight against real content end to end. The
-old 5-slot-model code (`Simulation`, `Data`, `Gameplay`, `UI`, `Editor` content-seeding) has been
-deleted rather than kept alongside, per the working decision to rebuild rather than preserve it.
-**Not yet built:** the Forest Location itself (node-map, PvE/Camp/Shop screens), stubbed
-catching/Trailblazer, and any Gameplay/save layer — this needs real Unity-editor scene/prefab work
-that wasn't attempted headlessly. See the exit criteria below for what's left.
+**Status (as of 2026-09-11):** Design pivot accepted (ADR 0001). Docs (this file, CLAUDE.md,
+README.md, battle-sim-spec.md, content-schema.md) describe the new direction. **Phase 0's exit
+criteria are met and the Forest Location is playable end to end:**
+- `client/Assets/Scripts/Simulation` implements the Lead/Support/Step model (battle-sim-spec.md),
+  with EditMode unit tests (`StepSimulatorTests.cs`) and golden fixtures in `/shared/fixtures`
+  (`GoldenFixtureTests.cs`).
+- Content for 13 curated species (with hand-authored passives) lives under `client/Assets/Content`
+  and is exercised by `PokemonContentTests.cs` (a full PvE-style fight against real content, start
+  to end).
+- `client/Assets/Scripts/Meta` (plain C#, EditMode-tested via `RunMetaTests.cs`) implements
+  `RunState`, a linear Forest node sequence (`ForestLocationFactory`: PvE/PvE/Camp/PvE/PvE — no
+  branching or Gym node yet, both Phase 1), seeded wild-encounter generation, EXP/level-up, Camp's
+  EXP+buff grant, and the stubbed "pick 1 from defeated" catch.
+- `client/Assets/Scripts/Gameplay` implements the Location Hub (Team/Map/Shop/Center tabs) and the
+  PvE Clash/Camp overlay screens as MonoBehaviours over the Meta layer. `client/Assets/Scenes/
+  Game.unity` is a real, working scene (Canvas/EventSystem + all panels and button wiring) — it's
+  generated from code by `Assets/Editor/ForestSceneBuilder.cs` (`Pets > Build Forest Scene`) rather
+  than hand-edited, so re-run that menu item after changing any Gameplay controller's serialized
+  fields instead of patching the scene by hand. `ForestScenePlayModeTests.cs` drives the actual
+  saved scene (clicking real buttons via `Transform.Find` + `Button.onClick.Invoke()`) to verify
+  the wiring itself, not just the underlying logic.
+- Shop and Pokémon Center tabs are static placeholder text — their real functionality is Phase 1+
+  (design doc §13, §12.2). Trailblazer isn't a screen at all yet (stubbed as instant/skipped, per
+  Phase 0's scope) — there's exactly one Location, so there's nothing to travel between yet.
+- The old 5-slot-model code (`Simulation`, `Data`, `Gameplay`, `UI`, `Editor` content-seeding) was
+  deleted rather than kept alongside, per the working decision to rebuild rather than preserve it.
+
+**Not yet built (Phase 1):** starter selection/character creation, Team line-up reordering, the
+Gym/Badge node and mandatory-Gym map structure, branching node-map paths, the real drag-and-drop
+catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
+economy, and any save/load layer.
 
 **Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)**
 - Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step
@@ -271,12 +290,20 @@ here, go there):
 
 ## 11. Next Steps
 
-1. Rework `client/Assets/Scripts/Simulation` to match `docs/battle-sim-spec.md` (Lead/Support,
-   Steps, charge meters) — Phase 0's main task.
-2. Stand up the content-import pipeline (§8) for the first ~10–15 species from
-   `docs/pokemon_stats_unique.xlsx`, with hand-authored passives as a concrete worked example
-   before touching the rest of the roster.
-3. Build the one hand-authored Location (Phase 0) end to end: PvE + Camp + Shop nodes, stubbed
-   catching, stubbed Trailblazer.
-4. Update `/shared/fixtures` with golden Step-log cases against the reworked sim before calling
-   Phase 0 done.
+Phase 0 is done (sim rework, curated content, golden fixtures, and the playable Forest Location —
+see the Phase 0 status note in §6). Next up is Phase 1's full run loop:
+
+1. Character creation: cosmetic pick, starter mon, 3-secondary-mon choice (design doc §3) — replaces
+   `RunBootstrapper`'s currently-fixed Charmander/Squirtle starting pair.
+2. Team Management reordering (drag/reorder the Lead/Support line-up and Box) — Phase 0's Team tab
+   is read-only.
+3. The real drag-and-drop catching system (Step-boundary ball throws, HP%/status-based odds,
+   design doc §12.1) in place of the "pick 1 from defeated" stub.
+4. Gym/Badge node: a mandatory boss node at the end of a Location's map, Line-Up menu (scout the
+   opponent, reorder before the fight), badge-as-relic reward.
+5. Branching node-map paths (Slay the Spire style) in place of Forest's current linear sequence,
+   plus Event/PvP node types.
+6. Evolution (via PokeAPI evolution chains), the real Trailblazer minigame, Pokémon Center
+   adoption, and a real Shop economy.
+7. Continue expanding curated content past the first 13 species via the content-import pipeline
+   (§8) as more Locations/roster breadth are needed.
