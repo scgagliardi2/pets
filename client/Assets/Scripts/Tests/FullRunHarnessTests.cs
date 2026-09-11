@@ -1,30 +1,31 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using Pets.Data;
-using Pets.Gameplay;
+using Pets.Meta;
 using Pets.Simulation;
 using UnityEditor;
 using UnityEngine;
 
-// Deliberately no blanket `using System;` — this file uses both System.Random (for shop-policy
-// decisions) and UnityEngine.Random (to seed a reproducible run per docs/testing-harness-plan.md
-// §2.5), and a bare `Random` would be ambiguous between them if both namespaces were in scope.
-
 namespace Pets.Tests
 {
     /// <summary>
-    /// Plays complete runs (shop -> battle -> shop -> ... -> win/loss) against the real starter
-    /// content, using scripted shop-AI policies instead of a human, across many seeds. Catches
-    /// what isolated unit tests can't: crashes, softlocks, or invalid state that only show up from
-    /// a specific sequence of shop decisions interacting with the real roster. See
-    /// docs/testing-harness-plan.md §2.
+    /// Plays complete runs (Map -> PvE/Camp node -> ... -> forest cleared or out of Morale)
+    /// against the real curated content, across many seeds. Catches what isolated unit tests
+    /// can't: crashes or invalid state that only show up from a specific sequence of node
+    /// outcomes interacting with the real roster. See docs/testing-harness-plan.md §2.
     ///
-    /// Drives ShopEconomy/TeamStateConverter/BattleSimulator directly rather than through
-    /// RunController — the MonoBehaviour/SaveSystem/event wiring on top of that state machine
-    /// already has PlayMode coverage in RunControllerPlayModeTests.cs, so this harness only needs
-    /// the underlying logic.
+    /// This is a direct, UI-free port of the real per-node resolution logic in
+    /// Gameplay/PvEClashController.cs (PvE) and Gameplay/LocationFlowController.cs (node
+    /// advancement/Morale/terminal-state handling) — the scene wiring itself already has PlayMode
+    /// coverage in ForestScenePlayModeTests.cs, so this harness only needs the underlying logic.
+    ///
+    /// Phase 0's Forest is a fixed, linear 5-node sequence with no shop/reordering yet (PLAN.md
+    /// §6), so the only real per-run player decision right now is whether to catch a defeated wild
+    /// mon after a PvE win — hence two catch policies rather than the richer buy/sell/reroll
+    /// policy set an economy-driven harness would need once Phase 1 lands.
     /// </summary>
     public class FullRunHarnessTests
     {
@@ -32,37 +33,41 @@ namespace Pets.Tests
         // PETS_HARNESS_SEED_COUNT env var for a larger sweep (see the scheduled CI job in
         // .github/workflows/ci.yml, which runs this with a much higher count).
         private static int SeedCount =>
-            int.TryParse(System.Environment.GetEnvironmentVariable("PETS_HARNESS_SEED_COUNT"), out var n) && n > 0
+            int.TryParse(Environment.GetEnvironmentVariable("PETS_HARNESS_SEED_COUNT"), out var n) && n > 0
                 ? n
                 : 50;
 
-        private const int RoundSafetyCap = 200;
+        // Generous relative to what Phase 0's Forest actually needs: at most 4 PvE nodes to win
+        // plus at most 3 losses total (Morale starts at 3 and never recovers in Phase 0) plus 1
+        // Camp node. This cap exists as a defensive backstop against a hypothetical bug that stops
+        // Morale or node advancement from ever terminating, not because real play gets close to it.
+        private const int NodeAttemptSafetyCap = 50;
 
-        private CreatureLibrary library;
-        private BotRosterLibrary botRoster;
-        private ShopConfig config;
+        private PokemonSpeciesLibrary library;
 
         [SetUp]
         public void SetUp()
         {
-            library = AssetDatabase.LoadAssetAtPath<CreatureLibrary>("Assets/Content/CreatureLibrary.asset");
-            botRoster = AssetDatabase.LoadAssetAtPath<BotRosterLibrary>("Assets/Content/BotRosterLibrary.asset");
-            config = AssetDatabase.LoadAssetAtPath<ShopConfig>("Assets/Content/ShopConfig.asset");
-
-            Assume.That(library, Is.Not.Null, "Run Pets/Generate Starter Content first.");
-            Assume.That(botRoster, Is.Not.Null, "Run Pets/Generate Starter Content first.");
-            Assume.That(config, Is.Not.Null, "Run Pets/Generate Starter Content first.");
+            var guids = AssetDatabase.FindAssets("t:PokemonSpeciesLibrary", new[] { "Assets/Content" });
+            Assume.That(guids.Length, Is.GreaterThan(0), "PokemonSpeciesLibrary.asset not found under Assets/Content.");
+            library = AssetDatabase.LoadAssetAtPath<PokemonSpeciesLibrary>(AssetDatabase.GUIDToAssetPath(guids[0]));
+            Assume.That(library.AllSpecies.Count, Is.GreaterThanOrEqualTo(2),
+                "need at least 2 curated species for a starting Lead/Support pair.");
         }
 
-        private static IEnumerable<string> PolicyNames()
+        [Test]
+        public void FullRun_ManySeeds_CatchingEveryDefeatedMon_NeverThrowsOrProducesInvalidState()
         {
-            yield return "Greedy";
-            yield return "Upgrade";
-            yield return "Random";
+            RunSweep("CatchAll", catchAll: true);
         }
 
-        [TestCaseSource(nameof(PolicyNames))]
-        public void FullRun_ManySeeds_NeverThrowsOrProducesInvalidState(string policyName)
+        [Test]
+        public void FullRun_ManySeeds_NeverCatching_NeverThrowsOrProducesInvalidState()
+        {
+            RunSweep("CatchNone", catchAll: false);
+        }
+
+        private void RunSweep(string policyName, bool catchAll)
         {
             int seedCount = SeedCount;
             var failures = new List<string>();
@@ -72,9 +77,9 @@ namespace Pets.Tests
             {
                 try
                 {
-                    metrics.Add(PlayOneRun(policyName, seed));
+                    metrics.Add(PlayOneRun(policyName, seed, catchAll));
                 }
-                catch (System.Exception e)
+                catch (Exception e)
                 {
                     failures.Add($"seed {seed}: {e.GetType().Name}: {e.Message}");
                 }
@@ -88,210 +93,125 @@ namespace Pets.Tests
             }
         }
 
-        private RunMetrics PlayOneRun(string policyName, int seed)
+        private RunMetrics PlayOneRun(string policyName, int seed, bool catchAll)
         {
-            // Seeds UnityEngine.Random, which both ShopEconomy's offer/reroll rolls and the
-            // battle-seed draw below consume, so an entire run is reproducible from just its
-            // seed — see docs/testing-harness-plan.md §2.5 for why this is enough without
-            // touching production code.
-            UnityEngine.Random.InitState(seed);
-            var policyRng = new System.Random(seed);
+            // Every RNG draw in this flow (EncounterGenerator, PrecomputedStepLogRunner) takes an
+            // explicit seed rather than touching UnityEngine.Random global state, so — unlike the
+            // pre-pivot harness — no global seeding is needed here for a run to be reproducible
+            // from just its seed.
+            var lead = library.AllSpecies[0];
+            var support = library.AllSpecies[1];
 
-            var state = new RunState();
-            ShopEconomy.StartRun(state, config, library);
+            var state = new RunState
+            {
+                RunSeed = seed,
+                Nodes = ForestLocationFactory.BuildNodes(),
+                LineUp =
+                {
+                    PokemonInstanceFactory.Create(lead, "player-lead"),
+                    PokemonInstanceFactory.Create(support, "player-support")
+                }
+            };
             AssertInvariants(state);
 
-            int battlesFought = 0;
+            int pveWins = 0;
+            int pveLosses = 0;
 
-            for (int roundsPlayed = 0; roundsPlayed < RoundSafetyCap; roundsPlayed++)
+            for (int attempt = 0; attempt < NodeAttemptSafetyCap; attempt++)
             {
-                Assert.AreEqual(GamePhase.Shop, state.Phase, "expected to be in the shop phase at the top of the loop");
-
-                PlayShopTurn(policyName, state, policyRng);
-                AssertInvariants(state);
-
-                var botTeam = botRoster.GetByRound(state.Round);
-                if (botTeam == null)
+                if (state.IsRunOver || (state.CurrentNode.Cleared && !state.HasNextNode))
                 {
-                    // Survived the whole scripted roster.
-                    return new RunMetrics(policyName, seed, state.Round, won: true, battlesFought);
+                    break;
                 }
 
-                var playerSlots = state.Board.ConvertAll(c => (c.Definition, c.Level, c.BonusAttack, c.BonusHealth));
-                var teamA = TeamStateConverter.ToTeamState(playerSlots, "player");
-                var teamB = TeamStateConverter.ToTeamState(botTeam, "bot");
-
-                int battleSeed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
-                var log = BattleSimulator.Run(teamA, teamB, battleSeed);
-                battlesFought++;
-
-                bool won = log.Outcome == BattleOutcome.TeamAWins;
-                if (!won)
+                var node = state.CurrentNode;
+                if (node.Type == NodeType.PvE)
                 {
-                    state.Lives -= 1;
+                    if (ResolvePvENode(state, catchAll))
+                    {
+                        pveWins++;
+                    }
+                    else
+                    {
+                        pveLosses++;
+                    }
+                }
+                else
+                {
+                    CampResolver.Resolve(state);
+                    state.AdvanceToNextNode();
                 }
 
-                if (state.Lives <= 0)
-                {
-                    return new RunMetrics(policyName, seed, state.Round, won: false, battlesFought);
-                }
-
-                state.Round += 1;
-                ShopEconomy.StartShopPhase(state, config, library);
                 AssertInvariants(state);
             }
 
-            throw new System.InvalidOperationException($"run did not terminate within {RoundSafetyCap} rounds");
+            bool clearedForest = !state.IsRunOver && state.CurrentNode.Cleared && !state.HasNextNode;
+            if (!clearedForest && !state.IsRunOver)
+            {
+                throw new InvalidOperationException($"run did not reach a terminal state within {NodeAttemptSafetyCap} node attempts");
+            }
+
+            return new RunMetrics(
+                policyName, seed, clearedForest ? "ClearedForest" : "OutOfMorale",
+                state.Nodes.Count(n => n.Cleared), pveWins, pveLosses, state.Box.Count, state.Morale);
+        }
+
+        /// <summary>Direct port of PvEClashController.Begin/Resolve + the node-advancement half of
+        /// LocationFlowController.OnPvEResolved, without the UI/coroutine playback. Returns
+        /// whether the player won.</summary>
+        private bool ResolvePvENode(RunState state, bool catchAll)
+        {
+            var playerLineUp = state.LineUp.Select(PokemonInstanceFactory.ResetForBattle).ToList();
+            if (state.NextBattleAttackBonusPercent > 0f)
+            {
+                foreach (var mon in playerLineUp)
+                {
+                    mon.CurrentStats.Attack = Mathf.RoundToInt(mon.CurrentStats.Attack * (1f + state.NextBattleAttackBonusPercent));
+                }
+                state.NextBattleAttackBonusPercent = 0f;
+            }
+
+            int seed = state.RunSeed + state.CurrentNodeIndex;
+            var wildLineUp = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed, $"wild-{state.CurrentNodeIndex}");
+            var wildSnapshot = new List<PokemonInstance>(wildLineUp);
+
+            var log = PrecomputedStepLogRunner.Run(playerLineUp, wildLineUp, seed);
+            bool won = log.Outcome == BattleOutcome.SideAWins;
+
+            if (won)
+            {
+                if (catchAll)
+                {
+                    foreach (var defeated in CatchResolver.GetDefeated(wildSnapshot))
+                    {
+                        CatchResolver.Catch(state, defeated, library);
+                    }
+                }
+                state.AdvanceToNextNode();
+            }
+            else
+            {
+                // A lost PvE fight doesn't clear the node (LocationFlowController.OnPvEResolved) —
+                // the player retries the same encounter. Since nothing about the player's line-up
+                // or the wild encounter changes between retries in Phase 0 (no reordering, no
+                // shop, and the attack buff above is already consumed), a retry after a loss
+                // resolves identically and loses again, every time, until Morale runs out. That's
+                // a real property of the current design worth knowing, not a harness bug — see the
+                // PR notes.
+                state.Morale--;
+            }
+
+            return won;
         }
 
         private void AssertInvariants(RunState state)
         {
-            Assert.GreaterOrEqual(state.Gold, 0, "gold went negative");
-            Assert.GreaterOrEqual(state.Lives, 0, "lives went negative");
-            Assert.LessOrEqual(state.Board.Count, config.BoardMaxSize, "board exceeded max size");
-            foreach (var creature in state.Board)
+            Assert.GreaterOrEqual(state.Morale, 0, "morale went negative");
+            Assert.AreEqual(2, state.LineUp.Count, "line-up should always have exactly a Lead and Support in Phase 0");
+            Assert.IsTrue(state.CurrentNodeIndex >= 0 && state.CurrentNodeIndex < state.Nodes.Count, "current node index out of range");
+            foreach (var mon in state.LineUp.Concat(state.Box))
             {
-                Assert.IsNotNull(creature.Definition, "board creature has a null definition");
-            }
-        }
-
-        private void PlayShopTurn(string policyName, RunState state, System.Random policyRng)
-        {
-            switch (policyName)
-            {
-                case "Greedy":
-                    PlayShopTurnGreedy(state);
-                    break;
-                case "Upgrade":
-                    PlayShopTurnUpgrade(state);
-                    break;
-                case "Random":
-                    PlayShopTurnRandom(state, policyRng);
-                    break;
-                default:
-                    throw new System.ArgumentOutOfRangeException(nameof(policyName), policyName, "unknown shop policy");
-            }
-        }
-
-        /// <summary>Repeatedly buys the cheapest affordable offer into an open board slot until
-        /// gold or board space runs out. Never sells or rerolls.</summary>
-        private void PlayShopTurnGreedy(RunState state)
-        {
-            while (true)
-            {
-                int cheapestIndex = -1;
-                int cheapestCost = int.MaxValue;
-                for (int i = 0; i < state.ShopSlots.Count; i++)
-                {
-                    var offer = state.ShopSlots[i].Offer;
-                    if (offer == null)
-                    {
-                        continue;
-                    }
-                    int cost = config.BuyCost(offer.Tier);
-                    if (cost < cheapestCost)
-                    {
-                        cheapestCost = cost;
-                        cheapestIndex = i;
-                    }
-                }
-
-                if (cheapestIndex < 0 || state.Board.Count >= config.BoardMaxSize || state.Gold < cheapestCost)
-                {
-                    break;
-                }
-
-                ShopEconomy.Buy(state, config, cheapestIndex);
-            }
-        }
-
-        /// <summary>Prioritizes buying whatever completes a 3-of-a-kind combine, falls back to
-        /// Greedy for the rest of its gold, then sells its weakest creature to make room for one
-        /// more buy if the board is full and it can still afford something. A second, distinct
-        /// decision pattern from Greedy/Random — not meant to be "good" play.</summary>
-        private void PlayShopTurnUpgrade(RunState state)
-        {
-            bool boughtForCombine;
-            do
-            {
-                boughtForCombine = false;
-                for (int i = 0; i < state.ShopSlots.Count; i++)
-                {
-                    var offer = state.ShopSlots[i].Offer;
-                    if (offer == null || state.Gold < config.BuyCost(offer.Tier))
-                    {
-                        continue;
-                    }
-                    bool completesCombine = state.Board.Count(c => c.Level == 1 && c.Definition.Id == offer.Id) == 2;
-                    if (!completesCombine)
-                    {
-                        continue;
-                    }
-                    if (ShopEconomy.Buy(state, config, i))
-                    {
-                        boughtForCombine = true;
-                        break;
-                    }
-                }
-            } while (boughtForCombine);
-
-            PlayShopTurnGreedy(state);
-
-            bool boardFull = state.Board.Count >= config.BoardMaxSize;
-            bool canAffordSomething = state.ShopSlots.Any(s => s.Offer != null && state.Gold >= config.BuyCost(s.Offer.Tier));
-            if (boardFull && canAffordSomething && state.Board.Count > 0)
-            {
-                int weakestIndex = 0;
-                int weakestScore = int.MaxValue;
-                for (int i = 0; i < state.Board.Count; i++)
-                {
-                    var def = state.Board[i].Definition;
-                    int score = def.BaseAttack + def.BaseHealth;
-                    if (score < weakestScore)
-                    {
-                        weakestScore = score;
-                        weakestIndex = i;
-                    }
-                }
-                ShopEconomy.Sell(state, config, weakestIndex);
-                PlayShopTurnGreedy(state);
-            }
-        }
-
-        /// <summary>Picks a uniformly random legal-ish action (buy/sell/reroll/freeze/stop) up to
-        /// a capped number of times per turn. Doesn't play sensibly on purpose — the point is to
-        /// exercise sequences a human wouldn't choose.</summary>
-        private void PlayShopTurnRandom(RunState state, System.Random rng)
-        {
-            const int maxActionsPerTurn = 20;
-            for (int i = 0; i < maxActionsPerTurn; i++)
-            {
-                switch (rng.Next(5))
-                {
-                    case 0:
-                        if (state.ShopSlots.Count > 0)
-                        {
-                            ShopEconomy.Buy(state, config, rng.Next(state.ShopSlots.Count));
-                        }
-                        break;
-                    case 1:
-                        if (state.Board.Count > 0)
-                        {
-                            ShopEconomy.Sell(state, config, rng.Next(state.Board.Count));
-                        }
-                        break;
-                    case 2:
-                        ShopEconomy.Reroll(state, config, library);
-                        break;
-                    case 3:
-                        if (state.ShopSlots.Count > 0)
-                        {
-                            ShopEconomy.ToggleFreeze(state, rng.Next(state.ShopSlots.Count));
-                        }
-                        break;
-                    case 4:
-                        return;
-                }
+                Assert.IsNotNull(library.GetById(mon.SpeciesId), $"{mon.InstanceId} references an unresolvable species id {mon.SpeciesId}");
             }
         }
 
@@ -303,26 +223,32 @@ namespace Pets.Tests
             File.WriteAllText(path, JsonUtility.ToJson(new MetricsFile { runs = metrics }, true));
         }
 
-        [System.Serializable]
+        [Serializable]
         private sealed class RunMetrics
         {
             public string policy;
             public int seed;
-            public int roundsReached;
-            public bool won;
-            public int battlesFought;
+            public string outcome;
+            public int nodesCleared;
+            public int pveWins;
+            public int pveLosses;
+            public int catches;
+            public int finalMorale;
 
-            public RunMetrics(string policy, int seed, int roundsReached, bool won, int battlesFought)
+            public RunMetrics(string policy, int seed, string outcome, int nodesCleared, int pveWins, int pveLosses, int catches, int finalMorale)
             {
                 this.policy = policy;
                 this.seed = seed;
-                this.roundsReached = roundsReached;
-                this.won = won;
-                this.battlesFought = battlesFought;
+                this.outcome = outcome;
+                this.nodesCleared = nodesCleared;
+                this.pveWins = pveWins;
+                this.pveLosses = pveLosses;
+                this.catches = catches;
+                this.finalMorale = finalMorale;
             }
         }
 
-        [System.Serializable]
+        [Serializable]
         private sealed class MetricsFile
         {
             public List<RunMetrics> runs = new List<RunMetrics>();
