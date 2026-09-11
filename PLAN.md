@@ -197,14 +197,21 @@ criteria are met and the Forest Location is playable end to end:**
   Attack/Speed/Health sort toggles (click to sort high-to-low, click again for low-to-high) above
   the stat grid, applying to both the Starter and Secondary picks.
 - A branching Region/Location node-map generator exists (`Meta/RegionMapGenerator.cs`, covered by
-  `RegionMapGeneratorTests.cs`) and renders into a scrollable preview scene
-  (`Assets/Scenes/RegionMap.unity`, `RegionMapController.cs`/`RegionMapSceneBuilder.cs`): random
-  PvE/Event/PvP/Camp nodes branching layer to layer, always converging on one mandatory Gym node,
-  over a generic solid-color background. **This is a visual prototype only** — it is not wired into
-  the Forest run loop, nodes aren't clickable, and Forest's own map is still the separate, actually-
-  playable linear PvE/PvE/Camp/PvE/PvE sequence from `ForestLocationFactory`. Reconciling the two
-  (making Forest's map an instance of this branching generator, with real per-node resolution) is
-  the next Phase 1 step in this area.
+  `RegionMapGeneratorTests.cs`) and is walkable: the map opens on a fixed 3 options
+  (`RegionMapGenerator.StartingOptionCount`), branches through 5 choice layers
+  (`ChoiceLayerCount`), and always funnels into one mandatory Gym node — with no dead ends, no
+  unreachable nodes, and no crossing edges (`Meta/RegionMapTraversal.cs`, covered by
+  `RegionMapTraversalTests.cs`, models the walk itself: current node, visited path, and which next
+  nodes are legal). `Assets/Scenes/RegionMap.unity`
+  (`RegionMapController.cs`/`RegionMapSceneBuilder.cs`) renders it as a scrollable, bottom-anchored
+  map over a placeholder solid-color background, with a player token that slides between nodes on
+  click, only the currently-reachable nodes clickable, the walked path highlighted, and a "New
+  Map" button to re-roll — covered end to end by `RegionMapScenePlayModeTests.cs` (clicking real
+  node Buttons, walking start-to-Gym). **Still a standalone prototype** — it is not wired into the
+  Forest run loop (arriving at a node doesn't start a fight/event/camp yet), and Forest's own map
+  is still the separate, actually-playable linear PvE/PvE/Camp/PvE/PvE sequence from
+  `ForestLocationFactory`. Reconciling the two (making Forest's map an instance of this branching
+  generator, with real per-node resolution) is the next Phase 1 step in this area.
 - Three scene builders now share `Assets/Editor/SceneBuilderUtils.cs` for uGUI construction
   (camera/EventSystem/canvas/panel/text/button/scroll-view helpers) rather than duplicating that
   code per scene.
