@@ -1,0 +1,32 @@
+{
+  "seed": 1,
+  "steps": 3,
+  "lineUpA": [
+    {
+      "instanceId": "a-lead",
+      "attack": 0,
+      "health": 999,
+      "speed": 100,
+      "passive": {
+        "id": "test-damage-reduction-self",
+        "effects": [{ "type": "DamageReduction", "target": "Self", "amount": 3 }]
+      }
+    }
+  ],
+  "lineUpB": [
+    {
+      "instanceId": "b-lead",
+      "attack": 5,
+      "health": 999,
+      "speed": 100,
+      "passive": {
+        "id": "test-poison-enemy",
+        "effects": [{ "type": "ApplyStatus", "target": "EnemyLead", "amount": 2, "status": "Poisoned" }]
+      }
+    }
+  ],
+  "expectedState": [
+    { "instanceId": "a-lead", "currentHP": 986, "shield": 0, "charge": 0, "status": "Poisoned" },
+    { "instanceId": "b-lead", "currentHP": 999, "shield": 0, "charge": 0 }
+  ]
+}

@@ -154,10 +154,17 @@ end-to-end. Numbering resets from the old plan (see ADR 0001) since the actual c
 code needs reworking to match the new Lead/Support model before any of it counts as "done" here.
 
 **Status (as of 2026-09-10):** Design pivot accepted (ADR 0001). Docs (this file, CLAUDE.md,
-README.md, battle-sim-spec.md, content-schema.md) now describe the new direction. **No code has
-been reworked to match it yet** — `client/Assets/Scripts/Simulation` and `Gameplay/ShopEconomy`
-still implement the old 5-slot/turn-based model and are not the source of truth. Phase 0 below is
-the next actual work.
+README.md, battle-sim-spec.md, content-schema.md) describe the new direction. **Phase 0 is
+partially built:** `client/Assets/Scripts/Simulation` has been fully reworked to the Lead/Support/
+Step model (battle-sim-spec.md), with EditMode unit tests (`StepSimulatorTests.cs`) and golden
+fixtures in `/shared/fixtures` (`GoldenFixtureTests.cs`). Content for 13 curated species (with
+hand-authored passives) has been authored under `client/Assets/Content` and is exercised by
+`PokemonContentTests.cs`, which runs a full PvE-style fight against real content end to end. The
+old 5-slot-model code (`Simulation`, `Data`, `Gameplay`, `UI`, `Editor` content-seeding) has been
+deleted rather than kept alongside, per the working decision to rebuild rather than preserve it.
+**Not yet built:** the Forest Location itself (node-map, PvE/Camp/Shop screens), stubbed
+catching/Trailblazer, and any Gameplay/save layer — this needs real Unity-editor scene/prefab work
+that wasn't attempted headlessly. See the exit criteria below for what's left.
 
 **Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)**
 - Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step

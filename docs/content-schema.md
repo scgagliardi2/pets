@@ -1,12 +1,20 @@
 # Content Schema
 
-Status: **Pivoted (2026-09-10) — spec rewritten, implementation not yet built.** See
+Status: **Partially implemented (2026-09-10) — Phase 0's slice built.** See
 `docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`. Documents the data shape for
 species/passives/items/team-synergy/locations (PLAN.md §8), kept in sync with the actual Unity
-ScriptableObject fields once they exist (`client/Assets/Scripts/Data`) and their JSON export
-format. The old `Data/` code (`CreatureDefinition`, `AbilityDefinition`, `BotTeamDefinition`
-etc.) implements a different game (see ADR 0001) and is not the basis for any of this — this is a
-fresh schema, not a migration of the old one.
+ScriptableObject fields (`client/Assets/Scripts/Data`) and their JSON export format. §2-§3 and §8
+are built and content-authored for 13 curated species (`client/Assets/Content`); §6 (team synergy)
+and §7 (items) are Phase 1+ and not yet implemented; §9 (Location/Gym content) is Phase 1+/2 and
+not yet implemented. The old `Data/` code (`CreatureDefinition`, `AbilityDefinition`,
+`BotTeamDefinition` etc.) implemented a different game (see ADR 0001) and has been removed — this
+schema was never a migration of that one.
+
+**Implementation note:** to avoid a same-namespace name collision between the pure
+`Pets.Simulation.PassiveDefinition` (§3's resolved, battle-ready shape) and the authoring
+ScriptableObject, the ScriptableObjects below are named `PokemonSpeciesDefinitionAsset` and
+`PassiveDefinitionAsset` in code (`Pets.Data`) rather than the bare names used in this doc's
+prose — same fields, same intent, just disambiguated for the compiler.
 
 ## 1. Design principle
 

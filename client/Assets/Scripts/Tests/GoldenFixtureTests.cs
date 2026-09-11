@@ -9,23 +9,17 @@ using UnityEngine;
 namespace Pets.Tests
 {
     /// <summary>
-    /// Runs every JSON fixture under /shared/fixtures through BattleSimulator and checks outcome,
-    /// faint order, and final survivor stats — the behavioral contract a future server-side
-    /// reimplementation (Phase 4) must also satisfy, per PLAN.md §3 and shared/README.md.
+    /// Runs every JSON fixture under /shared/fixtures through the battle simulator — the
+    /// behavioral contract a future server-side reimplementation (PLAN.md §6 Phase 3) must also
+    /// satisfy. See shared/README.md for the fixture shape.
     ///
-    /// Fixture JSON shape:
-    /// {
-    ///   "seed": 1,
-    ///   "teamA": [ { "instanceId": "a1", "attack": 3, "health": 10, "abilities": [
-    ///       { "trigger": "OnFaint", "effects": [
-    ///           { "type": "DealDamage", "target": "RandomEnemy", "amount": 1 } ] } ] } ],
-    ///   "teamB": [ ... ],
-    ///   "expected": {
-    ///     "outcome": "TeamAWins",
-    ///     "faintOrder": ["b1"],
-    ///     "survivors": [ { "instanceId": "a1", "health": 2, "attack": 3 } ]
-    ///   }
-    /// }
+    /// Two fixture modes, selected by whether "steps" is present and non-zero:
+    ///   - Omitted/0: run PrecomputedStepLogRunner to completion and assert "expected"
+    ///     (outcome/faintOrder/survivors) — for scenarios about how a fight concludes.
+    ///   - N > 0: run exactly N raw AdvanceStep calls and assert "expectedState" (exact
+    ///     currentHP/shield/charge/status per named mon) — for scenarios about precise
+    ///     mid-battle mechanics (same-Step tie-breaking, status stacking, shield/reduction math)
+    ///     that a terminal outcome alone wouldn't pin down.
     /// </summary>
     public class GoldenFixtureTests
     {
@@ -46,79 +40,98 @@ namespace Pets.Tests
         }
 
         [TestCaseSource(nameof(FixturePaths))]
-        public void Fixture_MatchesExpectedOutcome(string path)
+        public void Fixture_MatchesExpectedBehavior(string path)
         {
             var fixture = JsonUtility.FromJson<FixtureFile>(File.ReadAllText(path));
             var name = Path.GetFileName(path);
 
-            var teamA = ToTeamState(fixture.teamA);
-            var teamB = ToTeamState(fixture.teamB);
+            var lineUpA = ToLineUp(fixture.lineUpA);
+            var lineUpB = ToLineUp(fixture.lineUpB);
 
-            var log = BattleSimulator.Run(teamA, teamB, fixture.seed);
+            if (fixture.steps > 0)
+            {
+                RunStepsAndAssertState(lineUpA, lineUpB, fixture, name);
+            }
+            else
+            {
+                RunToCompletionAndAssertOutcome(lineUpA, lineUpB, fixture, name);
+            }
+        }
+
+        private static void RunToCompletionAndAssertOutcome(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, FixtureFile fixture, string name)
+        {
+            var log = PrecomputedStepLogRunner.Run(lineUpA, lineUpB, fixture.seed);
 
             Assert.AreEqual(fixture.expected.outcome, log.Outcome.ToString(), $"outcome mismatch in {name}");
 
-            var actualFaintOrder = log.Events
-                .Where(e => e.Kind == BattleEventKind.Faint)
-                .Select(e => e.SourceInstanceId)
-                .ToList();
+            var actualFaintOrder = log.Events.Where(e => e.Kind == StepEventKind.Faint).Select(e => e.SourceInstanceId).ToList();
             CollectionAssert.AreEqual(fixture.expected.faintOrder, actualFaintOrder, $"faint order mismatch in {name}");
 
-            var allCreatures = teamA.Slots.Concat(teamB.Slots).ToList();
+            var allMons = lineUpA.Concat(lineUpB).ToList();
             foreach (var survivor in fixture.expected.survivors)
             {
-                var actual = allCreatures.FirstOrDefault(c => c.InstanceId == survivor.instanceId);
+                var actual = allMons.FirstOrDefault(m => m.InstanceId == survivor.instanceId);
                 Assert.IsNotNull(actual, $"expected survivor {survivor.instanceId} not found in {name}");
-                Assert.AreEqual(survivor.health, actual.Health, $"survivor {survivor.instanceId} health mismatch in {name}");
-                Assert.AreEqual(survivor.attack, actual.Attack, $"survivor {survivor.instanceId} attack mismatch in {name}");
+                Assert.AreEqual(survivor.currentHP, actual.CurrentHP, $"survivor {survivor.instanceId} HP mismatch in {name}");
             }
         }
 
-        private static TeamState ToTeamState(List<FixtureCreature> creatures)
+        private static void RunStepsAndAssertState(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, FixtureFile fixture, string name)
         {
-            var team = new TeamState();
-            foreach (var c in creatures)
+            var state = new BattleState { LineUpA = lineUpA, LineUpB = lineUpB };
+            var rng = new DeterministicRandom(fixture.seed);
+
+            for (int i = 0; i < fixture.steps; i++)
             {
-                team.Slots.Add(new CreatureState
-                {
-                    InstanceId = c.instanceId,
-                    TemplateId = c.instanceId,
-                    DisplayName = c.instanceId,
-                    Attack = c.attack,
-                    Health = c.health,
-                    MaxHealth = c.health,
-                    Level = 1,
-                    Abilities = c.abilities.Select(ToAbilityData).ToList(),
-                });
+                BattleSimulator.AdvanceStep(state, rng);
             }
-            return team;
+
+            var allMons = lineUpA.Concat(lineUpB).ToList();
+            foreach (var expected in fixture.expectedState)
+            {
+                var actual = allMons.FirstOrDefault(m => m.InstanceId == expected.instanceId);
+                Assert.IsNotNull(actual, $"expected mon {expected.instanceId} not found in {name}");
+                Assert.AreEqual(expected.currentHP, actual.CurrentHP, $"{expected.instanceId} currentHP mismatch in {name}");
+                Assert.AreEqual(expected.shield, actual.Shield, $"{expected.instanceId} shield mismatch in {name}");
+                Assert.AreEqual(expected.charge, actual.Charge, $"{expected.instanceId} charge mismatch in {name}");
+                var expectedStatus = string.IsNullOrEmpty(expected.status) ? (StatusType?)null : (StatusType)Enum.Parse(typeof(StatusType), expected.status);
+                Assert.AreEqual(expectedStatus, actual.Status, $"{expected.instanceId} status mismatch in {name}");
+            }
         }
 
-        private static AbilityData ToAbilityData(FixtureAbility a)
+        private static List<PokemonInstance> ToLineUp(List<FixtureMon> mons)
         {
-            return new AbilityData
+            return mons.Select(ToPokemonInstance).ToList();
+        }
+
+        private static PokemonInstance ToPokemonInstance(FixtureMon m)
+        {
+            return new PokemonInstance
             {
-                Trigger = (TriggerType)Enum.Parse(typeof(TriggerType), a.trigger),
-                Effects = a.effects.Select(ToEffectData).ToList(),
+                InstanceId = m.instanceId,
+                CurrentStats = new Stats { Attack = m.attack, Health = m.health, Speed = m.speed },
+                CurrentHP = m.health,
+                ResolvedPassive = m.passive == null || string.IsNullOrEmpty(m.passive.id) ? null : ToPassive(m.passive)
             };
         }
 
-        private static EffectData ToEffectData(FixtureEffect e)
+        private static PassiveDefinition ToPassive(FixturePassive p)
         {
-            return new EffectData
+            return new PassiveDefinition
+            {
+                Id = p.id,
+                Effects = p.effects.Select(ToEffect).ToList()
+            };
+        }
+
+        private static EffectDefinition ToEffect(FixtureEffect e)
+        {
+            return new EffectDefinition
             {
                 Type = (EffectType)Enum.Parse(typeof(EffectType), e.type),
-                Target = string.IsNullOrEmpty(e.target) ? default : (TargetSelector)Enum.Parse(typeof(TargetSelector), e.target),
+                Target = (TargetSelector)Enum.Parse(typeof(TargetSelector), e.target),
                 Amount = e.amount,
-                SummonTemplate = e.summonTemplate == null || string.IsNullOrEmpty(e.summonTemplate.id)
-                    ? null
-                    : new CreatureTemplate
-                    {
-                        Id = e.summonTemplate.id,
-                        DisplayName = e.summonTemplate.displayName,
-                        Attack = e.summonTemplate.attack,
-                        Health = e.summonTemplate.health,
-                    },
+                Status = string.IsNullOrEmpty(e.status) ? default : (StatusType)Enum.Parse(typeof(StatusType), e.status)
             };
         }
 
@@ -126,24 +139,27 @@ namespace Pets.Tests
         private class FixtureFile
         {
             public int seed;
-            public List<FixtureCreature> teamA = new List<FixtureCreature>();
-            public List<FixtureCreature> teamB = new List<FixtureCreature>();
-            public FixtureExpected expected = new FixtureExpected();
+            public List<FixtureMon> lineUpA = new List<FixtureMon>();
+            public List<FixtureMon> lineUpB = new List<FixtureMon>();
+            public int steps;
+            public FixtureExpectedOutcome expected = new FixtureExpectedOutcome();
+            public List<FixtureExpectedState> expectedState = new List<FixtureExpectedState>();
         }
 
         [Serializable]
-        private class FixtureCreature
+        private class FixtureMon
         {
             public string instanceId;
             public int attack;
             public int health;
-            public List<FixtureAbility> abilities = new List<FixtureAbility>();
+            public int speed;
+            public FixturePassive passive;
         }
 
         [Serializable]
-        private class FixtureAbility
+        private class FixturePassive
         {
-            public string trigger;
+            public string id;
             public List<FixtureEffect> effects = new List<FixtureEffect>();
         }
 
@@ -153,20 +169,11 @@ namespace Pets.Tests
             public string type;
             public string target;
             public int amount;
-            public FixtureSummonTemplate summonTemplate;
+            public string status;
         }
 
         [Serializable]
-        private class FixtureSummonTemplate
-        {
-            public string id;
-            public string displayName;
-            public int attack;
-            public int health;
-        }
-
-        [Serializable]
-        private class FixtureExpected
+        private class FixtureExpectedOutcome
         {
             public string outcome;
             public List<string> faintOrder = new List<string>();
@@ -177,8 +184,17 @@ namespace Pets.Tests
         private class FixtureSurvivor
         {
             public string instanceId;
-            public int health;
-            public int attack;
+            public int currentHP;
+        }
+
+        [Serializable]
+        private class FixtureExpectedState
+        {
+            public string instanceId;
+            public int currentHP;
+            public int shield;
+            public int charge;
+            public string status;
         }
     }
 }

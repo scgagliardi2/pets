@@ -1,0 +1,32 @@
+{
+  "seed": 1,
+  "steps": 1,
+  "lineUpA": [
+    {
+      "instanceId": "a-lead",
+      "attack": 1,
+      "health": 20,
+      "speed": 100,
+      "passive": {
+        "id": "test-shield-self",
+        "effects": [{ "type": "Shield", "target": "Self", "amount": 10 }]
+      }
+    }
+  ],
+  "lineUpB": [
+    {
+      "instanceId": "b-lead",
+      "attack": 1,
+      "health": 20,
+      "speed": 100,
+      "passive": {
+        "id": "test-damage-enemy",
+        "effects": [{ "type": "DealDamage", "target": "EnemyLead", "amount": 15 }]
+      }
+    }
+  ],
+  "expectedState": [
+    { "instanceId": "a-lead", "currentHP": 14, "shield": 0, "charge": 0 },
+    { "instanceId": "b-lead", "currentHP": 19, "shield": 0, "charge": 0 }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "seed": 1,
+  "lineUpA": [
+    {
+      "instanceId": "a-lead",
+      "attack": 4,
+      "health": 10,
+      "speed": 100,
+      "passive": {
+        "id": "test-chip-damage",
+        "effects": [{ "type": "DealDamage", "target": "EnemyLead", "amount": 2 }]
+      }
+    },
+    { "instanceId": "a-support", "attack": 3, "health": 8, "speed": 0 }
+  ],
+  "lineUpB": [
+    { "instanceId": "b-lead", "attack": 2, "health": 6, "speed": 0 },
+    { "instanceId": "b-support", "attack": 2, "health": 10, "speed": 0 }
+  ],
+  "expected": {
+    "outcome": "SideAWins",
+    "faintOrder": ["b-lead", "b-support"],
+    "survivors": [
+      { "instanceId": "a-lead", "currentHP": 4 },
+      { "instanceId": "a-support", "currentHP": 8 }
+    ]
+  }
+}

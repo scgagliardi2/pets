@@ -1,6 +1,6 @@
 # Battle Simulation Spec
 
-Status: **Pivoted (2026-09-10) — spec rewritten, implementation not yet reworked to match.** See
+Status: **Implemented (2026-09-10) — Phase 0's battle-sim rework, matching this spec.** See
 `docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`. Source of truth for Step
 timing, charge-meter mechanics, and tie-breaking (PLAN.md §3, CLAUDE.md). This is the Unity/C#
 implementation spec for the combat model described narratively in
@@ -9,9 +9,10 @@ implementation spec for the combat model described narratively in
 code changes, not after.
 
 **This supersedes the previous version of this spec**, which documented a 5-slot, turn-based,
-`OnBattleStart`/`OnHurt`/`OnFaint`-triggered model. That model is not what's described below and
-is not what the design doc calls for. `client/Assets/Scripts/Simulation` currently implements the
-*old* model — reworking it to match this spec is PLAN.md Phase 0's main task.
+`OnBattleStart`/`OnHurt`/`OnFaint`-triggered model. `client/Assets/Scripts/Simulation` now
+implements the model below — see `client/Assets/Scripts/Tests/StepSimulatorTests.cs` and
+`GoldenFixtureTests.cs` for the test coverage backing it, and §12 below for a few
+implementation-driven clarifications this doc didn't originally spell out.
 
 ## 1. Scope
 
@@ -63,12 +64,25 @@ Within one Step, in this order:
    exchange begins. Its charge resets to `0` (not `charge - CHARGE_THRESHOLD` — no carry-over)
    and begins accruing again next Step. See §6 for ordering when more than one mon triggers in the
    same Step.
-4. **Faint check & promotion.** After passives resolve (since a passive can deal damage that
-   causes a faint), check every active mon's `currentHP`. Any mon at or below 0 is removed from
-   its line-up; its Support (if any) is promoted to Lead, and the next dormant mon is promoted to
-   Support. If both sides lose their Lead in the same Step (simultaneous KO with no Support to
-   promote on one or both sides), that's a draw for the mon-vs-mon exchange but doesn't
+3.5. **Status ticks.** Poisoned/Burned mons (§5) take their per-Step tick damage now, after
+   passives resolve and before the faint check — so a tick can itself cause a faint this Step, and
+   a status applied by a passive earlier in this same Step already ticks this Step too (not first
+   next Step). Paralyzed/Asleep have no tick damage here; their effect is entirely on charge
+   accrual (step 2).
+4. **Faint check & promotion.** After status ticks resolve (since a passive or a status tick can
+   deal damage that causes a faint), check every active mon's `currentHP`. Any mon at or below 0 is
+   removed from its line-up; its Support (if any) is promoted to Lead, and the next dormant mon is
+   promoted to Support. If both sides lose their Lead in the same Step (simultaneous KO with no
+   Support to promote on one or both sides), that's a draw for the mon-vs-mon exchange but doesn't
    necessarily end the battle — see §9 for battle-end conditions.
+
+   Steps 1-3.5 above all operate on whichever mons occupied Lead/Support when this Step began,
+   even if one of them drops to 0 HP partway through (from step 1's exchange, say) — nothing is
+   actually removed or stops acting until this step. The one exception is *targeting*: an effect
+   that selects a specific mon (§5 of content-schema.md) treats a 0-HP mon as an invalid target and
+   skips, even mid-Step. A mon whose own charge crosses the threshold this Step still triggers its
+   passive as normal regardless of its own HP, though — only target validity is HP-gated, not
+   trigger eligibility.
 
 The loop repeats until a battle-end condition (§9) is reached.
 
@@ -175,3 +189,38 @@ pass, not inside `AdvanceStep`.
 - Exact passive numbers per species — those are content (`docs/content-schema.md`), not sim
   logic. The sim only needs to know each passive's trigger (always: own charge meter fills) and
   its effect, both expressed through the vocabulary content authors use.
+
+## 12. Implementation clarifications (Phase 0)
+
+A few numeric/ordering choices this spec left implicit, pinned down during the Phase 0 rework —
+tune the *values* freely, but keep the *shape* of these rules in sync with
+`BattleSimulator.cs` if you change them:
+
+- **`stepDurationMs` is a small placeholder scalar, not literal milliseconds.** With the curated
+  roster's Speed stats in the ~20-130 range, `BattleConfig.DefaultStepDurationMs = 1` makes
+  `charge += speed * stepDurationMs` track Speed directly at a readable 2-5 Steps per trigger.
+  Literal real-world milliseconds (e.g. 1000) would cross `ChargeThreshold` every single Step
+  regardless of Speed — rescale this constant, not the formula, if pacing needs to change.
+- **The same-Step trigger set is fixed once per Step**, computed from charge values after step 2's
+  accrual. A passive that speeds up another mon's charge rate (`ModifyChargeRate`) can't cause
+  that mon to *also* trigger later in the same Step it was sped up — the effect applies starting
+  next Step. `shared/fixtures/same-step-tiebreak-shield.json` locks in the tie-break order itself
+  (§6) with a fixture that would fail under the wrong order, not just a different outcome.
+- **Standing modifiers (`DamageReduction`, `BuffAttack`, `BuffSpeed`, `ModifyChargeRate`'s
+  multiplier, `Lifesteal`'s percent) accumulate across repeated triggers** of the same passive
+  over a long fight, the same way `BuffAttack`/`BuffSpeed` obviously do — each trigger adds
+  another increment, it doesn't refresh/overwrite a single value. `ApplyStatus` is the one
+  exception: re-applying a status (even the same one) resets its tick tracking (severity stacks
+  back to 1, tick damage reset to the new `amount`) rather than stacking with the previous
+  application — see the Poisoned note below.
+- **Damage pipeline order:** `DamageReductionFlat` (flat subtraction) applies first, then `Shield`
+  absorbs whatever remains, then the remainder hits `currentHP`. `Lifesteal` heals the attacker
+  off the amount that actually hit HP (post-reduction, post-shield), not the raw pre-mitigation
+  amount.
+- **Poisoned severity resets on re-application**, not on a fixed timer: applying `ApplyStatus`
+  with `Poisoned` (even to an already-Poisoned mon) sets its stack count back to 1 and its tick
+  damage to the new `amount`; stacks then increment by 1 after every tick from there. Burned never
+  stacks — its tick damage is always just the last-applied `amount`.
+- **Status ticks bypass `Shield`/`DamageReductionFlat` and never proc `Lifesteal`** — they're
+  self-inflicted damage, not an attack, so none of the mitigation/response pipeline in the point
+  above applies to them.

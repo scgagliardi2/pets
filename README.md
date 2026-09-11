@@ -22,12 +22,13 @@ introduced later for accounts and async PvP.
 
 ## Status
 
-**Design pivot accepted, implementation not yet reworked to match it.** The docs above describe
-the current (Pokémon roguelite / Lead-Support) direction. The code currently checked in under
-`client/Assets/Scripts/Simulation` and `Gameplay/ShopEconomy` still implements an earlier,
-different design (a 5-slot turn-based shop-drafter) and is not the source of truth — see the ADR
-linked above. Phase 0 of the new plan (PLAN.md §6) — reworking the battle sim to the new
-Lead/Support/Step model and standing up one hand-authored Location — is the next actual work.
+**Phase 0 partially built.** The battle simulator (`client/Assets/Scripts/Simulation`) has been
+fully reworked to the Pokémon roguelite's Lead/Support/Step model, with EditMode tests and golden
+fixtures in `/shared/fixtures`, plus hand-authored content for 13 curated species
+(`client/Assets/Content`) exercised end-to-end by a real PvE-fight integration test. The old
+5-slot shop-drafter code has been removed rather than kept alongside. **Not yet built:** the
+actual Forest Location (node-map, PvE/Camp/Shop screens), stubbed catching/Trailblazer, and any
+save/run layer — see PLAN.md §6 for exactly what's left of Phase 0's exit criteria.
 
 ## Getting started
 
@@ -35,7 +36,8 @@ Lead/Support/Step model and standing up one hand-authored Location — is the ne
    version pinned in `client/ProjectSettings/ProjectVersion.txt`, including the iOS and Android
    Build Support modules.
 2. Open `/client` as a project through Unity Hub (not by opening the folder in a generic editor).
-3. Open `Assets/Scenes/Game.unity` and press Play — note this currently runs the *old*
-   shop-drafter prototype, not the Pokémon roguelite described above (see Status).
+3. There's no playable scene yet — `Assets/Scenes/Game.unity` and `SampleScene.unity` predate the
+   pivot and aren't wired to the new content/sim. Run the EditMode test suite (Window > General >
+   Test Runner > EditMode) to see the battle sim and content working.
 4. The `/server` backend (Node.js/TypeScript + PostgreSQL) isn't needed until PLAN.md §6 Phase
    3 — nothing to install for it yet.
