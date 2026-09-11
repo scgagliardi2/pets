@@ -100,21 +100,15 @@ namespace Pets.EditorTools
 
         public static Button CreateButton(Transform parent, string name, string label, Theme.ButtonStyle style = Theme.ButtonStyle.Primary, bool useSprite = false)
         {
+            if (useSprite)
+            {
+                return CreateSpriteButton(parent, name, label, style);
+            }
+
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var image = go.AddComponent<Image>();
-            if (useSprite)
-            {
-                // The 9-sliced button art carries its own color, so the Image tint stays white —
-                // Theme.ButtonBackground's flat colors are for the sprite-less look only.
-                image.sprite = Theme.ButtonSprite(style);
-                image.type = Image.Type.Sliced;
-                image.color = Color.white;
-            }
-            else
-            {
-                image.color = Theme.ButtonBackground(style);
-            }
+            image.color = Theme.ButtonBackground(style);
             var button = go.AddComponent<Button>();
             button.targetGraphic = image;
             var colors = button.colors;
@@ -135,9 +129,7 @@ namespace Pets.EditorTools
             // importing a second font asset.
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
-            // Every sprite-button background is colorful/dark enough to need light text,
-            // regardless of what Theme.ButtonText says for the flat-color Secondary look.
-            text.color = useSprite ? Theme.TextLight : Theme.ButtonText(style);
+            text.color = Theme.ButtonText(style);
             text.text = label;
             var textRect = textGO.GetComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
@@ -146,6 +138,56 @@ namespace Pets.EditorTools
             textRect.offsetMax = Vector2.zero;
 
             return button;
+        }
+
+        /// <summary>Instantiates the reusable Assets/Prefabs/UI/Button.prefab (Pets.UI.UiButton —
+        /// see UiPrefabBuilder) instead of hand-building the sprite/Text hierarchy inline, so the
+        /// 9-sliced "Monster Trails" button art lives in one editable asset rather than being
+        /// re-derived by every call site. LayoutElement/Button.colors are still applied here
+        /// (rather than baked into the prefab) so every existing caller — toolbar rows, anchored
+        /// confirm buttons — keeps the exact sizing/layout behavior it had before.</summary>
+        private static Button CreateSpriteButton(Transform parent, string name, string label, Theme.ButtonStyle style)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.ButtonPrefabPath);
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+            instance.name = name;
+
+            var uiButton = instance.GetComponent<UiButton>();
+            uiButton.Style = style;
+            uiButton.Text = label;
+
+            var button = instance.GetComponent<Button>();
+            var colors = button.colors;
+            colors.disabledColor = Theme.ButtonDisabledBg;
+            button.colors = colors;
+
+            var layoutElement = instance.AddComponent<LayoutElement>();
+            layoutElement.preferredHeight = 44;
+            layoutElement.flexibleWidth = 1;
+
+            return button;
+        }
+
+        /// <summary>Instantiates the reusable Assets/Prefabs/UI/TextBox.prefab (Pets.UI.UiTextBox
+        /// — see UiPrefabBuilder), the non-interactive counterpart to CreateSpriteButton, for
+        /// previewing/using the "Monster Trails" TextBox art wherever a plain label needs the
+        /// bordered-box treatment instead of a flat panel background.</summary>
+        public static Text CreateTextBox(Transform parent, string name, string content, int fontSize = 16)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.TextBoxPrefabPath);
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+            instance.name = name;
+
+            var uiTextBox = instance.GetComponent<UiTextBox>();
+            uiTextBox.Text = content;
+            var text = uiTextBox.TextComponent;
+            text.fontSize = fontSize;
+
+            var layoutElement = instance.AddComponent<LayoutElement>();
+            layoutElement.preferredHeight = 44;
+            layoutElement.flexibleWidth = 1;
+
+            return text;
         }
 
         /// <summary>A real legacy UI.Dropdown (not a cycle-button stand-in) — mirrors Unity's own

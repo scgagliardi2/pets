@@ -128,6 +128,15 @@ namespace Pets.EditorTools
             ForceLayoutRebuild(runOverOverlay);
             runOverOverlay.gameObject.SetActive(false);
 
+            // Temporary review strip so the new sprite art (ButtonBlue/Green/Red, TextBox — see
+            // Theme.cs) can be eyeballed on the main game screen; sits on top of the Content
+            // panels regardless of active tab. Remove once the sprites are reviewed and actually
+            // wired into real hub UI.
+            var spriteReviewRow = CreatePanel(canvasRect, "SpriteReviewRow", Color.clear, new Vector2(0.02f, 0.01f), new Vector2(0.5f, 0.08f));
+            AddHorizontalLayout(spriteReviewRow, expandHeight: true);
+            CreateButton(spriteReviewRow, "ReviewButton", "Review Button", Theme.ButtonStyle.Primary, useSprite: true);
+            CreateTextBox(spriteReviewRow, "ReviewTextBox", "Review Text Box");
+
             var hub = new GameObject("LocationHub").AddComponent<LocationHubController>();
             SetField(hub, "tabBar", tabBar.gameObject);
             SetField(hub, "teamPanel", teamPanel.gameObject);
