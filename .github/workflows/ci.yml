@@ -8,7 +8,7 @@ on:
 
 jobs:
   client:
-    name: Unity EditMode tests
+    name: Unity EditMode + PlayMode tests
     runs-on: ubuntu-latest
     # Requires UNITY_LICENSE (+ UNITY_EMAIL/UNITY_PASSWORD or UNITY_SERIAL) repo secrets to
     # activate a Unity license in CI. Until those are set up, let this job fail without blocking
@@ -30,7 +30,10 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
           projectPath: client
-          testMode: EditMode
+          # Both modes: the PlayMode suites are the only automated coverage of the actual saved
+          # scenes and their button wiring (ForestScenePlayModeTests etc.), so EditMode alone
+          # can't catch a scene that stopped matching its controllers.
+          testMode: all
 
   server:
     name: Server lint/test

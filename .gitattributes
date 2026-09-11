@@ -1,0 +1,44 @@
+# Unity YAML assets are text, but they must never be line-ending-converted and they merge badly
+# with git's default text merge. Marking them `-text` keeps them byte-identical across machines;
+# `merge=unityyamlmerge` routes conflicts through Unity's own SmartMerge tool.
+#
+# To enable SmartMerge locally (once per machine), point git at the tool that ships with the
+# editor — on macOS:
+#   git config merge.unityyamlmerge.name "Unity SmartMerge"
+#   git config merge.unityyamlmerge.driver '"/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/Tools/UnityYAMLMerge" merge -p "$BASE" "$REMOTE" "$LOCAL" "$MERGED"'
+# Without that config git falls back to a normal merge, which is the behaviour we have today.
+
+*.unity           -text merge=unityyamlmerge
+*.prefab          -text merge=unityyamlmerge
+*.asset           -text merge=unityyamlmerge
+*.mat             -text merge=unityyamlmerge
+*.anim            -text merge=unityyamlmerge
+*.controller      -text merge=unityyamlmerge
+*.physicMaterial  -text merge=unityyamlmerge
+*.physicsMaterial2D -text merge=unityyamlmerge
+*.meta            -text merge=unityyamlmerge
+*.asmdef          text eol=lf
+*.inputactions    text eol=lf
+
+# Source and docs: normalize to LF so a Windows checkout doesn't churn the whole tree.
+*.cs   text eol=lf diff=csharp
+*.ts   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.py   text eol=lf
+
+# Binary assets — never diffed, never converted.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.psd  binary
+*.ttf  binary
+*.otf  binary
+*.wav  binary
+*.mp3  binary
+*.ogg  binary
+*.xlsx binary
+*.unitypackage binary

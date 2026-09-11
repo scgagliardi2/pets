@@ -92,5 +92,53 @@ namespace Pets.Tests
             StringAssert.Contains("Support", lineUpText.text);
             yield break;
         }
+
+        /// <summary>CampOverlay is instantiated from Assets/Prefabs/UI/CampOverlay.prefab
+        /// (CampOverlayPrefabBuilder) rather than built inline by ForestSceneBuilder like the
+        /// other panels here — this is the one thing that's actually new for a prefab-sourced
+        /// panel to get wrong: the scene builder could instantiate the wrong prefab, forget to
+        /// set `flow`, or the prefab's own baked field/listener wiring could not have survived
+        /// the save. Also checks that its VerticalLayoutGroup — left alive on this prefab instead
+        /// of baked-and-destroyed like every other panel in this scene (see
+        /// CampOverlayPrefabBuilder's doc comment) — actually lays its children out at runtime and
+        /// hasn't collapsed them to zero height, since a live-but-misconfigured LayoutGroup is
+        /// exactly the kind of thing that looks fine in the Inspector and blank in Play mode.
+        /// Drives CampPanelController directly instead of playing through two PvE wins to reach
+        /// Forest's real Camp node (index 2), since PvE outcomes are seeded off RunBootstrapper's
+        /// non-deterministic run seed and reaching it that way would make this test flaky.</summary>
+        [UnityTest]
+        public IEnumerator CampOverlay_InstantiatedFromItsPrefab_IsWiredAndLaysOutCorrectly()
+        {
+            var campOverlay = Find("CampOverlay");
+            Assert.IsNotNull(campOverlay, "CampOverlay should exist under Canvas, instantiated from its prefab");
+
+            var controller = campOverlay.GetComponent<CampPanelController>();
+            Assert.IsNotNull(controller, "CampOverlay's prefab root should carry CampPanelController");
+
+            // CampOverlay starts inactive (ForestSceneBuilder.Build deactivates every overlay
+            // right after instantiating it) and an inactive hierarchy's LayoutGroup never runs —
+            // Canvas.ForceUpdateCanvases() alone does nothing for it. Activating first, then
+            // Begin(), mirrors LocationFlowController.OnGoClicked's real call order
+            // (hub.ShowCampOverlay() before campController.Begin(state)) instead of exercising a
+            // state real gameplay never puts this panel in.
+            campOverlay.gameObject.SetActive(true);
+            controller.Begin(RunBootstrapper.Instance.State);
+
+            Canvas.ForceUpdateCanvases();
+            yield return null;
+
+            var resultText = Find("CampOverlay/ResultText").GetComponent<Text>();
+            Assert.IsNotEmpty(resultText.text,
+                "Begin() should populate ResultText through the field the prefab wired via SetField");
+            Assert.Greater(((RectTransform)resultText.transform).rect.height, 0f,
+                "ResultText should have a real laid-out height, not be collapsed by a broken/dead LayoutGroup");
+
+            var continueButton = FindButton("CampOverlay/ContinueButton");
+            Assert.IsNotNull(continueButton, "ContinueButton should exist under the prefab-instantiated CampOverlay");
+            Assert.Greater(((RectTransform)continueButton.transform).rect.height, 0f,
+                "ContinueButton should have a real laid-out height");
+            Assert.Greater(continueButton.onClick.GetPersistentEventCount(), 0,
+                "Continue's onClick listener should already be baked into the prefab, not wired by the scene builder");
+        }
     }
 }
