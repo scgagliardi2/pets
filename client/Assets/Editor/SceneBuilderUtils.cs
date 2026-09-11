@@ -71,7 +71,7 @@ namespace Pets.EditorTools
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var text = go.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = Theme.GameFont;
             text.fontSize = fontSize;
             text.alignment = anchor;
             text.color = Theme.TextDark;
@@ -89,7 +89,7 @@ namespace Pets.EditorTools
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var text = go.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = Theme.GameFont;
             text.fontSize = fontSize;
             text.alignment = anchor;
             text.color = color;
@@ -115,7 +115,7 @@ namespace Pets.EditorTools
             var textGO = new GameObject("Text", typeof(RectTransform));
             textGO.transform.SetParent(go.transform, false);
             var text = textGO.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = Theme.GameFont;
             text.fontSize = 18;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Theme.ButtonText(style);

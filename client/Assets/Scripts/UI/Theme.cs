@@ -47,6 +47,20 @@ namespace Pets.UI
         public const int FontSizeBody = 16;
         public const int FontSizeSmall = 13;
 
+        private static Font gameFont;
+
+        /// <summary>The game's standard font (Handjet-Regular, OFL-licensed — see
+        /// Assets/Resources/Fonts/Handjet/OFL.txt), lazily loaded once and shared by every piece
+        /// of code-generated UI (both the Editor scene builders and runtime controllers that spawn
+        /// Text at play time, e.g. PvEClashController's catch buttons). Falls back to Unity's
+        /// built-in font only if the asset is somehow missing, so a broken import doesn't take the
+        /// whole UI down with it. Bold/italic variants aren't separately imported — legacy
+        /// UI.Text.fontStyle synthesizes those from this one weight, same as it did with
+        /// LegacyRuntime.ttf before this pass.</summary>
+        public static Font GameFont =>
+            gameFont != null ? gameFont : gameFont = Resources.Load<Font>("Fonts/Handjet/Handjet-Regular")
+                ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
         public enum ButtonStyle { Primary, Secondary, Confirm, Danger, Disabled }
 
         public static Color ButtonBackground(ButtonStyle style)

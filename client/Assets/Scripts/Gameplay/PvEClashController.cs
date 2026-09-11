@@ -130,7 +130,7 @@ namespace Pets.Gameplay
             var textGO = new GameObject("Text", typeof(RectTransform));
             textGO.transform.SetParent(go.transform, false);
             var text = textGO.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = Theme.GameFont;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Theme.TextLight;
             text.text = $"Catch {species?.DisplayName}";

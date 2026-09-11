@@ -125,7 +125,7 @@ namespace Pets.Gameplay
             var textGO = new GameObject("Label", typeof(RectTransform));
             textGO.transform.SetParent(go.transform, false);
             var text = textGO.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = Theme.GameFont;
             text.fontSize = 14;
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
