@@ -6,8 +6,9 @@ namespace Pets.Gameplay
 {
     /// <summary>Scene entry point for a run (design doc §3): creates the RunState with a starting
     /// Lead/Support pair and the Phase 0 Forest node-map, then hands off to LocationFlowController.
-    /// Full character creation (starter choice, 3 secondary options) is Phase 1 — this always
-    /// starts the same fixed pair for now.</summary>
+    /// Prefers a pair chosen in CharacterSelect (PendingRunSelection) if one is waiting; falls back
+    /// to the inspector-configured pair (or the library's first two species) so this scene still
+    /// works standalone, e.g. when testing it directly without going through Character Select.</summary>
     public sealed class RunBootstrapper : MonoBehaviour
     {
         public static RunBootstrapper Instance { get; private set; }
@@ -39,8 +40,18 @@ namespace Pets.Gameplay
 
         private RunState BuildNewRun()
         {
-            var lead = starterLead != null ? starterLead : speciesLibrary.AllSpecies[0];
-            var support = starterSupport != null ? starterSupport : speciesLibrary.AllSpecies[1];
+            PokemonSpeciesDefinitionAsset lead, support;
+            if (PendingRunSelection.HasSelection)
+            {
+                lead = PendingRunSelection.Lead;
+                support = PendingRunSelection.Support;
+                PendingRunSelection.Clear();
+            }
+            else
+            {
+                lead = starterLead != null ? starterLead : speciesLibrary.AllSpecies[0];
+                support = starterSupport != null ? starterSupport : speciesLibrary.AllSpecies[1];
+            }
 
             var state = new RunState
             {

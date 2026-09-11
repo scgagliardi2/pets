@@ -180,10 +180,31 @@ criteria are met and the Forest Location is playable end to end:**
 - The old 5-slot-model code (`Simulation`, `Data`, `Gameplay`, `UI`, `Editor` content-seeding) was
   deleted rather than kept alongside, per the working decision to rebuild rather than preserve it.
 
-**Not yet built (Phase 1):** starter selection/character creation, Team line-up reordering, the
-Gym/Badge node and mandatory-Gym map structure, branching node-map paths, the real drag-and-drop
-catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
-economy, and any save/load layer.
+**Phase 1 progress so far:**
+- Character Select (design doc §3) is playable: `Assets/Scenes/CharacterSelect.unity`
+  (`CharacterSelectSceneBuilder.cs`) shows every curated species in a scrollable stat grid, picked
+  once as Starter and once as Secondary (excluding the Starter from the second pass), then hands
+  the pair to `RunBootstrapper` via `PendingRunSelection` and loads `Game.unity`. This is a
+  simplification of §3's actual flow (fixed/chosen starter + a narrowed 3-option secondary pick +
+  cosmetics) — full parity with §3 is still open. Covered end to end by
+  `CharacterSelectScenePlayModeTests.cs`.
+- A branching Region/Location node-map generator exists (`Meta/RegionMapGenerator.cs`, covered by
+  `RegionMapGeneratorTests.cs`) and renders into a scrollable preview scene
+  (`Assets/Scenes/RegionMap.unity`, `RegionMapController.cs`/`RegionMapSceneBuilder.cs`): random
+  PvE/Event/PvP/Camp nodes branching layer to layer, always converging on one mandatory Gym node,
+  over a generic solid-color background. **This is a visual prototype only** — it is not wired into
+  the Forest run loop, nodes aren't clickable, and Forest's own map is still the separate, actually-
+  playable linear PvE/PvE/Camp/PvE/PvE sequence from `ForestLocationFactory`. Reconciling the two
+  (making Forest's map an instance of this branching generator, with real per-node resolution) is
+  the next Phase 1 step in this area.
+- Three scene builders now share `Assets/Editor/SceneBuilderUtils.cs` for uGUI construction
+  (camera/EventSystem/canvas/panel/text/button/scroll-view helpers) rather than duplicating that
+  code per scene.
+
+**Not yet built (Phase 1):** wiring the branching Region Map into an actual playable Location (node
+resolution, Gym/Badge battle, PvP/Event node behavior), Team line-up reordering, the real drag-and-
+drop catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
+economy, narrowing Character Select to match design doc §3 exactly, and any save/load layer.
 
 **Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)**
 - Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step
@@ -257,8 +278,12 @@ economy, and any save/load layer.
   Groudon) currently have no rarity flag in the source sheet; per the design doc's carried-forward
   assumption, treat them as Legendary-tier (ultra-rare, PvE-only, full-party-wipe-risk
   encounters) unless a future decision says otherwise.
-- Art: placeholder sprites until PokeAPI sprites (or a commissioned equivalent) are wired into the
-  import pipeline.
+- **Art:** PokeAPI official-artwork sprites are cached locally at `client/Assets/Resources/Sprites/Pokemon/{id}.png`
+  for all 183 roster species (fetched by name from PokeAPI, resized to 256px) and wired up via each
+  curated species' `SpriteSource` field + the `Pets.Data.PokemonSprites.Load(...)` runtime helper —
+  see Character Select for the first usage. Species not yet curated already have a cached sprite
+  waiting, so authoring their `PokemonSpeciesDefinition` asset only needs its `SpriteSource` set to
+  `Sprites/Pokemon/{id}`, not a fresh art fetch.
 
 ## 9. Scope, IP & Distribution
 
@@ -290,19 +315,22 @@ here, go there):
 
 ## 11. Next Steps
 
-Phase 0 is done (sim rework, curated content, golden fixtures, and the playable Forest Location —
-see the Phase 0 status note in §6). Next up is Phase 1's full run loop:
+Phase 0 is done (sim rework, curated content, golden fixtures, and the playable Forest Location).
+Character Select and a branching Region Map generator/preview are also now built (see the Phase 1
+progress note in §6). Next up:
 
-1. Character creation: cosmetic pick, starter mon, 3-secondary-mon choice (design doc §3) — replaces
-   `RunBootstrapper`'s currently-fixed Charmander/Squirtle starting pair.
-2. Team Management reordering (drag/reorder the Lead/Support line-up and Box) — Phase 0's Team tab
-   is read-only.
-3. The real drag-and-drop catching system (Step-boundary ball throws, HP%/status-based odds,
-   design doc §12.1) in place of the "pick 1 from defeated" stub.
-4. Gym/Badge node: a mandatory boss node at the end of a Location's map, Line-Up menu (scout the
+1. Reconcile the Region Map preview with Forest's actual playable map: make Forest's node sequence
+   an instance of `RegionMapGenerator`'s branching graph (rather than the current hand-authored
+   linear list) and give `LocationFlowController` real per-node-type resolution — PvE and Camp
+   already resolve; Event, PvP, and Gym don't yet.
+2. Gym/Badge node: a mandatory boss node at the end of a Location's map, Line-Up menu (scout the
    opponent, reorder before the fight), badge-as-relic reward.
-5. Branching node-map paths (Slay the Spire style) in place of Forest's current linear sequence,
-   plus Event/PvP node types.
+3. Team Management reordering (drag/reorder the Lead/Support line-up and Box) — Phase 0's Team tab
+   is read-only.
+4. The real drag-and-drop catching system (Step-boundary ball throws, HP%/status-based odds,
+   design doc §12.1) in place of the "pick 1 from defeated" stub.
+5. Narrow Character Select toward design doc §3's actual flow (fixed/chosen starter + a 3-option
+   secondary pick + cosmetics) if that distinction ends up mattering in play.
 6. Evolution (via PokeAPI evolution chains), the real Trailblazer minigame, Pokémon Center
    adoption, and a real Shop economy.
 7. Continue expanding curated content past the first 13 species via the content-import pipeline

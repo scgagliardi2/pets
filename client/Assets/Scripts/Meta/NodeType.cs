@@ -1,10 +1,14 @@
 namespace Pets.Meta
 {
-    /// <summary>Location node-map node kinds. Design doc §5.1 also defines Event, PvP, and Gym —
-    /// out of scope until Phase 1's full run loop (PLAN.md §6), so not modeled yet.</summary>
+    /// <summary>Location node-map node kinds (design doc §5.1). Event/PvP/Gym are modeled by
+    /// RegionMapGenerator's visual-only branching map prototype (PLAN.md Phase 1, item 5); only
+    /// PvE and Camp are actually resolvable today, via ForestLocationFactory's linear map.</summary>
     public enum NodeType
     {
         PvE,
-        Camp
+        Event,
+        PvP,
+        Camp,
+        Gym
     }
 }
