@@ -114,3 +114,6 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
 - Short ADRs in `docs/architecture-decisions/` for decisions worth remembering the reasoning
   behind later (ADR 0001 — the pivot itself — is the template for these) — not required for
   routine work.
+- `client/Assets/Scripts/Roguelite/Sandbox/README.md` — how to run and extend the battle-sim
+  testing sandbox (try a matchup, add a Pokémon, try an ability idea). Keep it in sync with
+  `SandboxContent.cs` if the pattern for adding content changes.

@@ -13,6 +13,12 @@ code changes, not after.
 is not what the design doc calls for. `client/Assets/Scripts/Simulation` currently implements the
 *old* model — reworking it to match this spec is PLAN.md Phase 0's main task.
 
+**A first implementation of this spec exists** at `client/Assets/Scripts/Roguelite/Simulation`
+(new folder, doesn't touch the old `Simulation` code above), with a runnable testing sandbox at
+`client/Assets/Scripts/Roguelite/Sandbox` — see that folder's README for how to use it. Treat this
+doc as the spec and that code as the current implementation of it; if they disagree, that's a bug
+in the code (or a sign this doc needs updating), not a place to shrug.
+
 ## 1. Scope
 
 The battle simulator resolves a fight between two ordered line-ups, one Step at a time, given a

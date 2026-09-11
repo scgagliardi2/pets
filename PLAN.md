@@ -154,10 +154,27 @@ end-to-end. Numbering resets from the old plan (see ADR 0001) since the actual c
 code needs reworking to match the new Lead/Support model before any of it counts as "done" here.
 
 **Status (as of 2026-09-10):** Design pivot accepted (ADR 0001). Docs (this file, CLAUDE.md,
-README.md, battle-sim-spec.md, content-schema.md) now describe the new direction. **No code has
-been reworked to match it yet** — `client/Assets/Scripts/Simulation` and `Gameplay/ShopEconomy`
-still implement the old 5-slot/turn-based model and are not the source of truth. Phase 0 below is
-the next actual work.
+README.md, battle-sim-spec.md, content-schema.md) now describe the new direction.
+`client/Assets/Scripts/Simulation` and `Gameplay/ShopEconomy` still implement the old 5-slot/
+turn-based model and are not the source of truth. **Phase 0's battle-sim rework has a first,
+runnable implementation** — see `client/Assets/Scripts/Roguelite/` (new folder, doesn't touch or
+replace the old `Simulation`/`Gameplay` code, so nothing existing broke): `Simulation` implements
+the Lead/Support/Step/charge-meter model from `docs/battle-sim-spec.md`, `Sandbox` has a small
+hand-picked slice of the real roster with example passives (real stats from
+`docs/pokemon_stats_unique.xlsx`, not invented) so you can run and add matchups without the real
+content pipeline existing yet, and `Tests/BattleSandboxTests.cs` is a working, currently-green
+EditMode suite (verified compiling and passing outside Unity too, via `mcs`/`nunit-console`, since
+this sandbox has no Unity engine dependency at all — see `Roguelite/Sandbox/README.md`). What's
+still outstanding for Phase 0's exit criteria: the one hand-authored Location, stubbed
+catching/Trailblazer, and folding the sandbox's hand-typed content into the real
+ScriptableObject-based content pipeline (§8) instead of hand-typed C#.
+
+**An early, real finding from running the sandbox:** several real-roster matchups (e.g. Charmander
+vs. Squirtle) trade a mutual KO on Step 1 — Attack and starting HP are on similar scales in the
+placeholder stats, and this combat model has no Defense stat, so a lot of pairs one-shot each
+other before any passive gets a chance to charge. Not a bug — a genuine, early balance signal for
+the tuning pass this section already calls out as ongoing work, surfaced by having something
+runnable to point at real numbers.
 
 **Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)**
 - Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step
