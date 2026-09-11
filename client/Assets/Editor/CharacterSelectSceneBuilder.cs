@@ -50,10 +50,10 @@ namespace Pets.EditorTools
             typeOptions.AddRange(Enum.GetNames(typeof(PokemonType)));
             var typeFilterDropdown = CreateDropdown(toolbar, "TypeFilterDropdown", typeOptions);
 
-            var sortAttackButton = CreateButton(toolbar, "SortAttackButton", "ATK", Theme.ButtonStyle.Secondary);
-            var sortSpeedButton = CreateButton(toolbar, "SortSpeedButton", "SPD", Theme.ButtonStyle.Secondary);
-            var sortHealthButton = CreateButton(toolbar, "SortHealthButton", "HP", Theme.ButtonStyle.Secondary);
-            var resetButton = CreateButton(toolbar, "ResetFiltersButton", "Reset", Theme.ButtonStyle.Danger);
+            var sortAttackButton = CreateButton(toolbar, "SortAttackButton", "ATK", Theme.ButtonStyle.Secondary, useSprite: true);
+            var sortSpeedButton = CreateButton(toolbar, "SortSpeedButton", "SPD", Theme.ButtonStyle.Secondary, useSprite: true);
+            var sortHealthButton = CreateButton(toolbar, "SortHealthButton", "HP", Theme.ButtonStyle.Secondary, useSprite: true);
+            var resetButton = CreateButton(toolbar, "ResetFiltersButton", "Reset", Theme.ButtonStyle.Danger, useSprite: true);
             foreach (var sortButton in new[] { sortAttackButton, sortSpeedButton, sortHealthButton, resetButton })
             {
                 var sortButtonLayout = sortButton.GetComponent<LayoutElement>();
@@ -76,7 +76,7 @@ namespace Pets.EditorTools
             var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var confirmButton = CreateButton(canvasRect, "ConfirmButton", "Begin Adventure", Theme.ButtonStyle.Confirm);
+            var confirmButton = CreateButton(canvasRect, "ConfirmButton", "Begin Adventure", Theme.ButtonStyle.Confirm, useSprite: true);
             AnchorFullRect(confirmButton.GetComponent<RectTransform>(), new Vector2(0.3f, 0.02f), new Vector2(0.7f, 0.12f));
             var confirmLabel = confirmButton.GetComponentInChildren<Text>();
 

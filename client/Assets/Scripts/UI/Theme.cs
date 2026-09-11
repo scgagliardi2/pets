@@ -61,7 +61,41 @@ namespace Pets.UI
             gameFont != null ? gameFont : gameFont = Resources.Load<Font>("Fonts/Handjet/Handjet-Regular")
                 ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
+        private static Sprite buttonBlueSprite;
+        private static Sprite buttonGreenSprite;
+        private static Sprite buttonRedSprite;
+        private static Sprite textBoxSprite;
+
+        // Same lazy Resources.Load pattern as GameFont, backing the 9-sliced button/panel art
+        // (see UiSpriteImportProcessor for the import settings, particularly the border/PPU values
+        // that make these render correctly as Image.Type.Sliced).
+        public static Sprite ButtonBlueSprite =>
+            buttonBlueSprite != null ? buttonBlueSprite : buttonBlueSprite = Resources.Load<Sprite>("Sprites/UI/ButtonBlue");
+
+        public static Sprite ButtonGreenSprite =>
+            buttonGreenSprite != null ? buttonGreenSprite : buttonGreenSprite = Resources.Load<Sprite>("Sprites/UI/ButtonGreen");
+
+        public static Sprite ButtonRedSprite =>
+            buttonRedSprite != null ? buttonRedSprite : buttonRedSprite = Resources.Load<Sprite>("Sprites/UI/ButtonRed");
+
+        public static Sprite TextBoxSprite =>
+            textBoxSprite != null ? textBoxSprite : textBoxSprite = Resources.Load<Sprite>("Sprites/UI/TextBox");
+
         public enum ButtonStyle { Primary, Secondary, Confirm, Danger, Disabled }
+
+        /// <summary>The 9-sliced sprite for a given button style — Confirm/Danger get the
+        /// green/red art since those map directly onto "go" / "destructive" actions; every other
+        /// style (Primary, Secondary, Disabled) shares the blue art, distinguished instead by the
+        /// tint ButtonBackground/ButtonText and Selectable.colors apply on top of it.</summary>
+        public static Sprite ButtonSprite(ButtonStyle style)
+        {
+            switch (style)
+            {
+                case ButtonStyle.Confirm: return ButtonGreenSprite;
+                case ButtonStyle.Danger: return ButtonRedSprite;
+                default: return ButtonBlueSprite;
+            }
+        }
 
         public static Color ButtonBackground(ButtonStyle style)
         {

@@ -180,7 +180,11 @@ namespace Pets.Gameplay
         {
             bool active = sortKey == key;
             button.GetComponentInChildren<Text>().text = active ? $"{label} {(sortDescending ? "▼" : "▲")}" : label;
-            button.image.color = active ? Theme.TabSelectedBg : Theme.ButtonSecondaryBg;
+            // Swaps the 9-sliced sprite itself (green = active, blue = inactive) rather than
+            // tinting button.image.color — these buttons carry their own art color, and a color
+            // multiply over it (e.g. the old orange "selected" tint) muddies rather than
+            // highlights it.
+            button.image.sprite = active ? Theme.ButtonGreenSprite : Theme.ButtonBlueSprite;
         }
 
         private void PopulateGrid(List<PokemonSpeciesDefinitionAsset> species, Action<PokemonSpeciesDefinitionAsset> onChosen)
@@ -206,7 +210,8 @@ namespace Pets.Gameplay
             go.transform.SetParent(gridContainer, false);
 
             var image = go.AddComponent<Image>();
-            image.color = new Color(0.97f, 0.96f, 0.90f);
+            image.sprite = Theme.TextBoxSprite;
+            image.type = Image.Type.Sliced;
             var button = go.AddComponent<Button>();
             button.targetGraphic = image;
             button.onClick.AddListener(() => onChosen(species));

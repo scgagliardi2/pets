@@ -98,12 +98,23 @@ namespace Pets.EditorTools
             return text;
         }
 
-        public static Button CreateButton(Transform parent, string name, string label, Theme.ButtonStyle style = Theme.ButtonStyle.Primary)
+        public static Button CreateButton(Transform parent, string name, string label, Theme.ButtonStyle style = Theme.ButtonStyle.Primary, bool useSprite = false)
         {
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var image = go.AddComponent<Image>();
-            image.color = Theme.ButtonBackground(style);
+            if (useSprite)
+            {
+                // The 9-sliced button art carries its own color, so the Image tint stays white —
+                // Theme.ButtonBackground's flat colors are for the sprite-less look only.
+                image.sprite = Theme.ButtonSprite(style);
+                image.type = Image.Type.Sliced;
+                image.color = Color.white;
+            }
+            else
+            {
+                image.color = Theme.ButtonBackground(style);
+            }
             var button = go.AddComponent<Button>();
             button.targetGraphic = image;
             var colors = button.colors;
@@ -124,7 +135,9 @@ namespace Pets.EditorTools
             // importing a second font asset.
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
-            text.color = Theme.ButtonText(style);
+            // Every sprite-button background is colorful/dark enough to need light text,
+            // regardless of what Theme.ButtonText says for the flat-color Secondary look.
+            text.color = useSprite ? Theme.TextLight : Theme.ButtonText(style);
             text.text = label;
             var textRect = textGO.GetComponent<RectTransform>();
             textRect.anchorMin = Vector2.zero;
