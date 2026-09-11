@@ -609,13 +609,26 @@ namespace Pets.EditorTools
             root.sizeDelta = scaler.referenceResolution;
         }
 
+        /// <summary>Assigns a controller's private [SerializeField] by name, since a scene built
+        /// from code has no Inspector to drag references into. Throws rather than logging: a
+        /// renamed or mistyped field name would otherwise leave that reference null in the saved
+        /// scene and only surface as a NullReferenceException the next time someone opens the
+        /// screen, long after the build step that actually broke it. Failing the build step keeps
+        /// the blast radius at "the menu item you just ran".</summary>
         public static void SetField(object target, string fieldName, object value)
         {
             var field = target.GetType().GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
             if (field == null)
             {
-                Debug.LogError($"Field '{fieldName}' not found on {target.GetType().Name}");
-                return;
+                throw new System.InvalidOperationException(
+                    $"Scene build failed: no serialized field '{fieldName}' on {target.GetType().Name}. " +
+                    "It was probably renamed — update the scene builder to match.");
+            }
+            if (value != null && !field.FieldType.IsInstanceOfType(value))
+            {
+                throw new System.InvalidOperationException(
+                    $"Scene build failed: {target.GetType().Name}.{fieldName} is {field.FieldType.Name}, " +
+                    $"but a {value.GetType().Name} was assigned.");
             }
             field.SetValue(target, value);
         }
