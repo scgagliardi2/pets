@@ -10,7 +10,10 @@ namespace Pets.EditorTools
 {
     /// <summary>Builds the Region Map scene (design doc §5): a randomly generated branching
     /// node-map the player walks from a start node, through five layers of choices, to the
-    /// mandatory Gym, over a placeholder solid-color background (real art is a later pass).
+    /// mandatory Gym, over a placeholder solid-color background (real background art is a later
+    /// pass). Each node shows its own icon — Battle/Encounter/Mystery Trainer/Pokémon Center/Gym,
+    /// loaded from Assets/Resources/Sprites/Nodes (see that folder's README) — falling back to a
+    /// flat color swatch for any type whose icon file isn't there yet.
     ///
     /// Nodes are walkable but not yet resolvable — arriving at one doesn't start a fight or an
     /// event (PLAN.md Phase 1), and this scene isn't wired into the Forest run loop. Re-run via

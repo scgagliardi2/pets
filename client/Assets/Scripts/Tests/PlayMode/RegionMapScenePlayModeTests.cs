@@ -61,6 +61,35 @@ namespace Pets.Tests
         }
 
         [UnityTest]
+        public IEnumerator EveryNode_HasEitherARealIconOrAFallbackColor_AndACaptionWithItsFlavorName()
+        {
+            // Real art is dropped into Resources/Sprites/Nodes by name (see that folder's README);
+            // until it exists for a given type, the node still renders — as a flat color swatch —
+            // and every node always gets a caption naming what it is.
+            var expectedNames = new System.Collections.Generic.Dictionary<NodeType, string>
+            {
+                { NodeType.PvE, "Battle" },
+                { NodeType.Event, "Encounter" },
+                { NodeType.PvP, "Mystery Trainer" },
+                { NodeType.Camp, "Pokémon Center" },
+                { NodeType.Gym, "Gym" }
+            };
+
+            foreach (var node in controller.LastGeneratedNodes)
+            {
+                var image = NodeObject(node.Id).GetComponent<Image>();
+                Assert.IsNotNull(image, $"{node.Id} has no Image. {Seed()}");
+                Assert.IsTrue(image.sprite != null || image.color.a > 0f, $"{node.Id} renders nothing. {Seed()}");
+
+                var caption = nodeRoot.Cast<Transform>().FirstOrDefault(t => t.name == $"Caption_{node.Id}");
+                Assert.IsNotNull(caption, $"{node.Id} has no caption. {Seed()}");
+                string expectedText = node.Layer == 0 ? "Start" : expectedNames[node.Type];
+                Assert.AreEqual(expectedText, caption.GetComponent<Text>().text, $"{node.Id}. {Seed()}");
+            }
+            yield break;
+        }
+
+        [UnityTest]
         public IEnumerator AtTheStart_ExactlyTheThreeOpeningOptionsAreClickable()
         {
             var interactable = nodeRoot.Cast<Transform>()

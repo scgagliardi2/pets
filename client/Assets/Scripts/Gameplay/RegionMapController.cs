@@ -15,18 +15,18 @@ namespace Pets.Gameplay
     /// slides the player token along the edge and opens up that node's own options.
     ///
     /// What a node *does* on arrival is deliberately not handled here (PLAN.md Phase 1) — stepping
-    /// onto a PvE node doesn't start a fight yet. This is the map and the movement on it; node
-    /// resolution hooks onto the end of a step, in WalkTo, once it exists.</summary>
+    /// onto a node doesn't start its fight/event/center visit yet. This is the map and the movement
+    /// on it; node resolution hooks onto the end of a step, in WalkTo, once it exists.</summary>
     public sealed class RegionMapController : MonoBehaviour
     {
-        private const float HorizontalSpacing = 170f;
-        private const float VerticalSpacing = 150f;
-        private const float EdgePadding = 90f;
-        private const float NodeSize = 64f;
+        private const float HorizontalSpacing = 180f;
+        private const float VerticalSpacing = 160f;
+        private const float EdgePadding = 100f;
+        private const float NodeSize = 76f;
 
         /// <summary>The Gym is every path's terminus, so it reads as the visually bigger "boss"
-        /// node even without a real icon.</summary>
-        private const float GymNodeScale = 1.45f;
+        /// node even before it has a bespoke icon.</summary>
+        private const float GymNodeScale = 1.5f;
 
         /// <summary>Nudges nodes off their exact grid column so a generated map looks hand-drawn
         /// rather than like a spreadsheet. Stays well under half the gap between columns so two
@@ -36,10 +36,40 @@ namespace Pets.Gameplay
         private const float PlayerTokenSize = 34f;
         private const float MoveDuration = 0.4f;
 
-        // Node colors reuse Theme's semantic accents (style guide section 6's "Map Nodes & Paths"
-        // — Wild Battle/Event/Camp/PvP/Gym icons — approximated as flat color since no node-icon
-        // sprites exist yet, see PLAN.md).
-        private static readonly Dictionary<NodeType, Color> NodeColors = new Dictionary<NodeType, Color>
+        private const float CaptionWidth = 130f;
+        private const float CaptionHeight = 30f;
+        private const float CaptionGap = 6f;
+
+        /// <summary>What each node actually represents to the player (this is a flavor/label
+        /// concern only — NodeType itself stays the shared enum other Meta code keys off of, see
+        /// NodeType.cs).</summary>
+        private static readonly Dictionary<NodeType, string> NodeDisplayNames = new Dictionary<NodeType, string>
+        {
+            { NodeType.PvE, "Battle" },
+            { NodeType.Event, "Encounter" },
+            { NodeType.PvP, "Mystery Trainer" },
+            { NodeType.Camp, "Pokémon Center" },
+            { NodeType.Gym, "Gym" }
+        };
+
+        /// <summary>Resources-relative file name (under Sprites/Nodes/, no extension) for each
+        /// node's real icon art. Drop the matching PNG into
+        /// Assets/Resources/Sprites/Nodes/&lt;name&gt;.png and it's picked up automatically on the
+        /// next scene rebuild/Play — no code change needed. See NodeFallbackColors for what renders
+        /// until then.</summary>
+        private static readonly Dictionary<NodeType, string> NodeIconFileNames = new Dictionary<NodeType, string>
+        {
+            { NodeType.PvE, "battle" },
+            { NodeType.Event, "encounter" },
+            { NodeType.PvP, "mystery_trainer" },
+            { NodeType.Camp, "pokemon_center" },
+            { NodeType.Gym, "gym" }
+        };
+
+        /// <summary>Flat-color stand-in for a node whose icon (see NodeIconFileNames) hasn't been
+        /// dropped into Resources yet, reusing Theme's semantic accents so the map still reads at a
+        /// glance without real art.</summary>
+        private static readonly Dictionary<NodeType, Color> NodeFallbackColors = new Dictionary<NodeType, Color>
         {
             { NodeType.PvE, Theme.Positive },
             { NodeType.Event, Theme.ButtonConfirmBg },
@@ -47,6 +77,8 @@ namespace Pets.Gameplay
             { NodeType.Camp, Theme.ButtonPrimaryBg },
             { NodeType.Gym, Theme.Special }
         };
+
+        private static readonly Dictionary<NodeType, Sprite> IconCache = new Dictionary<NodeType, Sprite>();
 
         [SerializeField] private RectTransform content;
         [SerializeField] private ScrollRect scrollRect;
@@ -112,7 +144,7 @@ namespace Pets.Gameplay
 
             var positions = LayOutNodes(map);
 
-            // Edges first so the node circles render on top of the lines joining them.
+            // Edges first so the node icons render on top of the lines joining them.
             foreach (var node in map.Nodes)
             {
                 foreach (var nextId in node.NextIds)
@@ -165,7 +197,7 @@ namespace Pets.Gameplay
 
             content.sizeDelta = new Vector2(
                 widestLayer * HorizontalSpacing + EdgePadding * 2f,
-                (map.LayerCount - 1) * VerticalSpacing + EdgePadding * 2f);
+                (map.LayerCount - 1) * VerticalSpacing + EdgePadding * 2f + CaptionHeight);
 
             return positions;
         }
@@ -234,6 +266,23 @@ namespace Pets.Gameplay
             rect.anchoredPosition = position;
 
             var image = go.AddComponent<Image>();
+            var icon = LoadIcon(node.Type);
+            Color baseTint;
+            if (icon != null)
+            {
+                // Real art: no color box behind it, just tint (white = full color, dimmed by
+                // Refresh for a visited/unreachable node exactly like the fallback swatch below).
+                image.sprite = icon;
+                image.preserveAspect = true;
+                baseTint = Color.white;
+            }
+            else
+            {
+                // No icon dropped into Resources/Sprites/Nodes yet — flat color keeps the map
+                // legible in the meantime.
+                baseTint = NodeFallbackColors.TryGetValue(node.Type, out var color) ? color : Theme.TextMuted;
+                image.color = baseTint;
+            }
 
             var outline = go.AddComponent<Outline>();
             outline.effectDistance = new Vector2(3f, 3f);
@@ -244,7 +293,7 @@ namespace Pets.Gameplay
             string nodeId = node.Id;
             button.onClick.AddListener(() => OnNodeClicked(nodeId));
 
-            var label = SpawnLabel(go.transform, node);
+            var caption = CreateCaption(node, position, size);
 
             return new NodeView
             {
@@ -253,29 +302,34 @@ namespace Pets.Gameplay
                 Image = image,
                 Outline = outline,
                 Button = button,
-                Label = label,
-                BaseColor = NodeColors.TryGetValue(node.Type, out var color) ? color : Theme.TextMuted
+                Label = caption,
+                BaseColor = baseTint
             };
         }
 
-        private static Text SpawnLabel(Transform parent, RegionMapNode node)
+        /// <summary>A short label below the node's icon — "Start" for the entry node, otherwise the
+        /// node's flavor name (Battle/Encounter/Mystery Trainer/Pokémon Center/Gym). Kept as its own
+        /// object below the icon, rather than overlaid on top of it, so real artwork isn't covered
+        /// by text.</summary>
+        private Text CreateCaption(RegionMapNode node, Vector2 nodePosition, float nodeSize)
         {
-            var go = new GameObject("Label", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var text = go.AddComponent<Text>();
-            text.font = Theme.GameFont;
-            text.fontSize = 14;
-            text.fontStyle = FontStyle.Bold;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Theme.TextLight;
-            text.raycastTarget = false;
-            text.text = node.Layer == 0 ? "START" : Abbreviate(node.Type);
+            var go = new GameObject($"Caption_{node.Id}", typeof(RectTransform));
+            go.transform.SetParent(nodeRoot, false);
 
             var rect = go.GetComponent<RectTransform>();
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.sizeDelta = new Vector2(CaptionWidth, CaptionHeight);
+            rect.anchoredPosition = nodePosition + new Vector2(0f, -(nodeSize * 0.5f + CaptionGap));
+
+            var text = go.AddComponent<Text>();
+            text.font = Theme.GameFont;
+            text.fontSize = 13;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.UpperCenter;
+            text.color = Theme.TextLight;
+            text.raycastTarget = false;
+            text.text = node.Layer == 0 ? "Start" : NodeDisplayNames[node.Type];
             return text;
         }
 
@@ -319,7 +373,7 @@ namespace Pets.Gameplay
         }
 
         /// <summary>The token stands just above its node rather than on top of it, so it never hides
-        /// the node's own label.</summary>
+        /// the node's own icon.</summary>
         private Vector2 PlayerPositionFor(string nodeId)
         {
             var view = nodeViews[nodeId];
@@ -459,21 +513,28 @@ namespace Pets.Gameplay
             }
         }
 
+        /// <summary>Loads a node type's real icon from Resources/Sprites/Nodes (see
+        /// NodeIconFileNames), cached per type — including a miss, so a missing file doesn't retry
+        /// Resources.Load on every node of that type.</summary>
+        private static Sprite LoadIcon(NodeType type)
+        {
+            if (IconCache.TryGetValue(type, out var cached))
+            {
+                return cached;
+            }
+
+            Sprite sprite = null;
+            if (NodeIconFileNames.TryGetValue(type, out var fileName))
+            {
+                sprite = Resources.Load<Sprite>($"Sprites/Nodes/{fileName}");
+            }
+
+            IconCache[type] = sprite;
+            return sprite;
+        }
+
         private static Color Dim(Color color, float factor) =>
             new Color(color.r * factor, color.g * factor, color.b * factor, color.a);
-
-        private static string Abbreviate(NodeType type)
-        {
-            switch (type)
-            {
-                case NodeType.PvE: return "PvE";
-                case NodeType.Event: return "Evt";
-                case NodeType.PvP: return "PvP";
-                case NodeType.Camp: return "Camp";
-                case NodeType.Gym: return "GYM";
-                default: return type.ToString();
-            }
-        }
 
         private sealed class NodeView
         {
