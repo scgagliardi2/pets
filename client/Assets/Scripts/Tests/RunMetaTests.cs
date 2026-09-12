@@ -34,6 +34,33 @@ namespace Pets.Tests
         }
 
         [Test]
+        public void RunState_SwapLeadAndSupport_ExchangesTheTwoActiveSlots()
+        {
+            var state = new RunState();
+            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(1, "Alpha", PokemonType.Fire), "lead"));
+            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(2, "Beta", PokemonType.Water), "support"));
+
+            state.SwapLeadAndSupport();
+
+            Assert.AreEqual(2, state.LineUp[0].SpeciesId, "The old Support should now lead");
+            Assert.AreEqual(1, state.LineUp[1].SpeciesId);
+        }
+
+        /// <summary>A run that's down to one mon still has a Team screen with a Swap button on it,
+        /// so the no-second-slot case has to be a no-op rather than an index error.</summary>
+        [Test]
+        public void RunState_SwapLeadAndSupport_WithASingleMon_IsANoOp()
+        {
+            var state = new RunState();
+            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(1, "Alpha", PokemonType.Fire), "lead"));
+
+            state.SwapLeadAndSupport();
+
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.AreEqual(1, state.LineUp[0].SpeciesId);
+        }
+
+        [Test]
         public void RunState_AdvanceToNextNode_MarksClearedAndMovesForwardUntilTheEnd()
         {
             var state = new RunState { Nodes = ForestLocationFactory.BuildNodes() };

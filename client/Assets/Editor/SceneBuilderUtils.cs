@@ -10,7 +10,7 @@ using Pets.UI;
 namespace Pets.EditorTools
 {
     /// <summary>Shared uGUI-construction helpers for the code-generated scene builders (see
-    /// ForestSceneBuilder, CharacterSelectSceneBuilder, RegionMapSceneBuilder) — these scenes are
+    /// SceneCatalog for the full set) — these scenes are
     /// built from code rather than hand-edited so their structure stays in lockstep with the
     /// Gameplay controllers' serialized fields; re-run the relevant Pets &gt; Build ... menu item
     /// after changing a controller's fields. Colors/typography come from Pets.UI.Theme, which is
@@ -648,7 +648,15 @@ namespace Pets.EditorTools
             {
                 scenes[i] = new EditorBuildSettingsScene(scenePaths[i], true);
             }
+            // Cleared first so the assignment below is always a real change. EditorBuildSettings
+            // re-resolves each entry's GUID from its path when it loads, so assigning a list that
+            // matches what's already in memory leaves the settings clean and never rewrites the
+            // file — which is how ProjectSettings/EditorBuildSettings.asset can sit there holding
+            // all-zero GUIDs for scenes that hadn't been imported yet the one time it was written,
+            // looking correct in every Editor session and stale to everyone who checks it out.
+            EditorBuildSettings.scenes = new EditorBuildSettingsScene[0];
             EditorBuildSettings.scenes = scenes;
+            AssetDatabase.SaveAssets();
         }
     }
 }

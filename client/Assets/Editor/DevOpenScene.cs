@@ -8,10 +8,10 @@ namespace Pets.EditorTools
     /// after use.</summary>
     public static class DevOpenScene
     {
-        [MenuItem("Pets/Dev/Open Game Scene And Play")]
-        public static void OpenGameAndPlay()
+        [MenuItem("Pets/Dev/Open Home Scene And Play")]
+        public static void OpenHomeAndPlay()
         {
-            EditorSceneManager.OpenScene(ForestSceneBuilder.ScenePath);
+            EditorSceneManager.OpenScene(HomeSceneBuilder.ScenePath);
             EditorApplication.isPlaying = true;
         }
 

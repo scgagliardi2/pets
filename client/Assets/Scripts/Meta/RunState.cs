@@ -40,6 +40,20 @@ namespace Pets.Meta
 
         public bool HasNextNode => CurrentNodeIndex + 1 < Nodes.Count;
 
+        /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team
+        /// screen offers so far: with exactly two active slots (design doc §7) it's unambiguous,
+        /// where promoting from the Box needs the Box management rules that are still Phase 1.
+        /// No-op below two mons so a run that lost one doesn't need a special case at the call
+        /// site.</summary>
+        public void SwapLeadAndSupport()
+        {
+            if (LineUp.Count < 2)
+            {
+                return;
+            }
+            (LineUp[0], LineUp[1]) = (LineUp[1], LineUp[0]);
+        }
+
         public void AdvanceToNextNode()
         {
             if (CurrentNode != null)
