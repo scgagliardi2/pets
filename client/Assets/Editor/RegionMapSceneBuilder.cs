@@ -25,6 +25,17 @@ namespace Pets.EditorTools
         public const string ScenePath = "Assets/Scenes/" + SceneNames.Map + ".unity";
         private static readonly Color PlaceholderBackground = new Color(0.29f, 0.42f, 0.29f);
 
+        // Chrome pinned in pixels rather than as a fraction of canvas height, so this scene's
+        // buttons are the same 9-sliced prefab art at the same size as every other screen's.
+        // Fractional bands were what previously ruled the prefab out here: the title bar came out
+        // 57 units tall at 16:9 and less on a taller phone, where the art needs ~64 plus padding.
+        private const float TitleHeight = 76f;
+        private const float FooterHeight = 84f;
+        private const float SideMargin = 20f;
+        private const float ButtonHeight = 64f;
+        private const float MenuButtonWidth = 150f;
+        private const float NewMapButtonWidth = 200f;
+
         [MenuItem("Pets/Build Region Map Scene")]
         public static void Build()
         {
@@ -34,31 +45,50 @@ namespace Pets.EditorTools
             CreateEventSystem();
             var canvasRect = CreateCanvas();
 
-            CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0, 0.92f), Vector2.one);
+            var titleBar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
+            PinToTop(titleBar, TitleHeight);
             var titleText = CreatePlainText(canvasRect, "TitleText", "Region Map", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
             titleText.fontStyle = FontStyle.Bold;
-            StretchTo(titleText.GetComponent<RectTransform>(), new Vector2(0, 0.92f), Vector2.one);
+            // The title label stretches the whole bar, including over the Menu button in its left
+            // corner — as a raycast target it would quietly swallow that button's clicks.
+            titleText.raycastTarget = false;
+            PinToTop(titleText.GetComponent<RectTransform>(), TitleHeight);
 
             // Footer: the walk's status line plus a re-roll, so a map can be judged across many
             // generations without leaving Play mode.
-            CreatePanel(canvasRect, "FooterBar", Theme.ChromeBg, Vector2.zero, new Vector2(1f, 0.09f));
-            var statusText = CreatePlainText(canvasRect, "StatusText", "", Theme.FontSizeBody, TextAnchor.MiddleLeft, Theme.TextLight);
-            StretchTo(statusText.GetComponent<RectTransform>(), new Vector2(0.03f, 0f), new Vector2(0.74f, 0.09f));
+            var footerBar = CreatePanel(canvasRect, "FooterBar", Theme.ChromeBg, Vector2.zero, new Vector2(1f, 0f));
+            PinToBottom(footerBar, FooterHeight);
+            var statusText = CreatePlainText(footerBar, "StatusText", "", Theme.FontSizeBody, TextAnchor.MiddleLeft, Theme.TextLight);
+            statusText.raycastTarget = false;
+            var statusRect = statusText.GetComponent<RectTransform>();
+            statusRect.anchorMin = new Vector2(0f, 0f);
+            statusRect.anchorMax = new Vector2(1f, 1f);
+            statusRect.offsetMin = new Vector2(SideMargin, 0f);
+            statusRect.offsetMax = new Vector2(-(SideMargin + NewMapButtonWidth + 16f), 0f);
 
-            var newMapButton = CreateButton(canvasRect, "NewMapButton", "New Map", Theme.ButtonStyle.Confirm);
-            StretchTo(newMapButton.GetComponent<RectTransform>(), new Vector2(0.76f, 0.015f), new Vector2(0.97f, 0.075f));
+            var newMapButton = CreateButton(footerBar, "NewMapButton", "New Map", Theme.ButtonStyle.Confirm, useSprite: true);
+            AnchorInBar(newMapButton, NewMapButtonWidth, toRight: true);
 
             // The way out of the run: the Map is the screen a player spends a run on, so it owns
             // the entry point to the Ingame Menu (Team, Home) rather than the menu being something
             // they can only reach between Locations. Parked in the title bar's left corner, clear
             // of the footer's map controls so "leave the run" can't be mistaken for "re-roll it".
-            // Flat rather than the 9-sliced prefab button the menu screens use, to match this
-            // scene's own "New Map" button: the prefab art draws a 10-unit border top and bottom
-            // and needs roughly 64 units of height, which the 57-unit title bar can't give it.
-            var menuButton = CreateButton(canvasRect, "MenuButton", "Menu", Theme.ButtonStyle.Secondary);
-            StretchTo(menuButton.GetComponent<RectTransform>(), new Vector2(0.02f, 0.935f), new Vector2(0.14f, 0.985f));
+            var menuButton = CreateButton(titleBar, "MenuButton", "Menu", Theme.ButtonStyle.Secondary, useSprite: true);
+            AnchorInBar(menuButton, MenuButtonWidth, toRight: false);
 
-            var (scrollRect, _, content) = CreateScrollView(canvasRect, "MapScroll", new Vector2(0.02f, 0.09f), new Vector2(0.98f, 0.92f), horizontal: true, vertical: false);
+            // Vertical scrolling as well as horizontal: the taller chrome these sprite buttons
+            // need leaves the map area 560 units high, and the widest map the generator can
+            // produce (4 branches in a layer — RegionMapGenerator.MaxNodesPerLayer) lays out 572
+            // units tall, so the top and bottom node of such a column would otherwise be clipped
+            // by a few units with no way to reach them. With ScrollRect.movementType Clamped a map
+            // that does fit can't be dragged off-centre, so this costs nothing in the common case.
+            var (scrollRect, _, content) = CreateScrollView(canvasRect, "MapScroll", Vector2.zero, Vector2.one, horizontal: true, vertical: true);
+            // Stretched to the canvas and then inset in pixels, so the map area absorbs whatever
+            // vertical room the two fixed-height bars leave on a given aspect ratio instead of
+            // scaling with it.
+            var mapRect = (RectTransform)scrollRect.transform;
+            mapRect.offsetMin = new Vector2(SideMargin, FooterHeight);
+            mapRect.offsetMax = new Vector2(-SideMargin, -TitleHeight);
             scrollRect.scrollSensitivity = 25f;
 
             // Left-anchored, vertically centered content: layer 0 sits at the left edge and the
@@ -66,9 +96,10 @@ namespace Pets.EditorTools
             // into a column around the middle. At RegionMapController's spacings a default
             // seven-layer map fits the viewport end to end; the scroll axis is there for a longer
             // map or a narrower window, and it follows the player when it's needed.
+            // (RegionMapController recomputes this size per generated map — see LayOutNodes.)
             content.anchorMin = content.anchorMax = new Vector2(0f, 0.5f);
             content.pivot = new Vector2(0f, 0.5f);
-            content.sizeDelta = new Vector2(860, 580);
+            content.sizeDelta = new Vector2(860, 560);
 
             var backgroundGO = new GameObject("Background", typeof(RectTransform));
             backgroundGO.transform.SetParent(content, false);
@@ -112,6 +143,40 @@ namespace Pets.EditorTools
                 AssetDatabase.LoadAssetAtPath<PokemonSpeciesDefinitionAsset>("Assets/Content/Species/charmander.asset"));
             SetField(bootstrapper, "starterSupport",
                 AssetDatabase.LoadAssetAtPath<PokemonSpeciesDefinitionAsset>("Assets/Content/Species/squirtle.asset"));
+        }
+
+        /// <summary>Centers a fixed-size sprite button vertically in the bar it belongs to, a
+        /// SideMargin in from the bar's left or right edge. Anchored rather than laid out by a
+        /// group: each bar holds one button, so there's nothing to arrange, and it keeps the map's
+        /// chrome clear of ForceLayoutRebuild's bake-and-destroy behaviour — which is also why
+        /// this scene doesn't call it at all.</summary>
+        private static void AnchorInBar(Button button, float width, bool toRight)
+        {
+            var rect = button.GetComponent<RectTransform>();
+            float x = toRight ? 1f : 0f;
+            rect.anchorMin = new Vector2(x, 0.5f);
+            rect.anchorMax = new Vector2(x, 0.5f);
+            rect.pivot = new Vector2(x, 0.5f);
+            rect.sizeDelta = new Vector2(width, ButtonHeight);
+            rect.anchoredPosition = new Vector2(toRight ? -SideMargin : SideMargin, 0f);
+        }
+
+        private static void PinToTop(RectTransform rect, float height)
+        {
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.offsetMin = new Vector2(0f, -height);
+            rect.offsetMax = Vector2.zero;
+        }
+
+        private static void PinToBottom(RectTransform rect, float height)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = new Vector2(0f, height);
         }
 
         private static void StretchTo(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax)
