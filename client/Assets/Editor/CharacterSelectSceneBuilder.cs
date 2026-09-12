@@ -68,7 +68,11 @@ namespace Pets.EditorTools
             content.sizeDelta = Vector2.zero;
 
             var grid = content.gameObject.AddComponent<GridLayoutGroup>();
-            grid.cellSize = new Vector2(170, 230);
+            // Height accounts for Sprite(96) + Name(24) + TypesRow(30) + ATK/HP/SPD(20 each) +
+            // VerticalLayoutGroup spacing/padding (see CharacterSelectController.CreateCard) —
+            // TypesRow replaced what used to be a single 20px type-name text line, so this is
+            // taller than before by roughly that difference.
+            grid.cellSize = new Vector2(170, 246);
             grid.spacing = new Vector2(12, 12);
             grid.padding = new RectOffset(12, 12, 12, 12);
             grid.childAlignment = TextAnchor.UpperCenter;
@@ -81,6 +85,7 @@ namespace Pets.EditorTools
             var confirmLabel = confirmButton.GetComponentInChildren<Text>();
 
             var library = AssetDatabase.LoadAssetAtPath<PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var typeIconPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TypeIconPrefabBuilder.PrefabPath);
 
             var controller = new GameObject("CharacterSelect").AddComponent<CharacterSelectController>();
             SetField(controller, "speciesLibrary", library);
@@ -92,6 +97,7 @@ namespace Pets.EditorTools
             SetField(controller, "sortAttackButton", sortAttackButton);
             SetField(controller, "sortSpeedButton", sortSpeedButton);
             SetField(controller, "sortHealthButton", sortHealthButton);
+            SetField(controller, "typeIconPrefab", typeIconPrefab);
 
             // Dropdown.onValueChanged is a UnityEvent<int> — UnityEventTools only exposes
             // baked-constant persistent listeners (AddIntPersistentListener requires a fixed

@@ -165,5 +165,24 @@ namespace Pets.UI
 
         public static Color GetTypeColor(PokemonType type) =>
             TypeColors.TryGetValue(type, out var color) ? color : TextMuted;
+
+        private static readonly Dictionary<PokemonType, Sprite> TypeIconCache = new Dictionary<PokemonType, Sprite>();
+
+        /// <summary>The type-badge icon for one PokemonType (Assets/Resources/Sprites/Types,
+        /// added alongside the existing Pokemon/UI/Nodes sprite folders — see
+        /// TypeIconImportProcessor for its import settings). Each PNG is already a complete,
+        /// self-colored badge, so this returns it as-is — no GetTypeColor tint gets layered on
+        /// top, unlike a plain text label. Lazily loaded and cached per type, same pattern as the
+        /// button sprites above; used by Pets.UI.TypeIconView rather than loaded directly by
+        /// callers, so the Resources path lives in exactly one place.</summary>
+        public static Sprite TypeIconSprite(PokemonType type)
+        {
+            if (!TypeIconCache.TryGetValue(type, out var sprite))
+            {
+                sprite = Resources.Load<Sprite>($"Sprites/Types/{type.ToString().ToLowerInvariant()}");
+                TypeIconCache[type] = sprite;
+            }
+            return sprite;
+        }
     }
 }
