@@ -21,6 +21,24 @@ namespace Pets.EditorTools
         public const string TextBoxPrefabPath = FolderPath + "/TextBox.prefab";
         public const string HealthBarPrefabPath = FolderPath + "/HealthBar.prefab";
         public const string SpeedBarPrefabPath = FolderPath + "/SpeedBar.prefab";
+        public const string BattleStatsBoxPrefabPath = FolderPath + "/BattleStatsBox.prefab";
+        public const string BattlePartySlotPrefabPath = FolderPath + "/BattlePartySlot.prefab";
+
+        // Battle stats box: the bars nest at this height, a notch taller than on a card.
+        private const float StatsBoxBarHeight = 20f;
+        private const float StatsBoxHealthTop = 46f;
+        private const float StatsBoxSpeedTop = 72f;
+        private const int StatsBoxFontSize = 22;
+
+        // Party slot (146x150): portrait, name, then a slim HP track — 16 tall like the stat bars'
+        // track, so the same 5-unit-bordered art keeps whole-pixel chamfers.
+        private const float SlotPortraitTop = 10f;
+        private const float SlotPortraitHeight = 86f;
+        private const float SlotNameTop = 98f;
+        private const float SlotNameHeight = 24f;
+        private const float SlotTrackTop = 122f;
+        private const float SlotTrackInsetX = 16f;
+        private const int SlotNameFontSize = 18;
 
         // The sprite art draws a 10-unit border (5px source pixels at 2 units each — see
         // UiSpriteImportProcessor). Default heights leave a comfortable flat centre inside that,
@@ -53,6 +71,9 @@ namespace Pets.EditorTools
             BuildTextBoxPrefab();
             BuildHealthBarPrefab();
             BuildSpeedBarPrefab();
+            // After the bars and the type icon, which these two nest.
+            BuildBattleStatsBoxPrefab();
+            BuildBattlePartySlotPrefab();
             AssetDatabase.SaveAssets();
             Debug.Log($"UI prefabs rebuilt under {FolderPath}");
         }
@@ -136,6 +157,165 @@ namespace Pets.EditorTools
             view.SetValue(1, 1);
 
             SavePrefab(go, SpeedBarPrefabPath);
+        }
+
+        /// <summary>The battle screen's per-mon stat box (Pets.UI.BattleStatsBoxView). Nests the
+        /// TypeIcon, HealthBar and SpeedBar prefabs rather than rebuilding them, so a change to a bar
+        /// reaches the box on the next prefab build.</summary>
+        private static void BuildBattleStatsBoxPrefab()
+        {
+            var go = new GameObject("BattleStatsBox", typeof(RectTransform));
+            go.GetComponent<RectTransform>().sizeDelta = BattleStatsBoxView.Size;
+            var background = go.AddComponent<Image>();
+            background.sprite = Theme.TextBoxSprite;
+            background.type = Image.Type.Sliced;
+            background.raycastTarget = false;
+            var group = go.AddComponent<CanvasGroup>();
+
+            float inset = BattleStatsBoxView.Inset;
+            float iconTop = BattleStatsBoxView.RowTop + (BattleStatsBoxView.RowHeight - BattleStatsBoxView.IconSize) / 2f;
+            var firstType = InstantiateNested<TypeIconView>(TypeIconPrefabBuilder.PrefabPath, go.transform, "FirstType");
+            PlaceTopLeft((RectTransform)firstType.transform, inset, iconTop, BattleStatsBoxView.IconSize, BattleStatsBoxView.IconSize);
+            var secondType = InstantiateNested<TypeIconView>(TypeIconPrefabBuilder.PrefabPath, go.transform, "SecondType");
+            PlaceTopLeft((RectTransform)secondType.transform, inset + BattleStatsBoxView.IconSize + BattleStatsBoxView.IconGap,
+                iconTop, BattleStatsBoxView.IconSize, BattleStatsBoxView.IconSize);
+
+            var name = CreateBoxText(go.transform, "Name", "Pokemon", StatsBoxFontSize, TextAnchor.MiddleLeft);
+            name.resizeTextForBestFit = true;
+            name.resizeTextMinSize = Theme.FontSizeSmall;
+            name.resizeTextMaxSize = StatsBoxFontSize;
+            name.horizontalOverflow = HorizontalWrapMode.Wrap;
+            var nameRect = name.rectTransform;
+            nameRect.anchorMin = new Vector2(0f, 1f);
+            nameRect.anchorMax = new Vector2(1f, 1f);
+            nameRect.pivot = new Vector2(0f, 1f);
+            float attackBlock = inset + BattleStatsBoxView.AttackWidth + BattleStatsBoxView.IconGap + BattleStatsBoxView.SwordSize + BattleStatsBoxView.NameGap;
+            nameRect.offsetMin = new Vector2(inset, -(BattleStatsBoxView.RowTop + BattleStatsBoxView.RowHeight));
+            nameRect.offsetMax = new Vector2(-attackBlock, -BattleStatsBoxView.RowTop);
+
+            var attack = CreateBoxText(go.transform, "Attack", "10", StatsBoxFontSize, TextAnchor.MiddleLeft);
+            var attackRect = attack.rectTransform;
+            attackRect.anchorMin = attackRect.anchorMax = Vector2.one;
+            attackRect.pivot = Vector2.one;
+            attackRect.sizeDelta = new Vector2(BattleStatsBoxView.AttackWidth, BattleStatsBoxView.RowHeight);
+            attackRect.anchoredPosition = new Vector2(-inset, -BattleStatsBoxView.RowTop);
+
+            var swordGo = new GameObject("Sword", typeof(RectTransform));
+            swordGo.transform.SetParent(go.transform, false);
+            var sword = swordGo.AddComponent<Image>();
+            sword.sprite = Theme.AttackIconSprite;
+            sword.raycastTarget = false;
+            var swordRect = sword.rectTransform;
+            swordRect.anchorMin = swordRect.anchorMax = Vector2.one;
+            swordRect.pivot = Vector2.one;
+            swordRect.sizeDelta = new Vector2(BattleStatsBoxView.SwordSize, BattleStatsBoxView.SwordSize);
+            swordRect.anchoredPosition = new Vector2(
+                -(inset + BattleStatsBoxView.AttackWidth + BattleStatsBoxView.IconGap),
+                -(BattleStatsBoxView.RowTop + (BattleStatsBoxView.RowHeight - BattleStatsBoxView.SwordSize) / 2f));
+
+            var health = InstantiateNested<HealthBarView>(HealthBarPrefabPath, go.transform, "HealthBar");
+            PinRow((RectTransform)health.transform, StatsBoxHealthTop, StatsBoxBarHeight, inset);
+            var speed = InstantiateNested<StatBarView>(SpeedBarPrefabPath, go.transform, "SpeedBar");
+            PinRow((RectTransform)speed.transform, StatsBoxSpeedTop, StatsBoxBarHeight, inset);
+
+            var view = go.AddComponent<BattleStatsBoxView>();
+            SetField(view, "firstType", firstType);
+            SetField(view, "secondType", secondType);
+            SetField(view, "nameText", name);
+            SetField(view, "swordIcon", sword);
+            SetField(view, "attackText", attack);
+            SetField(view, "healthBar", health);
+            SetField(view, "speedBar", speed);
+            SetField(view, "group", group);
+            view.Show("Pokemon", Pets.Simulation.PokemonType.Normal, false, Pets.Simulation.PokemonType.Normal,
+                10, 50, Pets.Data.PokemonSpeciesDefinitionAsset.MaxBaseSpeed);
+            health.SetHealth(40, 40);
+
+            SavePrefab(go, BattleStatsBoxPrefabPath);
+        }
+
+        /// <summary>One party-strip slot on the battle screen (Pets.UI.BattlePartySlotView).</summary>
+        private static void BuildBattlePartySlotPrefab()
+        {
+            var go = new GameObject("BattlePartySlot", typeof(RectTransform));
+            go.GetComponent<RectTransform>().sizeDelta = BattlePartySlotView.Size;
+            var frame = go.AddComponent<Image>();
+            frame.sprite = Theme.SlotDarkSprite;
+            frame.type = Image.Type.Sliced;
+            frame.raycastTarget = false;
+            var group = go.AddComponent<CanvasGroup>();
+
+            var portraitGo = new GameObject("Portrait", typeof(RectTransform));
+            portraitGo.transform.SetParent(go.transform, false);
+            var portrait = portraitGo.AddComponent<Image>();
+            portrait.preserveAspect = true;
+            portrait.raycastTarget = false;
+            PinRow(portrait.rectTransform, SlotPortraitTop, SlotPortraitHeight, 12f);
+
+            var name = CreateBoxText(go.transform, "Name", "Pokemon", SlotNameFontSize, TextAnchor.MiddleCenter);
+            name.color = Theme.TextLight;
+            name.resizeTextForBestFit = true;
+            name.resizeTextMinSize = 12;
+            name.resizeTextMaxSize = SlotNameFontSize;
+            name.horizontalOverflow = HorizontalWrapMode.Wrap;
+            PinRow(name.rectTransform, SlotNameTop, SlotNameHeight, 8f);
+
+            var track = CreateBarImage(go.transform, "Track", Theme.BarTrackSprite);
+            PinRow(track.rectTransform, SlotTrackTop, StatBarTrackHeight, SlotTrackInsetX);
+            var fillArea = new GameObject("FillArea", typeof(RectTransform));
+            fillArea.transform.SetParent(track.transform, false);
+            Stretch(fillArea.GetComponent<RectTransform>(), StatBarTrackInset);
+            var fill = CreateBarImage(fillArea.transform, "Fill", Theme.HealthGreenSprite);
+
+            var view = go.AddComponent<BattlePartySlotView>();
+            SetField(view, "frame", frame);
+            SetField(view, "portrait", portrait);
+            SetField(view, "nameText", name);
+            SetField(view, "track", track.gameObject);
+            SetField(view, "fill", fill);
+            SetField(view, "group", group);
+            view.SetRole(PartySlotRole.Reserve);
+            view.SetHealthFraction(1f);
+
+            SavePrefab(go, BattlePartySlotPrefabPath);
+        }
+
+        private static T InstantiateNested<T>(string prefabPath, Transform parent, string name) where T : Component
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null)
+            {
+                throw new System.InvalidOperationException($"Prefab build failed: {prefabPath} doesn't exist yet.");
+            }
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+            instance.name = name;
+            return instance.GetComponent<T>();
+        }
+
+        private static void PlaceTopLeft(RectTransform rect, float x, float y, float width, float height)
+        {
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.sizeDelta = new Vector2(width, height);
+            rect.anchoredPosition = new Vector2(x, -y);
+        }
+
+        /// <summary>Stretches a rect across its parent's width less <paramref name="insetX"/> each
+        /// side, <paramref name="top"/> units down with a fixed height.</summary>
+        private static void PinRow(RectTransform rect, float top, float height, float insetX)
+        {
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.offsetMin = new Vector2(insetX, -(top + height));
+            rect.offsetMax = new Vector2(-insetX, -top);
+        }
+
+        private static Text CreateBoxText(Transform parent, string name, string content, int fontSize, TextAnchor alignment)
+        {
+            var text = CreateBarText(parent, name, content, alignment, Theme.TextDark);
+            text.fontSize = fontSize;
+            return text;
         }
 
         /// <summary>The pill/track/readout body every stat bar shares; the caller adds the view.

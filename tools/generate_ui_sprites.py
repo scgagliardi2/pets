@@ -51,6 +51,12 @@ PALETTES = {
     "HpRed":       ((70, 6, 12),   (226, 58, 52),   (252, 138, 120), (240, 96, 88),  (170, 20, 30)),
     "SpdLabel":    ((10, 20, 48),  (38, 64, 120),   (80, 110, 170),  (58, 86, 146),  (22, 40, 86)),
     "SpdFill":     ((6, 40, 100),  (52, 140, 236),  (130, 200, 252), (88, 170, 248), (20, 96, 196)),
+    # Battle screen (Pets.UI.BattlePartySlotView, the playback pill, the Throw button): a dark slate
+    # frame, and the same frame with a gold (Lead) or blue (Support) bevel ring so the active pair
+    # stands out in the party strip without a separate highlight overlay.
+    "SlotDark":    ((10, 14, 22),  (40, 48, 62),    (78, 88, 106),   (62, 72, 90),   (26, 32, 42)),
+    "SlotGold":    ((58, 40, 4),   (40, 48, 62),    (252, 218, 96),  (236, 188, 62), (176, 124, 22)),
+    "SlotBlue":    ((4, 30, 70),   (40, 48, 62),    (130, 196, 252), (80, 160, 240), (24, 92, 190)),
 }
 
 # Small non-sliced icons, drawn pixel by pixel. They live in the same folder, so the import
@@ -74,6 +80,94 @@ ICONS = {
             "oo...o......",
         ],
         {"o": (28, 32, 44), "w": (236, 240, 246), "g": (150, 160, 178), "h": (232, 176, 48), "b": (140, 84, 40)},
+    ),
+    # Battle playback controls: pause, step one Step, autoplay, skip to the end.
+    "IconPause": (
+        [
+            "............",
+            ".oooo..oooo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".owwo..owwo.",
+            ".oooo..oooo.",
+            "............",
+        ],
+        {"o": (20, 24, 34), "w": (240, 244, 250)},
+    ),
+    "IconStep": (
+        [
+            "............",
+            ".oo.....ooo.",
+            ".owoo...owo.",
+            ".owwwoo.owo.",
+            ".owwwwwoowo.",
+            ".owwwwwwowo.",
+            ".owwwwwwowo.",
+            ".owwwwwoowo.",
+            ".owwwoo.owo.",
+            ".owoo...owo.",
+            ".oo.....ooo.",
+            "............",
+        ],
+        {"o": (20, 24, 34), "w": (240, 244, 250)},
+    ),
+    "IconPlay": (
+        [
+            "............",
+            "..oo........",
+            "..owoo......",
+            "..owwwoo....",
+            "..owwwwwoo..",
+            "..owwwwwwwo.",
+            "..owwwwwwwo.",
+            "..owwwwwoo..",
+            "..owwwoo....",
+            "..owoo......",
+            "..oo........",
+            "............",
+        ],
+        {"o": (20, 24, 34), "w": (240, 244, 250)},
+    ),
+    "IconFastForward": (
+        [
+            "............",
+            "oo....oo....",
+            "owo...owo...",
+            "owwo..owwo..",
+            "owwwo.owwwo.",
+            "owwwwoowwwwo",
+            "owwwwoowwwwo",
+            "owwwo.owwwo.",
+            "owwo..owwo..",
+            "owo...owo...",
+            "oo....oo....",
+            "............",
+        ],
+        {"o": (20, 24, 34), "w": (240, 244, 250)},
+    ),
+    # The Throw button's ball (catching itself isn't built yet — design doc §12.1).
+    "Pokeball": (
+        [
+            "....oooo....",
+            "..oorrrroo..",
+            ".oRrrrrrrro.",
+            ".orrrrrrrro.",
+            "orrrrooorrro",
+            "ooooowcwoooo",
+            "owwwwooowwwo",
+            ".owwwwwwwwo.",
+            ".owwwwwwwgo.",
+            "..oowwggoo..",
+            "....oooo....",
+            "............",
+        ],
+        {"o": (28, 32, 44), "r": (226, 58, 52), "R": (252, 150, 140), "w": (240, 240, 244),
+         "g": (170, 176, 190), "c": (255, 255, 255)},
     ),
 }
 

@@ -18,11 +18,13 @@ using Pets.UI;
 namespace Pets.Tests
 {
     /// <summary>The saved Battle scene against BattleScreenController: the no-party redirect, the
-    /// random enemy team, the step/skip controls and the end-of-fight buttons.
+    /// random enemy team, the stat boxes and party strip, the 2-second HP drain, the playback
+    /// controls, the autoplay setting and the end-of-fight panel.
     ///
     /// Every test species has 10 attack and 200 HP, so a single Step is predictable (both Leads
     /// lose exactly 10) and a fight lasts long enough that autoplay can't have finished it before
-    /// the test takes control.</summary>
+    /// the test takes control. Autoplay is switched off by default here, and the player's own
+    /// setting is put back afterwards — PlayerPrefs in the Editor are the real ones.</summary>
     public class BattleScenePlayModeTests
     {
         private const string BattleScenePath = "Assets/Scenes/Battle.unity";
@@ -31,11 +33,31 @@ namespace Pets.Tests
 
         private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta" };
 
+        private bool hadAutoplaySetting;
+        private bool savedAutoplaySetting;
+
         [SetUp]
-        public void SetUp() => ResetRunState();
+        public void SetUp()
+        {
+            ResetRunState();
+            hadAutoplaySetting = PlayerPrefs.HasKey(GameSettings.AutoplayBattlesKey);
+            savedAutoplaySetting = GameSettings.AutoplayBattles;
+            GameSettings.AutoplayBattles = false;
+        }
 
         [TearDown]
-        public void TearDown() => ResetRunState();
+        public void TearDown()
+        {
+            ResetRunState();
+            if (hadAutoplaySetting)
+            {
+                GameSettings.AutoplayBattles = savedAutoplaySetting;
+            }
+            else
+            {
+                PlayerPrefs.DeleteKey(GameSettings.AutoplayBattlesKey);
+            }
+        }
 
         private static void ResetRunState()
         {
@@ -76,7 +98,7 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator BattleScene_WithAParty_FacesAnEnemyTeamOfTheSameSize()
+        public IEnumerator BattleScene_WithAParty_ShowsBothSidesAndThePartyStrip()
         {
             ActiveRun.Begin(MakeRun(3), MakeLibrary());
 
@@ -85,66 +107,105 @@ namespace Pets.Tests
             var controller = Controller();
             Assert.IsNotNull(controller.State, "a fight should have started");
             Assert.AreEqual(3, controller.State.LineUpA.Count);
-            Assert.AreEqual(3, controller.State.LineUpB.Count);
-            Assert.AreEqual(SceneNames.Battle, SceneManager.GetActiveScene().name);
+            Assert.AreEqual(3, controller.State.LineUpB.Count, "the foe team matches the party's size");
 
-            Assert.AreEqual("Alpha", PanelName("PlayerLead"));
-            Assert.AreEqual("Beta", PanelName("PlayerSupport"));
-            CollectionAssert.Contains(MonNames, PanelName("EnemyLead"), "the foe should be rolled from the library");
-            CollectionAssert.Contains(MonNames, PanelName("EnemySupport"));
+            Assert.AreEqual("Alpha", Stats("PlayerLeadStats").NameText.text);
+            Assert.AreEqual("Beta", Stats("PlayerSupportStats").NameText.text);
+            CollectionAssert.Contains(MonNames, Stats("EnemyLeadStats").NameText.text, "the foe is rolled from the library");
+            CollectionAssert.Contains(MonNames, Stats("EnemySupportStats").NameText.text);
+            Assert.AreEqual($"{TestHealth}/{TestHealth}", Stats("PlayerLeadStats").HealthBar.ValueLabel.text);
+            Assert.AreEqual(TestAttack.ToString(), Stats("PlayerLeadStats").AttackText.text);
 
-            // Only the third mon on each side is dormant, drawn in the queue rather than as a card.
-            Assert.AreEqual(1, ActiveChildCount("PlayerReserve"));
-            Assert.AreEqual(1, ActiveChildCount("EnemyReserve"));
+            foreach (var sprite in new[] { "PlayerLeadSprite", "PlayerSupportSprite", "EnemyLeadSprite", "EnemySupportSprite" })
+            {
+                Assert.IsTrue(GameObject.Find(sprite).GetComponent<Image>().enabled, $"{sprite} should be standing on the field");
+            }
+
+            Assert.AreEqual(PartySlotRole.Lead, Slot(0).Role);
+            Assert.AreEqual(PartySlotRole.Support, Slot(1).Role);
+            Assert.AreEqual(PartySlotRole.Reserve, Slot(2).Role);
+            Assert.AreEqual(PartySlotRole.Empty, Slot(5).Role, "six slots are always drawn, empty past the party");
+            Assert.AreEqual("Gamma", Slot(2).NameText.text);
+            Assert.AreSame(Theme.SlotGoldSprite, Slot(0).Frame.sprite, "the Lead is framed gold");
+            Assert.AreSame(Theme.SlotBlueSprite, Slot(1).Frame.sprite, "the Support is framed blue");
+
+            Assert.IsFalse(FindButton("ThrowButton").interactable, "catching isn't built yet");
+            Assert.IsFalse(GameObject.Find("ResultPanel"), "no result before the fight ends");
         }
 
         [UnityTest]
-        public IEnumerator StepButton_PlaysOneStep_AndBothLeadsTradeAttacks()
+        public IEnumerator AutoplaySetting_On_StartsTheBattlePlaying()
+        {
+            GameSettings.AutoplayBattles = true;
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(BattleScenePath);
+
+            Assert.IsTrue(Controller().IsAutoplaying);
+            Assert.IsTrue(FindButton("PauseButton").interactable);
+            Assert.IsFalse(FindButton("PlayButton").interactable);
+        }
+
+        [UnityTest]
+        public IEnumerator AutoplaySetting_Off_WaitsForThePlayer()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(BattleScenePath);
+            var controller = Controller();
+
+            Assert.IsFalse(controller.IsAutoplaying);
+            Assert.AreEqual(0, controller.State.StepNumber);
+            Assert.IsTrue(FindButton("PlayButton").interactable);
+
+            FindButton("PlayButton").onClick.Invoke();
+            Assert.IsTrue(controller.IsAutoplaying);
+            FindButton("PauseButton").onClick.Invoke();
+            Assert.IsFalse(controller.IsAutoplaying);
+        }
+
+        /// <summary>The drain is the point of this test: a Step's damage is applied at once, but the
+        /// bar and its readout count down to it over the drain time rather than jumping.</summary>
+        [UnityTest]
+        public IEnumerator StepButton_DrainsBothLeadsHp_OverTwoSeconds()
         {
             var run = MakeRun(2);
             ActiveRun.Begin(run, MakeLibrary());
 
             yield return LoadScene(BattleScenePath);
             var controller = Controller();
-            yield return PauseAndSettle(controller);
+            var playerBar = Stats("PlayerLeadStats").HealthBar;
+            var enemyBar = Stats("EnemyLeadStats").HealthBar;
 
-            int step = controller.State.StepNumber;
-            int playerHp = PanelHealth("PlayerLead").Current;
-            int enemyHp = PanelHealth("EnemyLead").Current;
-
+            float started = Time.realtimeSinceStartup;
             FindButton("StepButton").onClick.Invoke();
-            yield return SceneTransitionWait.Until(() => !controller.IsAnimating, "the Step should finish drawing");
+            yield return null;
 
-            Assert.AreEqual(step + 1, controller.State.StepNumber);
-            Assert.AreEqual(playerHp - TestAttack, PanelHealth("PlayerLead").Current);
-            Assert.AreEqual(enemyHp - TestAttack, PanelHealth("EnemyLead").Current);
-            Assert.AreEqual($"-{TestAttack}", GameObject.Find("PlayerLead").GetComponentsInChildren<Text>()
-                .First(t => t.name == "DamageText").text);
+            Assert.AreEqual(1, controller.State.StepNumber);
+            Assert.IsTrue(playerBar.IsAnimating, "the player's HP should be draining");
+            Assert.IsTrue(enemyBar.IsAnimating, "the foe's HP should be draining");
+            Assert.AreEqual(TestHealth - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
+            Assert.Greater(playerBar.DisplayedHealth, TestHealth - TestAttack, "but hasn't got there yet");
+            Assert.AreEqual($"-{TestAttack}", GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text);
+            Assert.IsTrue(Slot(0).IsAnimating, "the party strip drains along with the box");
+
+            yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
+                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+
+            Assert.GreaterOrEqual(Time.realtimeSinceStartup - started, controller.HpDrainSeconds - 0.1f,
+                "the drain should take the full drain time");
+            Assert.AreEqual($"{TestHealth - TestAttack}/{TestHealth}", playerBar.ValueLabel.text);
+            Assert.AreEqual(TestHealth - TestAttack, enemyBar.DisplayedHealth);
+            Assert.AreEqual((TestHealth - TestAttack) / (float)TestHealth, Slot(0).HealthFraction, 0.001f);
+            Assert.AreEqual(string.Empty, GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text,
+                "the damage number clears once the Step is drawn");
             Assert.AreEqual(TestHealth, run.LineUp[0].CurrentHP, "the battle must not write damage back to the run");
         }
 
-        [UnityTest]
-        public IEnumerator AutoplayButton_TogglesAutoplay()
-        {
-            ActiveRun.Begin(MakeRun(2), MakeLibrary());
-
-            yield return LoadScene(BattleScenePath);
-            var controller = Controller();
-            Assert.IsTrue(controller.IsAutoplaying, "a battle starts playing on its own");
-
-            FindButton("AutoplayButton").onClick.Invoke();
-            Assert.IsFalse(controller.IsAutoplaying);
-            Assert.AreEqual("Autoplay", FindButton("AutoplayButton").GetComponent<UiButton>().Text);
-
-            FindButton("AutoplayButton").onClick.Invoke();
-            Assert.IsTrue(controller.IsAutoplaying);
-            Assert.AreEqual("Pause", FindButton("AutoplayButton").GetComponent<UiButton>().Text);
-        }
-
         /// <summary>Identical species on both sides trade identical blows, so the last mons fall
-        /// together — a Draw, and a line-up change along the way on both sides.</summary>
+        /// together — a Draw.</summary>
         [UnityTest]
-        public IEnumerator SkipButton_FinishesTheFight_AndOffersAnotherBattle()
+        public IEnumerator SkipButton_FinishesTheFight_AndShowsTheResultPanel()
         {
             ActiveRun.Begin(MakeRun(1), MakeLibrary());
 
@@ -155,13 +216,17 @@ namespace Pets.Tests
             yield return null;
 
             Assert.AreEqual(BattleOutcome.Draw, controller.Outcome);
+            Assert.IsNotNull(GameObject.Find("ResultPanel"), "the result panel should be up");
             Assert.AreEqual("Draw", GameObject.Find("ResultText").GetComponent<Text>().text);
-            StringAssert.Contains("fainted!", GameObject.Find("LogText").GetComponent<Text>().text);
-            Assert.IsFalse(controller.IsAutoplaying);
-            Assert.IsFalse(FindButton("StepButton", includeInactive: true).gameObject.activeInHierarchy);
-            Assert.IsFalse(FindButton("SkipButton", includeInactive: true).gameObject.activeInHierarchy);
             Assert.IsTrue(FindButton("BattleAgainButton").gameObject.activeInHierarchy);
-            Assert.AreEqual("No Lead", PanelText("PlayerLead", "RoleText"), "an emptied side draws an empty frame");
+            foreach (var control in new[] { "PauseButton", "StepButton", "PlayButton", "SkipButton" })
+            {
+                Assert.IsFalse(FindButton(control).interactable, $"{control} has nothing left to do");
+            }
+            Assert.AreEqual("No Lead", Stats("PlayerLeadStats").NameText.text, "an emptied side draws an empty box");
+            Assert.IsFalse(GameObject.Find("PlayerLeadSprite").GetComponent<Image>().enabled);
+            Assert.AreEqual(PartySlotRole.Fainted, Slot(0).Role);
+            Assert.AreEqual(0f, Slot(0).HealthFraction);
         }
 
         [UnityTest]
@@ -172,21 +237,12 @@ namespace Pets.Tests
             yield return LoadScene(BattleScenePath);
 
             AssertWired<SceneNavigator>("BackButton", nameof(SceneNavigator.GoToTeam));
+            AssertWired<SceneNavigator>("ResultBackButton", nameof(SceneNavigator.GoToTeam));
             AssertWired<SceneNavigator>("BattleAgainButton", nameof(SceneNavigator.GoToBattle));
+            AssertWired<BattleScreenController>("PauseButton", nameof(BattleScreenController.OnPauseClicked));
             AssertWired<BattleScreenController>("StepButton", nameof(BattleScreenController.OnStepClicked));
-            AssertWired<BattleScreenController>("AutoplayButton", nameof(BattleScreenController.OnAutoplayClicked));
+            AssertWired<BattleScreenController>("PlayButton", nameof(BattleScreenController.OnPlayClicked));
             AssertWired<BattleScreenController>("SkipButton", nameof(BattleScreenController.OnSkipClicked));
-        }
-
-        /// <summary>Pauses autoplay and waits out any Step it had already started, so the test
-        /// owns the board from here.</summary>
-        private static IEnumerator PauseAndSettle(BattleScreenController controller)
-        {
-            if (controller.IsAutoplaying)
-            {
-                FindButton("AutoplayButton").onClick.Invoke();
-            }
-            yield return SceneTransitionWait.Until(() => !controller.IsAnimating, "autoplay's Step should finish drawing");
         }
 
         private static BattleScreenController Controller()
@@ -194,6 +250,20 @@ namespace Pets.Tests
             var controller = Object.FindFirstObjectByType<BattleScreenController>();
             Assert.IsNotNull(controller, "the Battle scene should have a BattleScreenController");
             return controller;
+        }
+
+        private static BattleStatsBoxView Stats(string name)
+        {
+            var go = GameObject.Find(name);
+            Assert.IsNotNull(go, $"Expected a '{name}' stat box");
+            return go.GetComponent<BattleStatsBoxView>();
+        }
+
+        private static BattlePartySlotView Slot(int index)
+        {
+            var go = GameObject.Find($"PartySlot{index}");
+            Assert.IsNotNull(go, $"Expected PartySlot{index} in the party strip");
+            return go.GetComponent<BattlePartySlotView>();
         }
 
         private static void AssertWired<T>(string buttonName, string methodName)
@@ -211,34 +281,6 @@ namespace Pets.Tests
             var button = buttons.FirstOrDefault(b => b.name == name);
             Assert.IsNotNull(button, $"Expected a Button named '{name}' in the Battle scene");
             return button;
-        }
-
-        private static string PanelName(string slot) => PanelText(slot, "NameRow/Name");
-
-        private static string PanelText(string slot, string path)
-        {
-            var slotGo = GameObject.Find(slot);
-            Assert.IsNotNull(slotGo, $"Expected a '{slot}' slot");
-            var line = slotGo.transform.Find($"Card/{path}");
-            Assert.IsNotNull(line, $"{slot} has no Card/{path}");
-            return line.GetComponent<Text>().text;
-        }
-
-        private static HealthBarView PanelHealth(string slot) =>
-            GameObject.Find(slot).GetComponentInChildren<HealthBarView>();
-
-        private static int ActiveChildCount(string rowName)
-        {
-            var row = GameObject.Find(rowName).transform;
-            int count = 0;
-            for (int i = 0; i < row.childCount; i++)
-            {
-                if (row.GetChild(i).gameObject.activeSelf)
-                {
-                    count++;
-                }
-            }
-            return count;
         }
 
         private static PokemonSpeciesDefinitionAsset MakeSpecies(int id, string name)

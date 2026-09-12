@@ -118,6 +118,70 @@ namespace Pets.Tests
             Assert.AreEqual(1f, bar.Fill.rectTransform.anchorMax.x, 0.0001f);
         }
 
+        /// <summary>The battle screen's drain: the target is set at once, the fill and readout get
+        /// there linearly over the duration.</summary>
+        [Test]
+        public void AnimateHealth_DrainsTheFillAndReadoutOverTheDuration()
+        {
+            bar.SetHealth(100, 100);
+
+            bar.AnimateHealth(50, 100, 2f);
+            Assert.IsTrue(bar.IsAnimating);
+            Assert.AreEqual(50, bar.Current, "the target is known straight away");
+            Assert.AreEqual("100/100", bar.ValueLabel.text, "but nothing has drained yet");
+
+            bar.Advance(1f);
+            Assert.AreEqual("75/100", bar.ValueLabel.text, "halfway through, halfway down");
+            Assert.AreEqual(0.75f, bar.Fill.rectTransform.anchorMax.x, 0.0001f);
+            Assert.IsTrue(bar.IsAnimating);
+
+            bar.Advance(1.5f);
+            Assert.IsFalse(bar.IsAnimating);
+            Assert.AreEqual("50/100", bar.ValueLabel.text, "overshooting the duration lands exactly on the target");
+            Assert.AreEqual(0.5f, bar.Fill.rectTransform.anchorMax.x, 0.0001f);
+        }
+
+        [Test]
+        public void AnimateHealth_ChangesColourAsItPassesTheBands()
+        {
+            bar.SetHealth(100, 100);
+            bar.AnimateHealth(0, 100, 2f);
+
+            bar.Advance(0.8f);
+            Assert.AreSame(Theme.HealthGreenSprite, bar.Fill.sprite, "60% is still green");
+            bar.Advance(0.4f);
+            Assert.AreSame(Theme.HealthYellowSprite, bar.Fill.sprite, "40% has turned yellow");
+            bar.Advance(0.6f);
+            Assert.AreSame(Theme.HealthRedSprite, bar.Fill.sprite, "10% has turned red");
+        }
+
+        [Test]
+        public void AnimateHealth_MidDrain_ContinuesFromWhatsShowing()
+        {
+            bar.SetHealth(100, 100);
+            bar.AnimateHealth(60, 100, 2f);
+            bar.Advance(1f);
+            Assert.AreEqual(80, bar.DisplayedHealth);
+
+            bar.AnimateHealth(40, 100, 2f);
+            Assert.AreEqual(80, bar.DisplayedHealth, "a second hit doesn't jump the bar");
+            bar.Advance(1f);
+            Assert.AreEqual(60, bar.DisplayedHealth);
+        }
+
+        [Test]
+        public void SetHealth_CancelsADrain()
+        {
+            bar.SetHealth(100, 100);
+            bar.AnimateHealth(20, 100, 2f);
+            bar.Advance(0.5f);
+
+            bar.SetHealth(20, 100);
+
+            Assert.IsFalse(bar.IsAnimating);
+            Assert.AreEqual("20/100", bar.ValueLabel.text);
+        }
+
         [Test]
         public void ZeroMax_IsEmptyRatherThanDividingByZero()
         {

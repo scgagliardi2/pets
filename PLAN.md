@@ -190,7 +190,7 @@ rearrange/release) / `DevRoster` (stuff mons into the run) hanging off it, plus 
 button opens `Battle`, which fights the party against a randomly rolled enemy team. Arriving at a
 map node still does nothing — no node starts a fight yet.
 
-*Verified green as of this writing:* 127 EditMode and 59 PlayMode tests pass (see CLAUDE.md for
+*Verified green as of this writing:* 139 EditMode and 64 PlayMode tests pass (see CLAUDE.md for
 the CLI commands).
 
 **Built and covered by tests:**
@@ -233,14 +233,23 @@ the CLI commands).
     nothing records a finished run yet.
   - `Battle.unity` — the battle screen (design doc §10, §17), via `Gameplay/BattleScreenController`
     on the on-demand runner. The party (in Team order) fights a random enemy team of the same size,
-    rolled fresh on every load by `Meta/RandomBattle` from the whole curated roster. Shows both
-    sides' Lead and Support facing each other with HP/attack, each side's dormant queue, a battle
-    log, and Step / Autoplay / Skip controls; a knockout is drawn at 0 HP before the promotion is,
-    then Victory/Defeat/Draw with Battle Again. Arriving with no run or an empty party redirects to
+    rolled fresh on every load by `Meta/RandomBattle` from the whole curated roster. Laid out after
+    the battle mockup: both sides' mons standing on a battlefield backdrop (front-facing sprites
+    for now — back sprites are still to come), stat boxes (`Prefabs/UI/BattleStatsBox.prefab`:
+    types, name, attack, HP and SPD bars) for each active mon, the party along a bottom strip
+    (`Prefabs/UI/BattlePartySlot.prefab`, gold frame = Lead, blue = Support, dimmed when fainted),
+    and a pause / step / play / skip pill. Each Step drains HP over 2 seconds, fades whoever
+    fainted, then promotes; a result panel offers Battle Again. Autoplay at start follows the
+    Settings screen's "Auto-play battles". Arriving with no run or an empty party redirects to
     Character Select (dropping the empty run). **Deliberately partial:** passives are stripped
-    from both sides at line-up assembly (so Speed and charge meters do nothing and aren't drawn),
-    there's no catching, and a fight has no consequence for the run — no Morale, EXP, money, or
-    damage written back. Reached only from Team's dev button until node resolution lands.
+    from both sides at line-up assembly (so Speed is shown but does nothing, and the mockup's
+    Active Passives panel is left out), the Throw button is drawn but disabled (no catching), the
+    backdrop is a generated placeholder (`tools/generate_battle_background.py`), and a fight has no
+    consequence for the run — no Morale, EXP, money, or damage written back. Reached only from
+    Team's dev button until node resolution lands.
+  - `Settings.unity` — reached from Home's footer and the Ingame Menu; Back returns to whichever
+    opened it. One setting, "Auto-play battles" (`Gameplay/GameSettings`, stored in PlayerPrefs —
+    a device preference, not run state, so it doesn't wait on the save layer).
   - `DevRoster.unity` — a dev tool, not a game screen: click a card to drop that species into the
     run's party or Box, duplicates allowed. It ships in the build (per §9 there's no release
     channel to keep it out of) and is *not* the Pokémon Center.

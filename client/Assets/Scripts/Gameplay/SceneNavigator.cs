@@ -48,6 +48,27 @@ namespace Pets.Gameplay
         /// starts.</summary>
         public void GoToBattle() => ScreenFade.TransitionTo(SceneNames.Battle);
 
+        /// <summary>The scene Settings was opened from, so its Back button can go back there.
+        /// Static for the same reason ActiveRun is: it has to outlive the scene that set it.</summary>
+        private static string settingsReturnScene;
+
+        /// <summary>Home's and the Ingame Menu's Settings button.</summary>
+        public void GoToSettings()
+        {
+            settingsReturnScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            ScreenFade.TransitionTo(SceneNames.Settings);
+        }
+
+        /// <summary>Settings' Back button. Home when Settings was opened directly (no scene to
+        /// return to), which is also the safe answer if the recorded scene is Settings itself.</summary>
+        public void ReturnFromSettings()
+        {
+            string target = string.IsNullOrEmpty(settingsReturnScene) || settingsReturnScene == SceneNames.Settings
+                ? SceneNames.Home
+                : settingsReturnScene;
+            ScreenFade.TransitionTo(target);
+        }
+
         /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
         /// the Ingame Menu rather than straight on the Map so the player sees where they are
         /// before moving. Guarded because a run only survives "Quit to Home" in memory (there's no

@@ -33,6 +33,23 @@ namespace Pets.Tests
             Assert.Fail($"{message} (timed out after {MaxFrames} frames)");
         }
 
+        /// <summary>For waits that are timed in seconds rather than frames (an animation with a fixed
+        /// duration): a frame budget can run out in well under the animation's length on a fast
+        /// batchmode run.</summary>
+        public static IEnumerator UntilWithinSeconds(Func<bool> condition, string message, float seconds)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (condition())
+                {
+                    yield break;
+                }
+                yield return null;
+            }
+            Assert.Fail($"{message} (timed out after {seconds} seconds)");
+        }
+
         public static IEnumerator UntilActiveScene(string sceneName) =>
             Until(() => SceneManager.GetActiveScene().name == sceneName,
                 $"expected the '{sceneName}' scene to become active");
