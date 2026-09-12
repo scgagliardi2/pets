@@ -343,6 +343,88 @@ namespace Pets.Tests
             Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
         }
 
+        /// <summary>Releasing is irreversible, so the drop only asks the question — nothing leaves
+        /// the run until the confirmation is accepted.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DroppingACardOnTheReleaseZone_AsksBeforeReleasing()
+        {
+            ActiveRun.Begin(MakeRun(3), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return DragToReleaseZone("PartySlot1");
+
+            var dialog = GameObject.Find("ReleaseConfirm");
+            Assert.IsNotNull(dialog, "the confirmation should be showing");
+            StringAssert.Contains("Beta", GameObject.Find("MessageText").GetComponent<Text>().text);
+            Assert.AreEqual(3, ActiveRun.State.LineUp.Count, "nothing should be released until it's confirmed");
+
+            FindButton("ReleaseConfirmButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(2, ActiveRun.State.LineUp.Count);
+            CollectionAssert.DoesNotContain(
+                ActiveRun.State.LineUp.Select(m => m.SpeciesId).ToList(), 2, "Beta should be gone from the run");
+            Assert.IsEmpty(ActiveRun.State.Box, "a release is not a move to the Box");
+            Assert.AreEqual("Gamma", SlotText("PartySlot1", "NameText"), "the row should have closed up");
+            Assert.IsNull(GameObject.Find("ReleaseConfirm"), "the confirmation should be closed again");
+        }
+
+        [UnityTest]
+        public IEnumerator TeamScene_CancellingARelease_KeepsTheMon()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return DragToReleaseZone("PartySlot0");
+            FindButton("ReleaseCancelButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(2, ActiveRun.State.LineUp.Count);
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+            Assert.IsNull(GameObject.Find("ReleaseConfirm"));
+        }
+
+        [UnityTest]
+        public IEnumerator TeamScene_ReleasingFromTheBox_Works()
+        {
+            var run = MakeRun(2);
+            run.MoveMon(RosterGroup.Party, 1, RosterGroup.Box, 0);
+            ActiveRun.Begin(run, MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return DragToReleaseZone("BoxSlot0");
+            FindButton("ReleaseConfirmButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+            Assert.IsEmpty(ActiveRun.State.Box);
+            Assert.AreEqual("Empty", SlotText("BoxSlot0", "RoleText"));
+        }
+
+        /// <summary>The refused case still opens the confirmation, with the reason and a dead
+        /// Release button, rather than the drop appearing to do nothing at all.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_ReleasingTheLastPartyMon_IsRefusedWithAReason()
+        {
+            ActiveRun.Begin(MakeRun(1), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return DragToReleaseZone("PartySlot0");
+
+            Assert.IsNotNull(GameObject.Find("ReleaseConfirm"));
+            StringAssert.Contains("last mon", GameObject.Find("MessageText").GetComponent<Text>().text);
+            Assert.IsFalse(FindButton("ReleaseConfirmButton").interactable);
+
+            FindButton("ReleaseCancelButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+        }
+
         [UnityTest]
         public IEnumerator TeamScene_BackButton_ReturnsToTheIngameMenu()
         {
@@ -388,6 +470,22 @@ namespace Pets.Tests
             source.OnBeginDrag(eventData);
             source.OnDrag(eventData);
             target.OnDrop(eventData);
+            source.OnEndDrag(eventData);
+            yield return null;
+        }
+
+        /// <summary>Picks a card up and drops it on the release zone, which is a drop target
+        /// rather than a slot — so the drop goes to the zone's own handler.</summary>
+        private static IEnumerator DragToReleaseZone(string fromSlot)
+        {
+            var source = SlotView(fromSlot);
+            var zone = Object.FindFirstObjectByType<ReleaseZoneView>();
+            Assert.IsNotNull(zone, "the Team scene should have a release zone");
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+
+            source.OnBeginDrag(eventData);
+            source.OnDrag(eventData);
+            zone.OnDrop(eventData);
             source.OnEndDrag(eventData);
             yield return null;
         }

@@ -74,6 +74,11 @@ namespace Pets.Gameplay
         /// around this panel can update whatever else depends on it.</summary>
         public event Action Changed;
 
+        /// <summary>Raised when a card is dropped on the release zone: which collection and slot
+        /// it came from, and the name to put in front of the player. Nothing has been let go at
+        /// this point — releasing is irreversible, so the screen confirms it first.</summary>
+        public event Action<RosterGroup, int, string> ReleaseRequested;
+
         // The run this panel last drew. Kept so a completed drag can rebuild both rows itself
         // rather than the screen having to hand the state back in on every gesture.
         private RunState state;
@@ -175,6 +180,27 @@ namespace Pets.Gameplay
             {
                 Changed?.Invoke();
             }
+        }
+
+        /// <summary>A card dropped on the release zone. The rows are rebuilt right away — the
+        /// card goes back to its slot while the question is asked — and the actual release waits
+        /// on the screen's confirmation.</summary>
+        internal void ReleaseFromSlot(TeamSlotView source)
+        {
+            if (state == null)
+            {
+                return;
+            }
+            var collection = state.CollectionFor(source.Group);
+            if (source.Index >= collection.Count)
+            {
+                return;
+            }
+            var mon = collection[source.Index];
+            string name = DisplayName(mon, library.GetById(mon.SpeciesId));
+
+            Rebuild();
+            ReleaseRequested?.Invoke(source.Group, source.Index, name);
         }
 
         /// <summary>End of the gesture. After a drop the rows have already been rebuilt and the

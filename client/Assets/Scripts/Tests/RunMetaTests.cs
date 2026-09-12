@@ -172,6 +172,56 @@ namespace Pets.Tests
             Assert.IsEmpty(state.Box);
         }
 
+        [Test]
+        public void ReleaseMon_TakesTheMonOutOfTheRunAndClosesTheGap()
+        {
+            var state = MakeRun(partyCount: 3, boxCount: 0);
+
+            Assert.IsTrue(state.ReleaseMon(RosterGroup.Party, 1));
+
+            Assert.AreEqual(2, state.LineUp.Count);
+            Assert.AreEqual(100, state.LineUp[0].SpeciesId);
+            Assert.AreEqual(102, state.LineUp[1].SpeciesId, "the mon behind the released one should close up");
+            Assert.IsEmpty(state.Box, "a release is not a move to the Box");
+        }
+
+        [Test]
+        public void ReleaseMon_FromTheBox_DoesNotTouchTheParty()
+        {
+            var state = MakeRun(partyCount: 1, boxCount: 2);
+
+            Assert.IsTrue(state.ReleaseMon(RosterGroup.Box, 0));
+
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.AreEqual(1, state.Box.Count);
+            Assert.AreEqual(201, state.Box[0].SpeciesId);
+        }
+
+        /// <summary>Same invariant the drags obey: a run always keeps someone to send out, even
+        /// when there are mons sitting in the Box.</summary>
+        [Test]
+        public void ReleaseMon_TheLastPartyMon_IsRefused()
+        {
+            var state = MakeRun(partyCount: 1, boxCount: 2);
+
+            Assert.IsFalse(state.CanReleaseMon(RosterGroup.Party, 0));
+            Assert.IsFalse(state.ReleaseMon(RosterGroup.Party, 0));
+
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.AreEqual(2, state.Box.Count);
+        }
+
+        [Test]
+        public void CanReleaseMon_ForAnEmptySlot_IsFalse()
+        {
+            var state = MakeRun(partyCount: 2, boxCount: 0);
+
+            Assert.IsFalse(state.CanReleaseMon(RosterGroup.Party, 5));
+            Assert.IsFalse(state.CanReleaseMon(RosterGroup.Box, 0));
+            Assert.IsFalse(state.ReleaseMon(RosterGroup.Box, 0));
+            Assert.AreEqual(2, state.LineUp.Count);
+        }
+
         /// <summary>A run that's down to one mon still has a Team screen with a Swap button on it,
         /// so the no-second-slot case has to be a no-op rather than an index error.</summary>
         [Test]

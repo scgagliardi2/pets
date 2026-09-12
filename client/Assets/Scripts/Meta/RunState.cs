@@ -118,6 +118,34 @@ namespace Pets.Meta
             return true;
         }
 
+        /// <summary>Whether the mon in <paramref name="index"/> of <paramref name="group"/> can
+        /// be let go. Separate from ReleaseMon so a screen can say *why* nothing will happen
+        /// before the player commits to it, rather than only refusing afterwards.</summary>
+        public bool CanReleaseMon(RosterGroup group, int index)
+        {
+            var collection = CollectionFor(group);
+            if (index < 0 || index >= collection.Count)
+            {
+                return false;
+            }
+            // Same rule the drag between collections obeys: a run always keeps someone to send
+            // out. Releasing from the Box is never blocked by it.
+            return group != RosterGroup.Party || collection.Count > 1;
+        }
+
+        /// <summary>Lets a mon go for good — it leaves the run entirely rather than moving to the
+        /// Box (design doc §7 has no separate storage behind the Box). Irreversible, which is why
+        /// the Team screen asks first; this only enforces the rules.</summary>
+        public bool ReleaseMon(RosterGroup group, int index)
+        {
+            if (!CanReleaseMon(group, index))
+            {
+                return false;
+            }
+            CollectionFor(group).RemoveAt(index);
+            return true;
+        }
+
         public List<PokemonInstance> CollectionFor(RosterGroup group) =>
             group == RosterGroup.Party ? LineUp : Box;
 
