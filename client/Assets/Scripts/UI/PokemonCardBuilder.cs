@@ -74,11 +74,36 @@ namespace Pets.UI
             return text;
         }
 
-        /// <summary>One or two Pets.UI.TypeIconView instances — Type1, and Type2 if the species
-        /// has one — side by side in a row, from the TypeIcon prefab the calling screen was handed
-        /// by its scene builder.</summary>
-        public static RectTransform AddTypeIcons(Transform card, GameObject typeIconPrefab, int height,
-            PokemonType type1, bool hasSecondType, PokemonType type2)
+        /// <summary>A row of two Pets.UI.TypeIconView instances from the TypeIcon prefab the
+        /// calling screen was handed by its scene builder. Both are always created and the second
+        /// is hidden for a single-typed species, so the same row can be re-pointed at a different
+        /// species later without instantiating anything — see <see cref="TypeIconRow.SetTypes"/>
+        /// and the pooled grid in CharacterSelectController.</summary>
+        public readonly struct TypeIconRow
+        {
+            public readonly RectTransform Row;
+            public readonly TypeIconView First;
+            public readonly TypeIconView Second;
+
+            public TypeIconRow(RectTransform row, TypeIconView first, TypeIconView second)
+            {
+                Row = row;
+                First = first;
+                Second = second;
+            }
+
+            public void SetTypes(PokemonType type1, bool hasSecondType, PokemonType type2)
+            {
+                First.Type = type1;
+                if (hasSecondType)
+                {
+                    Second.Type = type2;
+                }
+                Second.gameObject.SetActive(hasSecondType);
+            }
+        }
+
+        public static TypeIconRow AddTypeIconRow(Transform card, GameObject typeIconPrefab, int height)
         {
             var row = new GameObject("TypesRow", typeof(RectTransform));
             row.transform.SetParent(card, false);
@@ -90,19 +115,26 @@ namespace Pets.UI
             var rowLayoutElement = row.AddComponent<LayoutElement>();
             rowLayoutElement.preferredHeight = height;
 
-            AddTypeIcon(row.transform, typeIconPrefab, type1);
-            if (hasSecondType)
-            {
-                AddTypeIcon(row.transform, typeIconPrefab, type2);
-            }
-
-            return row.GetComponent<RectTransform>();
+            return new TypeIconRow(
+                row.GetComponent<RectTransform>(),
+                AddTypeIcon(row.transform, typeIconPrefab),
+                AddTypeIcon(row.transform, typeIconPrefab));
         }
 
-        private static void AddTypeIcon(Transform parent, GameObject typeIconPrefab, PokemonType type)
+        /// <summary>Builds the row and points it at one species in a single call, for the screens
+        /// that build a card once and throw it away.</summary>
+        public static RectTransform AddTypeIcons(Transform card, GameObject typeIconPrefab, int height,
+            PokemonType type1, bool hasSecondType, PokemonType type2)
+        {
+            var row = AddTypeIconRow(card, typeIconPrefab, height);
+            row.SetTypes(type1, hasSecondType, type2);
+            return row.Row;
+        }
+
+        private static TypeIconView AddTypeIcon(Transform parent, GameObject typeIconPrefab)
         {
             var instance = Object.Instantiate(typeIconPrefab, parent, false);
-            instance.GetComponent<TypeIconView>().Type = type;
+            return instance.GetComponent<TypeIconView>();
         }
     }
 }

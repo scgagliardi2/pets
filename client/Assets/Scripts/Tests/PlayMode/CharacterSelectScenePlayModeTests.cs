@@ -172,6 +172,40 @@ namespace Pets.Tests
             StringAssert.Contains(supportName, summaryBeforeConfirm);
         }
 
+        /// <summary>Filtering and sorting rebind the existing cards rather than destroying the grid
+        /// and building a new one. Asserted on the total child count — including inactive — because
+        /// the failure mode if this regresses is silent: the screen looks identical while every
+        /// click churns a few hundred GameObjects, which is a visible hitch on a phone and gets
+        /// worse as the roster grows toward the full 183 (PLAN.md §8).</summary>
+        [UnityTest]
+        public IEnumerator FilteringAndSorting_ReuseTheSameCards()
+        {
+            var content = GridContent();
+            int cardsAfterFirstBuild = content.childCount;
+            Assert.Greater(cardsAfterFirstBuild, 0, "the grid should have built cards on Start");
+
+            var dropdown = GameObject.Find("Canvas").transform.Find("ToolbarBar/TypeFilterDropdown").GetComponent<Dropdown>();
+            var controller = Object.FindFirstObjectByType<CharacterSelectController>();
+
+            dropdown.value = 1;
+            yield return null;
+            controller.OnSortAttackClicked();
+            yield return null;
+            controller.OnSortAttackClicked();
+            yield return null;
+            dropdown.value = 0;
+            yield return null;
+            controller.OnResetClicked();
+            yield return null;
+
+            Assert.AreEqual(cardsAfterFirstBuild, content.childCount,
+                "the grid grew or shrank its card objects instead of rebinding the ones it had");
+
+            // And the visible result is still correct after all that reuse.
+            int visible = content.GetComponentsInChildren<Button>().Length;
+            Assert.AreEqual(cardsAfterFirstBuild, visible, "an unfiltered grid should show every card again");
+        }
+
         [UnityTest]
         public IEnumerator SelectingATypeInTheFilterDropdown_NarrowsTheGridToOnlyThatType()
         {
