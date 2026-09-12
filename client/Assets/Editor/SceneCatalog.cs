@@ -22,6 +22,7 @@ namespace Pets.EditorTools
             HistorySceneBuilder.ScenePath,
             CreditsSceneBuilder.ScenePath,
             DevRosterSceneBuilder.ScenePath,
+            BattleSceneBuilder.ScenePath,
         };
 
         public static void EnsureBuildScenes()
@@ -51,6 +52,7 @@ namespace Pets.EditorTools
             HistorySceneBuilder.Build();
             CreditsSceneBuilder.Build();
             DevRosterSceneBuilder.Build();
+            BattleSceneBuilder.Build();
             EnsureBuildScenes();
             Debug.Log($"All {AllScenePaths.Length} scenes rebuilt.");
         }

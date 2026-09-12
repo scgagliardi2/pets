@@ -8,6 +8,7 @@ using UnityEngine.UI;
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
 #endif
+using Pets.Data;
 using Pets.Gameplay;
 using Pets.Simulation;
 using Pets.UI;
@@ -132,6 +133,70 @@ namespace Pets.Tests
                 }
             }
             yield break;
+        }
+
+        /// <summary>Every card carries a HealthBar prefab instance, full (nothing has fought yet),
+        /// actually bound to *its* species — checked by sorting on Health and requiring the bars to
+        /// come out in the same order, since a pooled card rebinding the wrong field would still
+        /// show a plausible-looking full bar — and fitting inside the card's height budget.</summary>
+        [UnityTest]
+        public IEnumerator EveryCard_ShowsAFullHealthBarForItsOwnSpecies()
+        {
+            var canvas = GameObject.Find("Canvas").transform;
+            canvas.Find("ToolbarBar/SortHealthButton").GetComponent<Button>().onClick.Invoke();
+            yield return null;
+
+            int previousMax = int.MaxValue;
+            foreach (var button in GridContent().GetComponentsInChildren<Button>())
+            {
+                var bar = button.GetComponentInChildren<HealthBarView>();
+                Assert.IsNotNull(bar, $"{button.gameObject.name} has no HealthBarView");
+                Assert.Greater(bar.Max, 0, $"{button.gameObject.name}'s bar has no max HP");
+                Assert.AreEqual(bar.Max, bar.Current, $"{button.gameObject.name} should start at full health");
+                Assert.AreEqual(1f, bar.Fill.rectTransform.anchorMax.x, 0.001f);
+                Assert.IsNotNull(bar.Fill.sprite, $"{button.gameObject.name}'s bar fill sprite failed to load");
+                Assert.LessOrEqual(bar.Max, previousMax,
+                    "sorted by Health, bars should run highest first — one out of order is showing another species' HP");
+                previousMax = bar.Max;
+
+                var card = button.GetComponent<RectTransform>();
+                Assert.LessOrEqual(LayoutUtility.GetPreferredHeight(card), card.rect.height + 0.5f,
+                    $"{button.gameObject.name}'s lines overflow its cell — grow CharacterSelectSceneBuilder.CardHeight");
+            }
+        }
+
+        /// <summary>Speed is drawn against the roster-wide cap (PokemonSpeciesDefinitionAsset.MaxBaseSpeed),
+        /// not per species, and attack sits beside the name with its sword icon. Sorting by Speed
+        /// and requiring the bars in the same order proves each pooled card's bar is bound to its
+        /// own species.</summary>
+        [UnityTest]
+        public IEnumerator EveryCard_ShowsItsAttackAndASpeedBarScaledToTheSpeedCap()
+        {
+            var canvas = GameObject.Find("Canvas").transform;
+            canvas.Find("ToolbarBar/SortSpeedButton").GetComponent<Button>().onClick.Invoke();
+            yield return null;
+
+            int previousSpeed = int.MaxValue;
+            foreach (var button in GridContent().GetComponentsInChildren<Button>())
+            {
+                string card = button.gameObject.name;
+
+                var bar = button.GetComponentInChildren<StatBarView>();
+                Assert.IsNotNull(bar, $"{card} has no speed bar");
+                Assert.AreEqual(PokemonSpeciesDefinitionAsset.MaxBaseSpeed, bar.Max, $"{card}'s speed bar isn't scaled to the speed cap");
+                Assert.Greater(bar.Value, 0, $"{card} shows no speed");
+                Assert.AreEqual((float)bar.Value / bar.Max, bar.Fill.rectTransform.anchorMax.x, 0.001f, $"{card}'s speed fill doesn't match its speed");
+                Assert.AreEqual(bar.Value.ToString(), bar.ValueLabel.text);
+                Assert.LessOrEqual(bar.Value, previousSpeed,
+                    "sorted by Speed, bars should run highest first — one out of order is showing another species' speed");
+                previousSpeed = bar.Value;
+
+                var attack = button.transform.Find("NameRow/AttackValue")?.GetComponent<Text>();
+                Assert.IsNotNull(attack, $"{card} has no attack value beside its name");
+                Assert.IsTrue(int.TryParse(attack.text, out int attackValue) && attackValue > 0, $"{card}'s attack reads '{attack.text}'");
+                var sword = button.transform.Find("NameRow/AttackIcon")?.GetComponent<Image>();
+                Assert.IsNotNull(sword?.sprite, $"{card}'s attack icon failed to load");
+            }
         }
 
         [UnityTest]
@@ -290,12 +355,10 @@ namespace Pets.Tests
             int previous = descending ? int.MaxValue : int.MinValue;
             foreach (var button in buttons)
             {
-                // Matched by content ("ATK 49  HP 45  SPD 45") rather than a fixed child index —
-                // the exact set and order of a card's Text children has already shifted once (the
-                // type line became icons instead), so pinning to a position here is exactly what
-                // broke.
-                string statLine = button.GetComponentsInChildren<Text>().Select(t => t.text).First(t => t.StartsWith("ATK "));
-                int attack = int.Parse(statLine.Substring("ATK ".Length).Split(' ')[0]);
+                // Found by name rather than a child index — the card's children have been
+                // rearranged twice already (types became icons; stats became bars and a name-row
+                // attack), and pinning to a position is exactly what broke.
+                int attack = int.Parse(button.transform.Find("NameRow/AttackValue").GetComponent<Text>().text);
                 if (descending)
                 {
                     Assert.LessOrEqual(attack, previous, "cards should be sorted by Attack, highest first");

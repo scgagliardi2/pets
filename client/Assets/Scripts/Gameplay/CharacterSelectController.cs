@@ -27,18 +27,23 @@ namespace Pets.Gameplay
         // is a thin segmented display font and mushes into grey below roughly 16px, which is what
         // made the first pass of this card read as blurry. Everything here is therefore sized to
         // fill the cell rather than float in it — the sprite is back to the 96 the pre-landscape
-        // card used, and the three text lines sit above Theme.FontSizeSmall (13), the theme's
+        // card used, and the text sits above Theme.FontSizeSmall (13), the theme's
         // documented floor for this font, instead of at it.
         //
-        // Budget: 12 padding + 96 sprite + 23 name + 30 types row + 20 stats + 3 one-unit gaps =
-        // 184, inside the 186 cell (the types row is two 28-unit TypeIconView icons, not a text
-        // line — see Pets.UI.PokemonCardBuilder.AddTypeIcons, which builds every card on this
-        // screen and on the Team screen). Grow CharacterSelectSceneBuilder.CardHeight with any of
-        // these.
+        // Laid out like a battle panel: name with a sword + attack at its right end, then HP and SPD
+        // as bars. Budget: 12 padding + 96 sprite + 24 name row (the 24-unit sword sets it) + 30
+        // types row + 18 HP bar + 18 SPD bar + 4 one-unit gaps = 202, inside the 205 cell (the types
+        // row is two 28-unit TypeIconView icons — see Pets.UI.PokemonCardBuilder.AddTypeIcons; each
+        // bar's 18 is its prefab's own LayoutElement, set in UiPrefabBuilder). Grow
+        // CharacterSelectSceneBuilder.CardHeight with any of these.
         private const int CardSpriteHeight = 96;
         private const int CardNameFontSize = 17;
-        private const int CardLineFontSize = 14;
         private const int CardTypesRowHeight = 30;
+        // 2x the sword's 12px art, so its pixels stay square.
+        private const int CardAttackIconSize = 24;
+        // The card's 6 padding plus this clears the TextBox art's 10-unit border, so the rows that
+        // run edge to edge (name/attack, the bars) don't sit on the bevel.
+        private const int CardSideInset = 6;
 
         private static readonly PokemonType[] AllTypes = (PokemonType[])Enum.GetValues(typeof(PokemonType));
 
@@ -54,6 +59,8 @@ namespace Pets.Gameplay
         [SerializeField] private Button sortSpeedButton;
         [SerializeField] private Button sortHealthButton;
         [SerializeField] private GameObject typeIconPrefab;
+        [SerializeField] private GameObject healthBarPrefab;
+        [SerializeField] private GameObject speedBarPrefab;
 
         private PokemonSpeciesDefinitionAsset chosenLead;
         private PokemonSpeciesDefinitionAsset chosenSupport;
@@ -213,9 +220,10 @@ namespace Pets.Gameplay
             public GameObject Root;
             public Button Button;
             public Image Sprite;
-            public Text NameLine;
+            public PokemonCardBuilder.NameAttackRow NameRow;
             public PokemonCardBuilder.TypeIconRow TypeIcons;
-            public Text StatsLine;
+            public HealthBarView HealthBar;
+            public StatBarView SpeedBar;
             public PokemonSpeciesDefinitionAsset Species;
         }
 
@@ -274,14 +282,12 @@ namespace Pets.Gameplay
                 Root = go,
                 Button = button,
                 Sprite = PokemonCardBuilder.AddSprite(go.transform, null, CardSpriteHeight),
-                NameLine = PokemonCardBuilder.AddLine(go.transform, string.Empty, CardNameFontSize, FontStyle.Bold, Theme.TextDark),
+                // Bold — Handjet's Regular weight is too thin to hold up at card sizes.
+                NameRow = PokemonCardBuilder.AddNameAttackRow(go.transform, CardNameFontSize, Theme.TextDark, CardSideInset, CardAttackIconSize),
                 TypeIcons = PokemonCardBuilder.AddTypeIconRow(go.transform, typeIconPrefab, CardTypesRowHeight),
+                HealthBar = PokemonCardBuilder.AddStatBar<HealthBarView>(go.transform, healthBarPrefab, CardSideInset),
+                SpeedBar = PokemonCardBuilder.AddStatBar<StatBarView>(go.transform, speedBarPrefab, CardSideInset),
             };
-            // All three stats on one line: it buys the height that lets the sprite go back to 96
-            // and every line go up a couple of sizes, which matters more for readability than
-            // giving Attack a row of its own did. Bold like the name — Handjet's Regular weight is
-            // too thin to hold up at this size.
-            view.StatsLine = PokemonCardBuilder.AddLine(go.transform, string.Empty, CardLineFontSize, FontStyle.Bold, Theme.TextDark);
 
             button.onClick.AddListener(() =>
             {
@@ -301,9 +307,14 @@ namespace Pets.Gameplay
             // still tell the cards apart by object name.
             card.Root.name = $"Card_{species.DisplayName}";
             card.Sprite.sprite = PokemonSprites.Load(species);
-            card.NameLine.text = species.DisplayName;
+            card.NameRow.Name.text = species.DisplayName;
+            card.NameRow.Attack.text = species.BaseAttack.ToString();
             card.TypeIcons.SetTypes(species.Type1, species.HasSecondType, species.Type2);
-            card.StatsLine.text = $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}";
+            // A mon picked here hasn't fought yet, so its HP bar is full — the readout is what tells
+            // the species apart. Speed, by contrast, is drawn against the roster-wide cap, so the
+            // bar itself compares species.
+            card.HealthBar.SetHealth(species.BaseHealth, species.BaseHealth);
+            card.SpeedBar.SetValue(species.BaseSpeed, PokemonSpeciesDefinitionAsset.MaxBaseSpeed);
             card.Root.SetActive(true);
         }
     }

@@ -57,6 +57,19 @@ namespace Pets.Tests
         }
 
         [Test]
+        public void EverySpecies_BaseSpeedIsWithinTheSpeedCap()
+        {
+            var library = LoadSingle<PokemonSpeciesLibrary>();
+
+            var outOfRange = library.AllSpecies
+                .Where(s => s.BaseSpeed <= 0 || s.BaseSpeed > PokemonSpeciesDefinitionAsset.MaxBaseSpeed)
+                .Select(s => $"{s.DisplayName} ({s.BaseSpeed})");
+            CollectionAssert.IsEmpty(outOfRange.ToArray(),
+                $"BaseSpeed must be 1..{PokemonSpeciesDefinitionAsset.MaxBaseSpeed} — speed bars are scaled to that cap, " +
+                "so a species outside it draws a wrong (or pinned-full) bar");
+        }
+
+        [Test]
         public void EverySpecies_ResolvesItsSprite()
         {
             var library = LoadSingle<PokemonSpeciesLibrary>();

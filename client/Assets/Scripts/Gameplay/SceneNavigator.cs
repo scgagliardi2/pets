@@ -43,6 +43,11 @@ namespace Pets.Gameplay
 
         public void GoToDevRoster() => ScreenFade.TransitionTo(SceneNames.DevRoster);
 
+        /// <summary>Team's dev "Random Battle" and the Battle screen's "Battle Again" — every load
+        /// of the Battle scene rolls a fresh enemy team, so re-entering it is how a new fight
+        /// starts.</summary>
+        public void GoToBattle() => ScreenFade.TransitionTo(SceneNames.Battle);
+
         /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
         /// the Ingame Menu rather than straight on the Map so the player sees where they are
         /// before moving. Guarded because a run only survives "Quit to Home" in memory (there's no

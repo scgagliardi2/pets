@@ -53,6 +53,22 @@ namespace Pets.EditorTools
         public static void CaptureRegionMapScenePlaying() =>
             CapturePlaying(RegionMapSceneBuilder.ScenePath);
 
+        /// <summary>The Battle screen redirects to Character Select without a party, so a
+        /// three-mon run from the library's first species is seeded first — before Play mode is
+        /// entered, since Start runs before the EnteredPlayMode callback would get a chance.</summary>
+        [MenuItem("Pets/Dev/Capture Battle Scene (Playing)")]
+        public static void CaptureBattleScenePlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState();
+            for (int i = 0; i < 3 && i < library.AllSpecies.Count; i++)
+            {
+                run.LineUp.Add(Pets.Data.PokemonInstanceFactory.Create(library.AllSpecies[i], $"capture-{i}"));
+            }
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+            CapturePlaying(BattleSceneBuilder.ScenePath);
+        }
+
         private static void CapturePlaying(string scenePath)
         {
             EditorSceneManager.OpenScene(scenePath);

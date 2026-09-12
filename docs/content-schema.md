@@ -38,7 +38,7 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `id` | `int` | PokeAPI id, reused directly — see design doc §9. |
 | `displayName` | `string` | Real Pokémon name (this project uses actual Pokémon names/species — see PLAN.md §9 scope note). |
 | `types` | `PokemonType` + optional second `PokemonType` | One or two of the 18 types (design doc §9's `PokemonType` union). |
-| `baseAttack` / `baseHealth` / `baseSpeed` | `int` | Per-evolution-stage stats, sourced directly from `docs/pokemon_stats_unique.xlsx` — **explicit placeholders**, not derived from a formula (design doc §8). |
+| `baseAttack` / `baseHealth` / `baseSpeed` | `int` | Per-evolution-stage stats, sourced directly from `docs/pokemon_stats_unique.xlsx` — **explicit placeholders**, not derived from a formula (design doc §8). `baseSpeed` is capped at `PokemonSpeciesDefinitionAsset.MaxBaseSpeed` (200): speed bars are drawn as a fraction of it, and `ContentIntegrityTests` fails a species above it. |
 | `passive` | `PassiveDefinition` reference | Empty/none for most of the 183 species today — the source sheet's Ability column is blank. Fill in as passives are hand-authored (PLAN.md §8). |
 | `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). |
 | `evolutionExpThreshold` | `int` | Only meaningful if `evolvesInto` is set. |

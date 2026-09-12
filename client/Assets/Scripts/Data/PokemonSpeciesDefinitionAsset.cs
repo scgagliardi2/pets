@@ -19,6 +19,11 @@ namespace Pets.Data
         public bool HasSecondType;
         public PokemonType Type2;
 
+        /// <summary>The ceiling for BaseSpeed. Speed bars (Character Select's cards) are drawn as a
+        /// fraction of it, so a species above it would silently pin a full bar —
+        /// ContentIntegrityTests fails any asset that exceeds it.</summary>
+        public const int MaxBaseSpeed = 200;
+
         [Header("Base stats (docs/pokemon_stats_unique.xlsx, base-form stage)")]
         public int BaseAttack;
         public int BaseHealth;
