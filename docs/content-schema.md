@@ -41,8 +41,8 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `types` | `PokemonType` + optional second `PokemonType` | One or two of the 18 types (design doc §9's `PokemonType` union). |
 | `baseAttack` / `baseHealth` / `baseSpeed` | `int` | Per-evolution-stage stats, sourced directly from `docs/pokemon_stats_unique.xlsx` — **explicit placeholders**, not derived from a formula (design doc §8). `baseSpeed` is capped at `PokemonSpeciesDefinitionAsset.MaxBaseSpeed` (200): speed bars are drawn as a fraction of it, and `ContentIntegrityTests` fails a species above it. |
 | `passive` | `PassiveDefinition` reference | Always set — `ContentIntegrityTests` requires it. The source sheet's Ability column is blank, so only the original 28 curated species have a bespoke passive; the roster importer gives every other species one shared placeholder per primary type (`SpeciesRosterImporter.DefaultPassiveIdByType`). Hand-authoring one later simply overrides it (PLAN.md §8, ADR 0004). |
-| `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). |
-| `evolutionExpThreshold` | `int` | Only meaningful if `evolvesInto` is set. |
+| `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). Set by the roster importer from `docs/roster_evolution_chains.json` (real PokeAPI chains, restricted to the roster). Null for a final form **and** for the three branching lines — Eevee, Tyrogue, Nincada — which one reference can't express. |
+| `evolutionStage` | `int` | Chain depth: 0 for a base form, 1 for a first evolution. Counted against the *real* chain, so Pikachu is stage 1 (Pichu exists, it just isn't curated). Used only as the index into the passive's `magnitudeByStage` table (§1, §3) — **not** to decide when a mon evolves, which is counted per instance. |
 | `sprite` | `Sprite` reference | Direct reference to the PNG under `client/Assets/Art/Pokemon/{id}.png`, **not** a path string: only the sprites curated species point at are pulled into a build, and a wrong reference is visibly missing in the Inspector rather than a silent runtime null. Assigned by Id by the content-import pipeline (PLAN.md §8); `Pets > Migrations > Assign Species Sprites From Art Folder` does the same for an asset authored outside it. |
 | `isLegendary` | `bool` | Manually flagged for the 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre, Groudon) per PLAN.md §8 — the source sheet carries no rarity flag, so this is set by hand at import time, not derived. |
 
@@ -152,7 +152,20 @@ it's implemented.
 
 Design doc §9 describes a single `PokemonInstance` carrying both run-level and in-battle state.
 The implementation splits it in two, because the two halves have different lifetimes and the
-simulator mutates its subject in place:
+simulator mutates its subject in place.
+
+It also **drops §9's `level` / `expToNextLevel` pair** (ADR 0005). EXP is a small counter rather
+than a points pool — one per battle won, two per duplicate combined in — and every point is worth a
+flat `ExperienceResolver.StatGainPerExp` on all three stats, so a level would have been a second
+name for the same number. `CurrentStats` is **derived** from species + EXP by
+`ExperienceResolver.Recompute`, not accumulated into: anything written there that doesn't follow
+from those two is overwritten on the next EXP grant, so a permanent modifier (an item, say) has to
+become an input to that calculation rather than a one-off addition.
+
+Evolution is counted per instance (`TimesEvolved`) rather than from the species' chain depth: a mon
+evolves every `ExperienceResolver.ExpPerEvolution` points, so a curated base form whose real
+pre-evolution isn't in the roster still evolves on its first threshold. There is deliberately no
+per-species EXP threshold field — nothing in the roster sheet or PokeAPI supplies one.
 
 ```csharp
 // Persistent: what the run holds. A battle never touches one of these.
@@ -160,10 +173,9 @@ public class PokemonInstance {
     public string InstanceId;
     public int SpeciesId;
     public string Nickname;          // optional
-    public int Level;
-    public int Exp;
-    public int ExpToNextLevel;
-    public Stats CurrentStats;       // attack, health, speed — leveled, plus permanent modifiers
+    public int Exp;                  // total ever earned; 1 per battle won, 2 per duplicate combined in
+    public int TimesEvolved;         // this instance's own count — see below
+    public Stats CurrentStats;       // DERIVED: species base + ExperienceResolver.StatGainPerExp * Exp
     public int CurrentHP;            // HP it starts its next battle at
     public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
     public PassiveDefinition ResolvedPassive;
@@ -231,7 +243,8 @@ Analogous to the old schema's export, adapted to the new fields. A `PokemonSpeci
   "baseHealth": 8,
   "baseSpeed": 7,
   "passiveId": "ember-burst",
-  "evolvesInto": { "speciesId": 5, "expThreshold": 120 },
+  "evolvesInto": { "speciesId": 5 },
+  "evolutionStage": 0,
   "spriteId": 4,
   "isLegendary": false
 }

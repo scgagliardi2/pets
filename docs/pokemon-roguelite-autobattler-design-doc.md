@@ -172,7 +172,7 @@ interface PokemonSpecies {
   types: [PokemonType] | [PokemonType, PokemonType];
   baseStats: { attack: number; health: number; speed: number };
   passiveId: string;       // triggers whenever this mon's own charge meter fills - see §10.3
-  evolvesInto?: { speciesId: number; expThreshold: number };
+  evolvesInto?: { speciesId: number };   // threshold is a run-layer constant, not per-species - see ADR 0005
   spriteUrl: string;
 }
 
@@ -180,9 +180,9 @@ interface PokemonInstance {
   instanceId: string;
   speciesId: number;
   nickname?: string;
-  level: number;
-  exp: number;
-  expToNextLevel: number;
+  exp: number;               // small counter: 1 per battle won, 2 per duplicate combined in
+  timesEvolved: number;      // ADR 0005 - level/expToNextLevel were dropped; exp is the only growth counter
+
   currentStats: { attack: number; health: number; speed: number };
   currentHP: number;
   status?: "poisoned" | "burned" | "paralyzed" | "asleep"; // persistent flag - also read by the catch-chance formula, §12.1
@@ -302,8 +302,8 @@ Initial directional ideas for the rest of the types — these double as the pass
 
 ### 12.3 Evolution
 
-- Evolution triggers automatically once a mon crosses its species' EXP/level threshold (reuse real Pokémon evolution chains via PokeAPI, restricted to your curated Gen 1–3 roster).
-- **Combine 2 of the same mon** to instantly grant EXP to one of them (consumes the duplicate) — a sacrifice/fusion mechanic for dupes.
+- Evolution triggers automatically once a mon crosses its EXP threshold (reuse real Pokémon evolution chains via PokeAPI, restricted to your curated Gen 1–3 roster). **As built** (ADR 0005): every `ExperienceResolver.ExpPerEvolution` points of EXP, counted from how many times that mon has already evolved, so a three-stage line evolves at 3 EXP and again at 6. The three branching lines in the roster — Eevee, Tyrogue, Nincada — don't evolve at all yet: picking a branch needs a choice the player makes, which isn't built.
+- **Combine 2 of the same mon** to instantly grant EXP to one of them (consumes the duplicate) — a sacrifice/fusion mechanic for dupes. **As built:** dragging one onto another of the same species on the Team screen, which asks whether that meant combine or reorder; the mon dropped onto survives and gains `CombineResolver.ExpGranted`, and the duplicate's own EXP is not carried over.
 
 ---
 

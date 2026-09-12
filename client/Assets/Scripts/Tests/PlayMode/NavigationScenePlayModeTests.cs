@@ -386,6 +386,85 @@ namespace Pets.Tests
             Assert.IsNull(GameObject.Find("ReleaseConfirm"), "the confirmation should be closed again");
         }
 
+        /// <summary>Dropping a mon onto another of the same species is ambiguous — it could mean
+        /// reorder, or it could mean combine (design doc §12.3) — and a combine consumes a mon for
+        /// good, so the drop asks instead of picking one.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DroppingADuplicateOntoAnother_CombinesOnConfirm()
+        {
+            ActiveRun.Begin(MakeDuplicateRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+            yield return Drag("PartySlot1", "PartySlot0");
+
+            Assert.IsNotNull(GameObject.Find("CombineConfirm"), "the duplicate question should be showing");
+            Assert.AreEqual(2, ActiveRun.State.LineUp.Count, "nothing should be consumed until it's confirmed");
+
+            FindButton("CombineConfirmButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the dragged duplicate should be consumed");
+            Assert.AreEqual("mon-0", ActiveRun.State.LineUp[0].InstanceId, "the mon dropped onto is the survivor");
+            Assert.AreEqual(CombineResolver.ExpGranted, ActiveRun.State.LineUp[0].Exp);
+            Assert.IsNull(GameObject.Find("CombineConfirm"), "the dialog should be closed again");
+        }
+
+        /// <summary>The other half of the question: two of the same species still need to be
+        /// reorderable, since the one with more EXP is the one you'd want leading.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_ChoosingSwapOnADuplicate_ReordersWithoutConsumingEither()
+        {
+            ActiveRun.Begin(MakeDuplicateRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+            yield return Drag("PartySlot1", "PartySlot0");
+            FindButton("CombineSwapButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(2, ActiveRun.State.LineUp.Count, "swapping should keep both");
+            Assert.AreEqual("mon-1", ActiveRun.State.LineUp[0].InstanceId);
+            Assert.AreEqual("mon-0", ActiveRun.State.LineUp[1].InstanceId);
+            Assert.IsTrue(ActiveRun.State.LineUp.All(m => m.Exp == 0), "a swap grants no EXP");
+        }
+
+        [UnityTest]
+        public IEnumerator TeamScene_CancellingADuplicateDrop_ChangesNothing()
+        {
+            ActiveRun.Begin(MakeDuplicateRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+            yield return Drag("PartySlot1", "PartySlot0");
+            FindButton("CombineCancelButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(2, ActiveRun.State.LineUp.Count);
+            Assert.AreEqual("mon-0", ActiveRun.State.LineUp[0].InstanceId);
+            Assert.IsNull(GameObject.Find("CombineConfirm"));
+        }
+
+        /// <summary>A combine that would leave the party empty is refused the same way a release
+        /// is: the dialog still opens and says why, with Combine dead but Swap still offered.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_CombiningAwayTheLastPartyMon_IsRefusedWithAReason()
+        {
+            var run = MakeDuplicateRun(1);
+            run.Box.Add(PokemonInstanceFactory.Create(MakeSpecies(1, MonNames[0]), "boxed"));
+            ActiveRun.Begin(run, MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+            yield return Drag("PartySlot0", "BoxSlot0");
+
+            Assert.IsNotNull(GameObject.Find("CombineConfirm"));
+            StringAssert.Contains("last mon in your party",
+                GameObject.Find("CombineConfirm").transform.Find("Dialog/MessageText").GetComponent<Text>().text);
+            Assert.IsFalse(FindButton("CombineConfirmButton").interactable);
+            Assert.IsTrue(FindButton("CombineSwapButton").interactable, "swapping it for the Box duplicate is still fine");
+
+            FindButton("CombineCancelButton").onClick.Invoke();
+            yield return null;
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+        }
+
         [UnityTest]
         public IEnumerator TeamScene_CancellingARelease_KeepsTheMon()
         {
@@ -553,6 +632,19 @@ namespace Pets.Tests
         }
 
         private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta" };
+
+        /// <summary>A party of <paramref name="partyCount"/> mons that are all the *same* species
+        /// — what the combine gesture needs, and what MakeRun deliberately never produces (it gives
+        /// every slot its own species so the reorder tests can tell the cards apart).</summary>
+        private static RunState MakeDuplicateRun(int partyCount)
+        {
+            var state = new RunState();
+            for (int i = 0; i < partyCount; i++)
+            {
+                state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(1, MonNames[0]), $"mon-{i}"));
+            }
+            return state;
+        }
 
         private static RunState MakeRun(int partyCount = 2)
         {

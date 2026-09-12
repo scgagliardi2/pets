@@ -2,6 +2,7 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Pets.EditorTools
@@ -75,10 +76,54 @@ namespace Pets.EditorTools
             CapturePlaying(BattleSceneBuilder.ScenePath);
         }
 
-        private static void CapturePlaying(string scenePath)
+        /// <summary>Run once in Play mode, a few frames before the shot is taken — for a screen
+        /// whose interesting state is behind a gesture rather than in its resting layout.</summary>
+        private static System.Action afterStart;
+
+        /// <summary>The Team screen with the duplicate question open — the one piece of this
+        /// screen that isn't visible in its resting state. Seeds a party whose first two mons are
+        /// the same species (which is what makes the gesture ambiguous, see TeamPanelController),
+        /// then performs the drop that raises it.</summary>
+        [MenuItem("Pets/Dev/Capture Team Scene Combine Dialog (Playing)")]
+        public static void CaptureTeamCombineDialogPlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState();
+            var duplicate = library.AllSpecies[0];
+            run.LineUp.Add(Pets.Data.PokemonInstanceFactory.Create(duplicate, "capture-0"));
+            run.LineUp.Add(Pets.Data.PokemonInstanceFactory.Create(duplicate, "capture-1"));
+            run.LineUp.Add(Pets.Data.PokemonInstanceFactory.Create(library.AllSpecies[3], "capture-2"));
+            // A little EXP on the Lead so the card's growth readout shows something other than zero.
+            Pets.Meta.ExperienceResolver.GrantExp(run.LineUp[0], 2, library);
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+
+            CapturePlaying(TeamSceneBuilder.ScenePath, DropDuplicateOntoLead);
+        }
+
+        /// <summary>Drives the real drag handlers rather than reaching into the controller: the
+        /// thing worth looking at is what the gesture produces, and this is the same path the
+        /// PlayMode tests use.</summary>
+        private static void DropDuplicateOntoLead()
+        {
+            var source = GameObject.Find("PartySlot1")?.GetComponent<Pets.Gameplay.TeamSlotView>();
+            var target = GameObject.Find("PartySlot0")?.GetComponent<Pets.Gameplay.TeamSlotView>();
+            if (source == null || target == null)
+            {
+                Debug.LogError("[Capture] Team scene has no PartySlot0/PartySlot1 to drag between.");
+                return;
+            }
+
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+            source.OnBeginDrag(eventData);
+            target.OnDrop(eventData);
+            source.OnEndDrag(eventData);
+        }
+
+        private static void CapturePlaying(string scenePath, System.Action onStarted = null)
         {
             EditorSceneManager.OpenScene(scenePath);
             playModeFrameCount = 0;
+            afterStart = onStarted;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             EditorApplication.isPlaying = true;
         }
@@ -100,6 +145,15 @@ namespace Pets.EditorTools
             }
             EditorApplication.update -= WaitThenCapture;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            if (afterStart != null)
+            {
+                afterStart();
+                afterStart = null;
+                // Canvas.ForceUpdateCanvases rather than another frame wait: the gesture above only
+                // toggles objects active and writes text, and the layout has to settle before the
+                // RenderTexture is read back.
+                Canvas.ForceUpdateCanvases();
+            }
             Capture(GetArg("-captureOutput") ?? "ui-kit.png");
             EditorApplication.isPlaying = false;
             EditorApplication.Exit(0);

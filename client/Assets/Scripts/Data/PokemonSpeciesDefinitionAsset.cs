@@ -38,9 +38,30 @@ namespace Pets.Data
         [Header("Passive")]
         public PassiveDefinitionAsset Passive;
 
-        [Header("Evolution (Phase 1+, unused while Phase 0 has no evolution)")]
+        [Header("Evolution")]
+
+        /// <summary>What this species becomes when a mon carrying it crosses its evolution
+        /// threshold (Pets.Meta.ExperienceResolver). Null for a final form — and also for the
+        /// three roster species whose line branches (Eevee, Tyrogue, Nincada), since one reference
+        /// can't express "becomes one of seven"; picking a branch is its own feature. Set by the
+        /// roster importer from the cached PokeAPI chains, restricted to the roster.
+        ///
+        /// There is deliberately no per-species EXP threshold field: how much EXP an evolution
+        /// costs is a run-layer rule (ExperienceResolver.ExpPerEvolution), and nothing in the
+        /// roster sheet or PokeAPI gives a per-species number to put here.</summary>
         public PokemonSpeciesDefinitionAsset EvolvesInto;
-        public int EvolutionExpThreshold;
+
+        /// <summary>How many evolution steps deep this species sits in its real Pokémon chain —
+        /// 0 for a base form, 1 for a first evolution, and so on. Counted against the true chain
+        /// even when the earlier form isn't in the roster, so Pikachu is stage 1 (Pichu exists, it
+        /// just isn't curated).
+        ///
+        /// This is the index into a passive's MagnitudeByStage table (content-schema.md §1, §3) —
+        /// the "same passive, bigger numbers" rule — and nothing else. It is *not* what decides
+        /// when a mon evolves: that's counted per instance, from how many times that particular mon
+        /// has already evolved, so a curated base form like Pikachu still evolves on its first
+        /// threshold rather than starting a step behind.</summary>
+        public int EvolutionStage;
 
         /// <summary>Direct reference to the species' artwork under Assets/Art/Pokemon (see
         /// content-schema.md §2). A reference rather than a Resources path string so that only the

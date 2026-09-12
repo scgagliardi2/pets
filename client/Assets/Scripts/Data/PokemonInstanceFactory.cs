@@ -8,15 +8,17 @@ namespace Pets.Data
     /// see content-schema.md §8.</summary>
     public static class PokemonInstanceFactory
     {
-        /// <summary>Builds a fresh, full-health PokemonInstance for battle. `stage` is the
-        /// species' 0-based evolution stage (always 0 until Phase 1 adds evolution).</summary>
-        public static PokemonInstance Create(PokemonSpeciesDefinitionAsset species, string instanceId, int stage = 0)
+        /// <summary>Builds a fresh, full-health PokemonInstance at 0 EXP. Its passive is resolved
+        /// at the species' own evolution stage — a mon caught as a Charmeleon is a stage-1 mon, and
+        /// its passive's magnitude should say so (content-schema.md §1). Growth from there is
+        /// Pets.Meta.ExperienceResolver's job, and it re-resolves the passive on each
+        /// evolution.</summary>
+        public static PokemonInstance Create(PokemonSpeciesDefinitionAsset species, string instanceId)
         {
             return new PokemonInstance
             {
                 InstanceId = instanceId,
                 SpeciesId = species.Id,
-                Level = 1,
                 CurrentStats = new Stats
                 {
                     Attack = species.BaseAttack,
@@ -24,15 +26,12 @@ namespace Pets.Data
                     Speed = species.BaseSpeed
                 },
                 CurrentHP = species.BaseHealth,
-                ExpToNextLevel = BaseExpToNextLevel,
                 PassiveId = species.Passive != null ? species.Passive.Id : null,
-                ResolvedPassive = species.Passive != null ? ResolvePassive(species.Passive, stage) : null
+                ResolvedPassive = species.Passive != null
+                    ? ResolvePassive(species.Passive, species.EvolutionStage)
+                    : null
             };
         }
-
-        /// <summary>Starting EXP threshold for a fresh Level 1 instance (Meta/ExperienceResolver
-        /// scales this up per level-up). No design-doc formula exists yet; a flat placeholder.</summary>
-        public const int BaseExpToNextLevel = 100;
 
         /// <summary>Bakes a PassiveDefinitionAsset's magnitude-by-stage table into a resolved,
         /// pure Pets.Simulation.PassiveDefinition for one specific stage (content-schema.md §1,

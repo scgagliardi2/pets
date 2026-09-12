@@ -22,15 +22,20 @@ namespace Pets.EditorTools
     /// 28 and is not fine at 183 — the sheet is the stated source of truth for names/types/stats,
     /// and hand-typing it is exactly how an asset silently diverges from it.
     ///
+    /// Evolution comes from a second cache: <c>docs/roster_evolution_chains.json</c>, written by
+    /// <c>tools/fetch_evolution_chains.py</c> from the real PokeAPI chains and restricted to the
+    /// roster (PLAN.md §8). It fills each species' <c>EvolvesInto</c> and <c>EvolutionStage</c>,
+    /// which is what <c>Pets.Meta.ExperienceResolver</c> follows when a mon earns an evolution.
+    ///
     /// **Idempotent, and deliberately non-destructive.** Re-running it over a clean tree changes
-    /// nothing. It writes only the fields the sheet actually owns (DisplayName, typing, the three
-    /// base stats, the Id-derived sprite reference, and the Legendary flag); anything authored by
-    /// hand — an existing Passive assignment, an evolution link — is left exactly as it is, so the
-    /// hand-authored passives on the original curated species survive a re-import. A species with
-    /// no passive yet gets its Type1's default from <see cref="DefaultPassiveIdByType"/>, since
-    /// ContentIntegrityTests (rightly) refuses a species the battle sim can't resolve a passive
-    /// for. It never deletes a species asset: a row disappearing from the sheet is reported, not
-    /// acted on.
+    /// nothing. It writes only the fields the caches actually own (DisplayName, typing, the three
+    /// base stats, the Id-derived sprite reference, the Legendary flag, and the evolution link and
+    /// stage); anything authored by hand — an existing Passive assignment — is left exactly as it
+    /// is, so the hand-authored passives on the original curated species survive a re-import. A
+    /// species with no passive yet gets its Type1's default from
+    /// <see cref="DefaultPassiveIdByType"/>, since ContentIntegrityTests (rightly) refuses a species
+    /// the battle sim can't resolve a passive for. It never deletes a species asset: a row
+    /// disappearing from the sheet is reported, not acted on.
     ///
     /// Run it from <c>Pets &gt; Content &gt; Import Species From Roster Sheet</c>, or headlessly
     /// via <c>-executeMethod Pets.EditorTools.SpeciesRosterImporter.Import</c>.</summary>
@@ -107,6 +112,13 @@ namespace Pets.EditorTools
             public int Attack;
             public int Health;
             public int Speed;
+
+            /// <summary>Chain depth from the cached PokeAPI evolution data, 0 for a base form.</summary>
+            public int EvolutionStage;
+
+            /// <summary>Dex id this species evolves into, or 0 for a final form — and for a
+            /// branching line, which the cache deliberately leaves unresolved.</summary>
+            public int EvolvesIntoId;
         }
 
         [MenuItem("Pets/Content/Import Species From Roster Sheet")]
@@ -193,11 +205,15 @@ namespace Pets.EditorTools
             AssetDatabase.Refresh();
 
             int registered = RebuildLibrary(roster);
+            // A second pass, after every asset exists: an evolution link points at another species
+            // asset, which on a from-scratch import may not have been created yet when its
+            // pre-evolution was written.
+            int evolutionLinks = LinkEvolutions(roster);
 
             var summary = new StringBuilder();
             summary.AppendLine($"Roster import: {roster.Count} sheet rows -> {created.Count} created, " +
                                $"{updated.Count} updated, {unchanged} unchanged; {registered} registered in " +
-                               "PokemonSpeciesLibrary.");
+                               $"PokemonSpeciesLibrary; {evolutionLinks} evolution links set.");
             if (created.Count > 0)
             {
                 summary.AppendLine("Created: " + string.Join(", ", created));
@@ -229,6 +245,7 @@ namespace Pets.EditorTools
                 species.BaseAttack != entry.Attack ||
                 species.BaseHealth != entry.Health ||
                 species.BaseSpeed != entry.Speed ||
+                species.EvolutionStage != entry.EvolutionStage ||
                 species.IsLegendary != LegendaryNames.Contains(entry.SheetName);
 
             species.Id = entry.Id;
@@ -245,6 +262,7 @@ namespace Pets.EditorTools
             species.BaseAttack = entry.Attack;
             species.BaseHealth = entry.Health;
             species.BaseSpeed = entry.Speed;
+            species.EvolutionStage = entry.EvolutionStage;
             species.IsLegendary = LegendaryNames.Contains(entry.SheetName);
             return changed;
         }
@@ -319,6 +337,65 @@ namespace Pets.EditorTools
             return onDisk.Count;
         }
 
+        /// <summary>Second pass: points each species' EvolvesInto at the species the cached chain
+        /// data names, once every asset exists.
+        ///
+        /// Only fills a link the cache has and the asset doesn't already carry a *different* one —
+        /// a hand-chosen branch (say, picking Vaporeon for Eevee) survives a re-import, while the
+        /// cache stays the source of truth for everything it actually knows. A species the cache
+        /// leaves unresolved is cleared rather than left stale, so a link can be removed by fixing
+        /// the data.</summary>
+        private static int LinkEvolutions(List<RosterRow> roster)
+        {
+            var byId = AssetDatabase.FindAssets($"t:{nameof(PokemonSpeciesDefinitionAsset)}", new[] { SpeciesFolder })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .Select(AssetDatabase.LoadAssetAtPath<PokemonSpeciesDefinitionAsset>)
+                .Where(s => s != null)
+                .GroupBy(s => s.Id)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            int linked = 0;
+            var missingTargets = new List<string>();
+            foreach (var row in roster)
+            {
+                if (!byId.TryGetValue(row.Id, out var species))
+                {
+                    continue;
+                }
+
+                PokemonSpeciesDefinitionAsset target = null;
+                if (row.EvolvesIntoId != 0 && !byId.TryGetValue(row.EvolvesIntoId, out target))
+                {
+                    missingTargets.Add($"{row.DisplayName} -> id {row.EvolvesIntoId}");
+                    continue;
+                }
+
+                if (species.EvolvesInto == target)
+                {
+                    if (target != null)
+                    {
+                        linked++;
+                    }
+                    continue;
+                }
+
+                species.EvolvesInto = target;
+                EditorUtility.SetDirty(species);
+                if (target != null)
+                {
+                    linked++;
+                }
+            }
+
+            AssetDatabase.SaveAssets();
+            if (missingTargets.Count > 0)
+            {
+                Debug.LogError("Evolution targets missing from the species folder: " +
+                               string.Join(", ", missingTargets));
+            }
+            return linked;
+        }
+
         /// <summary>Asset file name for a species: lowercased, with everything that isn't a letter
         /// or digit dropped. Matches how the hand-authored assets were named (Nidoran-F lives at
         /// nidoranf.asset), so importing over the curated 28 updates them in place instead of
@@ -372,6 +449,7 @@ namespace Pets.EditorTools
             }
 
             var idsByName = ReadIdCache(idsPath);
+            var evolutionById = ReadEvolutionCache(RepoPath("docs/roster_evolution_chains.json"));
             var rows = ReadSheetRows(sheetPath);
 
             var roster = new List<RosterRow>();
@@ -393,6 +471,7 @@ namespace Pets.EditorTools
                     throw new InvalidDataException($"Two sheet rows resolve to id {id} ('{sheetName}' is the second).");
                 }
 
+                evolutionById.TryGetValue(id, out var evolution);
                 string type2 = Value(row, Type2Column);
                 roster.Add(new RosterRow
                 {
@@ -405,6 +484,8 @@ namespace Pets.EditorTools
                     Attack = ParseStat(Value(row, AttackColumn), sheetName, "Base Attack"),
                     Health = ParseStat(Value(row, HealthColumn), sheetName, "Base HP"),
                     Speed = ParseStat(Value(row, SpeedColumn), sheetName, "Base Speed"),
+                    EvolutionStage = evolution.stage,
+                    EvolvesIntoId = evolution.evolves_into,
                 });
             }
 
@@ -436,6 +517,44 @@ namespace Pets.EditorTools
                 throw new InvalidDataException($"{path} holds no species entries.");
             }
             return cache.species.ToDictionary(e => e.name, e => e.id);
+        }
+
+        [Serializable]
+        private struct EvolutionCacheEntry
+        {
+            public string name;
+            public int id;
+            public int stage;
+
+            /// <summary>0 means "no single answer" — a final form, or a line that branches. Unity's
+            /// JsonUtility reads JSON null into an int as 0, which is exactly the meaning wanted
+            /// here, and is why this is an int rather than a nullable.</summary>
+            public int evolves_into;
+        }
+
+        [Serializable]
+        private struct EvolutionCache
+        {
+            public EvolutionCacheEntry[] species;
+        }
+
+        /// <summary>The cached PokeAPI evolution chains. Missing file is a hard error rather than a
+        /// shrug: importing without it would silently clear every evolution link in the project,
+        /// which looks exactly like "evolution doesn't work" at runtime.</summary>
+        private static Dictionary<int, EvolutionCacheEntry> ReadEvolutionCache(string path)
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException(
+                    $"Evolution chain cache not found at {path}. Run tools/fetch_evolution_chains.py.");
+            }
+
+            var cache = JsonUtility.FromJson<EvolutionCache>(File.ReadAllText(path));
+            if (cache.species == null || cache.species.Length == 0)
+            {
+                throw new InvalidDataException($"{path} holds no species entries.");
+            }
+            return cache.species.ToDictionary(e => e.id, e => e);
         }
 
         /// <summary>Reads the first worksheet as a list of (column letter → cell text) rows, header

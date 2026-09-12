@@ -413,7 +413,15 @@ namespace Pets.Gameplay
                 return;
             }
 
-            BattleRewardResolver.GrantWinRewards(runner.State.LineUpA, context == BattleContext.MapGym);
+            // The run's line-up, not the battle's survivors: EXP is one point a win, and a Reserve
+            // behind a Lead that never faints would otherwise never grow (see BattleRewardResolver).
+            var evolutions = BattleRewardResolver.GrantWinRewards(state, library);
+            resultText.text += $"\nThe team gains {BattleRewardResolver.ExpPerWin} EXP.";
+            foreach (var evolution in evolutions)
+            {
+                resultText.text += $"\n{evolution.FromName} evolved into {evolution.ToName}!";
+            }
+
             if (context == BattleContext.MapPvE)
             {
                 OfferCatches();

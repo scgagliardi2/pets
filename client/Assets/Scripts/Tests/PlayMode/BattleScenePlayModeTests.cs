@@ -289,9 +289,14 @@ namespace Pets.Tests
             yield return null;
 
             Assert.AreEqual(BattleOutcome.SideAWins, Controller().Outcome);
-            Assert.AreEqual("Victory!", GameObject.Find("ResultText").GetComponent<Text>().text);
+            // StartsWith, not equality: the result panel now reports the EXP the win paid (and any
+            // evolution it set off) under the outcome line.
+            StringAssert.StartsWith("Victory!", GameObject.Find("ResultText").GetComponent<Text>().text);
+            StringAssert.Contains($"gains {BattleRewardResolver.ExpPerWin} EXP",
+                GameObject.Find("ResultText").GetComponent<Text>().text);
             Assert.AreEqual(3, run.Morale, "winning costs no Morale");
-            Assert.AreEqual(BattleRewardResolver.PvEWinExp, run.LineUp[0].Exp, "the survivor is paid in EXP");
+            Assert.IsTrue(run.LineUp.TrueForAll(m => m.Exp == BattleRewardResolver.ExpPerWin),
+                "every mon in the line-up is paid in EXP, not just whoever was left standing");
 
             var catchButton = FindButton($"Catch_{WildName}");
             Assert.AreEqual("Continue", FindButton("ResultActionButton").GetComponentInChildren<Text>().text);
@@ -358,7 +363,8 @@ namespace Pets.Tests
             yield return null;
 
             StringAssert.Contains("Badge earned", GameObject.Find("ResultText").GetComponent<Text>().text);
-            Assert.AreEqual(BattleRewardResolver.GymWinExp, run.LineUp[0].Exp, "a Gym pays out like several nodes");
+            Assert.AreEqual(BattleRewardResolver.ExpPerWin, run.LineUp[0].Exp,
+                "a Gym pays the same flat EXP as any other win");
             Assert.IsNull(FindCatchButton(), "a Gym Leader's team isn't wildlife to catch");
 
             FindButton("ResultActionButton").onClick.Invoke();

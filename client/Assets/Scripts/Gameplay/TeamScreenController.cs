@@ -7,8 +7,9 @@ namespace Pets.Gameplay
     /// <summary>The Team scene: view the run's current line-up and Box, and rearrange either.
     /// Reordering itself is the panel's job — a mon is moved by dragging its card onto another
     /// slot — so what's left here is the screen around it: the no-run empty state, the
-    /// Lead/Support button as a one-click shortcut for the most common swap, the confirmation a
-    /// release has to pass through, and keeping all of it in step with whatever a drag just did.
+    /// Lead/Support button as a one-click shortcut for the most common swap, the two questions a
+    /// drag can raise (releasing a mon, and what dropping one duplicate onto another was meant to
+    /// do), and keeping all of it in step with whatever a drag just did.
     ///
     /// Reads the run from ActiveRun rather than from a scene RunBootstrapper, since this is a
     /// separate scene reached from the Ingame Menu — the run it's showing was created back on the
@@ -27,11 +28,23 @@ namespace Pets.Gameplay
         [SerializeField] private Text releaseConfirmText;
         [SerializeField] private Button releaseConfirmButton;
 
+        [Header("Combine confirmation")]
+        [SerializeField] private GameObject combineConfirmPanel;
+        [SerializeField] private Text combineConfirmText;
+        [SerializeField] private Button combineConfirmButton;
+
         // The slot the open confirmation is about. Safe to hold as an index rather than the mon
         // itself because the confirmation is modal — its backdrop takes the raycast, so nothing
         // can reorder the rows underneath while it's up.
         private RosterGroup pendingGroup;
         private int pendingIndex = -1;
+
+        // The two slots the open combine question is about, held for the same reason and with the
+        // same safety as the release indices above: the dialog is modal.
+        private RosterGroup combineFromGroup;
+        private int combineFromIndex = -1;
+        private RosterGroup combineToGroup;
+        private int combineToIndex = -1;
 
         private void Start()
         {
@@ -40,7 +53,9 @@ namespace Pets.Gameplay
             // already redrawn its own rows by the time it raises this.
             teamPanel.Changed += UpdateSwapButton;
             teamPanel.ReleaseRequested += OnReleaseRequested;
+            teamPanel.CombineOrSwapRequested += OnCombineOrSwapRequested;
             releaseConfirmPanel.SetActive(false);
+            combineConfirmPanel.SetActive(false);
             Refresh();
         }
 
@@ -50,6 +65,7 @@ namespace Pets.Gameplay
             {
                 teamPanel.Changed -= UpdateSwapButton;
                 teamPanel.ReleaseRequested -= OnReleaseRequested;
+                teamPanel.CombineOrSwapRequested -= OnCombineOrSwapRequested;
             }
         }
 
@@ -101,6 +117,62 @@ namespace Pets.Gameplay
         {
             pendingIndex = -1;
             releaseConfirmPanel.SetActive(false);
+        }
+
+        /// <summary>Opens the duplicate question. Both readings of the gesture are offered rather
+        /// than one being guessed at: swapping two of the same species is how a player promotes the
+        /// better-grown one into the Lead slot, and combining consumes a mon for good. When the
+        /// combine isn't allowed the dialog still opens, saying why, with only Swap live — the same
+        /// shape the release confirmation uses for a refused release.</summary>
+        private void OnCombineOrSwapRequested(RosterGroup fromGroup, int fromIndex, RosterGroup toGroup, int toIndex)
+        {
+            if (!ActiveRun.HasRun)
+            {
+                return;
+            }
+
+            combineFromGroup = fromGroup;
+            combineFromIndex = fromIndex;
+            combineToGroup = toGroup;
+            combineToIndex = toIndex;
+
+            var eligibility = CombineResolver.CanCombine(
+                ActiveRun.State, fromGroup, fromIndex, toGroup, toIndex, ActiveRun.Library);
+            combineConfirmText.text = eligibility.Reason;
+            combineConfirmButton.interactable = eligibility.Allowed;
+            combineConfirmPanel.SetActive(true);
+        }
+
+        public void OnConfirmCombineClicked()
+        {
+            if (ActiveRun.HasRun && combineFromIndex >= 0)
+            {
+                CombineResolver.Combine(ActiveRun.State, combineFromGroup, combineFromIndex,
+                    combineToGroup, combineToIndex, ActiveRun.Library);
+            }
+            CloseCombineConfirm();
+            Refresh();
+        }
+
+        /// <summary>The other half of the duplicate question: treat the drop as the plain reorder it
+        /// would have been if the two mons weren't the same species.</summary>
+        public void OnSwapInsteadOfCombineClicked()
+        {
+            if (ActiveRun.HasRun && combineFromIndex >= 0)
+            {
+                ActiveRun.State.MoveMon(combineFromGroup, combineFromIndex, combineToGroup, combineToIndex);
+            }
+            CloseCombineConfirm();
+            Refresh();
+        }
+
+        public void OnCancelCombineClicked() => CloseCombineConfirm();
+
+        private void CloseCombineConfirm()
+        {
+            combineFromIndex = -1;
+            combineToIndex = -1;
+            combineConfirmPanel.SetActive(false);
         }
 
         private void Refresh()

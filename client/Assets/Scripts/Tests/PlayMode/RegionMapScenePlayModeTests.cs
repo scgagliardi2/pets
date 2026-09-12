@@ -36,9 +36,15 @@ namespace Pets.Tests
         // coroutine still fails well within a test's own timeout.
         private const int MoveTimeoutFrames = 20000;
 
-        /// <summary>Stats no curated species comes close to, so every fight these tests walk into is
-        /// won in a Step or two and Morale never enters the picture.</summary>
-        private const int UnbeatableStat = 9999;
+        /// <summary>EXP enough to put the test's mon's stats far beyond any curated species, so
+        /// every fight these tests walk into is won in a Step or two and Morale never enters the
+        /// picture.
+        ///
+        /// Granted as EXP rather than written straight onto CurrentStats: stats are *derived* from
+        /// species + EXP (Meta/ExperienceResolver), so the first win's own EXP award would recompute
+        /// a hand-set CurrentStats right back down to the species' base and lose every fight
+        /// after it.</summary>
+        private const int UnbeatableExp = 1000;
 
         private const int MapSeedSearchLimit = 500;
 
@@ -418,8 +424,8 @@ namespace Pets.Tests
 
             var run = new RunState { RunSeed = 4242, LocationMap = RegionMapGenerator.Generate(mapSeed) };
             var mon = PokemonInstanceFactory.Create(library.AllSpecies[0], "test-lead");
-            mon.CurrentStats = new Stats { Attack = UnbeatableStat, Health = UnbeatableStat, Speed = 10 };
-            mon.CurrentHP = UnbeatableStat;
+            mon.Exp = UnbeatableExp;
+            ExperienceResolver.Recompute(mon, library);
             run.LineUp.Add(mon);
 
             ActiveRun.End();

@@ -17,12 +17,28 @@ namespace Pets.Simulation
         public string InstanceId;
         public int SpeciesId;
         public string Nickname;
-        public int Level = 1;
-        public int Exp;
-        public int ExpToNextLevel;
 
-        /// <summary>Leveled base stats, plus any permanent modifiers the run has applied.
-        /// Battle-only buffs are applied to the combatant's copy, not here.</summary>
+        /// <summary>Total EXP this mon has ever earned — a small counter, not a points pool: one
+        /// per battle won, two per duplicate combined in (Pets.Meta.ExperienceResolver). It never
+        /// resets, and stats are derived from it rather than accumulated into, so
+        /// `species base + ExpGain * Exp` is always the whole story.
+        ///
+        /// There's no Level/ExpToNextLevel pair any more (design doc §9 still shows one): with a
+        /// flat gain per EXP, a level was a second name for this number.</summary>
+        public int Exp;
+
+        /// <summary>How many times this particular mon has evolved. Counted per instance rather
+        /// than read off the species' chain depth, because the two disagree for a curated base form
+        /// whose real pre-evolution isn't in the roster — see
+        /// PokemonSpeciesDefinitionAsset.EvolutionStage.</summary>
+        public int TimesEvolved;
+
+        /// <summary>The mon's stats as the run has them. **Derived, not accumulated**:
+        /// Pets.Meta.ExperienceResolver.Recompute rebuilds this from the current species' base stats
+        /// plus EXP, and will overwrite anything written here that doesn't follow from those two.
+        /// A permanent modifier (an item, say) therefore needs to become an input to that
+        /// calculation rather than a one-off addition to this field. Battle-only buffs are applied
+        /// to the combatant's copy and never reach here at all.</summary>
         public Stats CurrentStats;
 
         /// <summary>HP the mon carries at the start of its next battle. Whether a fight's damage is

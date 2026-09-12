@@ -42,6 +42,9 @@ namespace Pets.EditorTools
         private const float ReleaseZoneHeight = 64f;
         private static readonly Vector2 DialogSize = new Vector2(560f, 260f);
         private const float DialogButtonWidth = 210f;
+        // Three buttons plus their 24-unit edge insets have to fit the 560-wide dialog:
+        // 2*24 + 3*width <= 560 caps this at ~170.
+        private const float CombineDialogButtonWidth = 160f;
         private const float DialogButtonHeight = 64f;
 
         /// <summary>Both sections stacked: header, row, gap, header, row.</summary>
@@ -144,6 +147,8 @@ namespace Pets.EditorTools
 
             var (releaseConfirmPanel, releaseConfirmText, releaseConfirmButton, releaseCancelButton) =
                 CreateReleaseConfirm(canvasRect);
+            var (combineConfirmPanel, combineConfirmText, combineConfirmButton, combineSwapButton, combineCancelButton) =
+                CreateCombineConfirm(canvasRect);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
 
@@ -154,12 +159,18 @@ namespace Pets.EditorTools
             SetField(screen, "releaseConfirmPanel", releaseConfirmPanel.gameObject);
             SetField(screen, "releaseConfirmText", releaseConfirmText);
             SetField(screen, "releaseConfirmButton", releaseConfirmButton);
+            SetField(screen, "combineConfirmPanel", combineConfirmPanel.gameObject);
+            SetField(screen, "combineConfirmText", combineConfirmText);
+            SetField(screen, "combineConfirmButton", combineConfirmButton);
 
             UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.GoToIngameMenu);
             UnityEventTools.AddVoidPersistentListener(swapButton.onClick, screen.OnSwapLeadAndSupportClicked);
             UnityEventTools.AddVoidPersistentListener(devBattleButton.onClick, navigator.GoToBattle);
             UnityEventTools.AddVoidPersistentListener(releaseConfirmButton.onClick, screen.OnConfirmReleaseClicked);
             UnityEventTools.AddVoidPersistentListener(releaseCancelButton.onClick, screen.OnCancelReleaseClicked);
+            UnityEventTools.AddVoidPersistentListener(combineConfirmButton.onClick, screen.OnConfirmCombineClicked);
+            UnityEventTools.AddVoidPersistentListener(combineSwapButton.onClick, screen.OnSwapInsteadOfCombineClicked);
+            UnityEventTools.AddVoidPersistentListener(combineCancelButton.onClick, screen.OnCancelCombineClicked);
 
             // Both slot rows stay live: TeamPanelController fills them with slot cards at runtime
             // from whatever the run's party and Box hold, so their GridLayoutGroups have to be
@@ -277,23 +288,70 @@ namespace Pets.EditorTools
             messageRect.offsetMax = new Vector2(-24f, -24f);
 
             var confirm = CreateDialogButton(dialogRect, "ReleaseConfirmButton", "Release",
-                Theme.ButtonStyle.Danger, alignRight: true);
+                Theme.ButtonStyle.Danger, anchorX: 1f);
             var cancel = CreateDialogButton(dialogRect, "ReleaseCancelButton", "Cancel",
-                Theme.ButtonStyle.Secondary, alignRight: false);
+                Theme.ButtonStyle.Secondary, anchorX: 0f);
 
             return (backdrop, message, confirm, cancel);
         }
 
+        /// <summary>The duplicate question: dropping a mon onto another of the same species could
+        /// mean either thing, so the dialog offers both rather than the screen picking one.
+        /// Combining consumes a mon for good, which is why it gets the same modal treatment as a
+        /// release — and why Combine is the Danger-styled button of the three.
+        ///
+        /// Three buttons across a dialog this size need narrower ones than the two-button release
+        /// dialog uses, hence the explicit width.</summary>
+        private static (RectTransform panel, Text message, Button combine, Button swap, Button cancel)
+            CreateCombineConfirm(RectTransform canvasRect)
+        {
+            var backdrop = CreatePanel(canvasRect, "CombineConfirm", new Color(0f, 0f, 0f, 0.6f), Vector2.zero, Vector2.one);
+
+            var dialog = new GameObject("Dialog", typeof(RectTransform));
+            dialog.transform.SetParent(backdrop, false);
+            var dialogImage = dialog.AddComponent<Image>();
+            dialogImage.sprite = Theme.TextBoxSprite;
+            dialogImage.type = Image.Type.Sliced;
+            var dialogRect = dialog.GetComponent<RectTransform>();
+            dialogRect.anchorMin = dialogRect.anchorMax = new Vector2(0.5f, 0.5f);
+            dialogRect.pivot = new Vector2(0.5f, 0.5f);
+            dialogRect.sizeDelta = DialogSize;
+
+            var message = CreatePlainText(dialog.transform, "MessageText", string.Empty,
+                Theme.FontSizeHeading, TextAnchor.MiddleCenter, Theme.TextDark);
+            message.fontStyle = FontStyle.Bold;
+            var messageRect = message.GetComponent<RectTransform>();
+            messageRect.anchorMin = Vector2.zero;
+            messageRect.anchorMax = Vector2.one;
+            messageRect.offsetMin = new Vector2(24f, DialogButtonHeight + 36f);
+            messageRect.offsetMax = new Vector2(-24f, -24f);
+
+            var combine = CreateDialogButton(dialogRect, "CombineConfirmButton", "Combine",
+                Theme.ButtonStyle.Danger, anchorX: 1f, buttonWidth: CombineDialogButtonWidth);
+            var swap = CreateDialogButton(dialogRect, "CombineSwapButton", "Swap",
+                Theme.ButtonStyle.Primary, anchorX: 0.5f, buttonWidth: CombineDialogButtonWidth);
+            var cancel = CreateDialogButton(dialogRect, "CombineCancelButton", "Cancel",
+                Theme.ButtonStyle.Secondary, anchorX: 0f, buttonWidth: CombineDialogButtonWidth);
+
+            return (backdrop, message, combine, swap, cancel);
+        }
+
+        /// <summary>A button along the bottom of a dialog, anchored at <paramref name="anchorX"/>
+        /// across it (0 left, 0.5 centre, 1 right) and inset from that edge. An explicit anchor
+        /// rather than a layout group for the same reason the message text is hand-anchored: the
+        /// dialog's contents change at runtime and the bake pass leaves no LayoutGroup behind to
+        /// reflow them.</summary>
         private static Button CreateDialogButton(RectTransform dialog, string name, string label,
-            Theme.ButtonStyle style, bool alignRight)
+            Theme.ButtonStyle style, float anchorX, float buttonWidth = DialogButtonWidth)
         {
             var button = CreateButton(dialog, name, label, style, useSprite: true);
             var rect = button.GetComponent<RectTransform>();
-            float x = alignRight ? 1f : 0f;
-            rect.anchorMin = rect.anchorMax = new Vector2(x, 0f);
-            rect.pivot = new Vector2(x, 0f);
-            rect.sizeDelta = new Vector2(DialogButtonWidth, DialogButtonHeight);
-            rect.anchoredPosition = new Vector2(alignRight ? -24f : 24f, 24f);
+            rect.anchorMin = rect.anchorMax = new Vector2(anchorX, 0f);
+            rect.pivot = new Vector2(anchorX, 0f);
+            rect.sizeDelta = new Vector2(buttonWidth, DialogButtonHeight);
+            // Only the edge-anchored buttons need the inset; a centred one is already clear of both.
+            float inset = Mathf.Approximately(anchorX, 1f) ? -24f : Mathf.Approximately(anchorX, 0f) ? 24f : 0f;
+            rect.anchoredPosition = new Vector2(inset, 24f);
             return button;
         }
 

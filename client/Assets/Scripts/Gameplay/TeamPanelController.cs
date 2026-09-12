@@ -23,7 +23,11 @@ namespace Pets.Gameplay
     /// what a given drop means, including that the party can never be emptied, live in
     /// RunState.MoveMon. This class owns the gesture: it lifts the dragged card out of its slot
     /// onto a drag layer so the slot underneath can receive the drop, and rebuilds both rows once
-    /// the drag is over.</summary>
+    /// the drag is over.
+    ///
+    /// Dropping a mon onto **another of the same species** is the one drop that doesn't just move
+    /// things: it could mean either a swap or a combine (design doc §12.3), and the panel can't
+    /// tell which, so it asks the screen to put the choice to the player rather than guessing.</summary>
     public sealed class TeamPanelController : MonoBehaviour
     {
         /// <summary>Slots rendered per row. The party is capped at this; the Box is not (design
@@ -78,6 +82,12 @@ namespace Pets.Gameplay
         /// it came from, and the name to put in front of the player. Nothing has been let go at
         /// this point — releasing is irreversible, so the screen confirms it first.</summary>
         public event Action<RosterGroup, int, string> ReleaseRequested;
+
+        /// <summary>Raised when a mon is dropped onto another of the same species — source slot
+        /// then target slot. Both a swap and a combine are reasonable readings of that gesture, and
+        /// a combine consumes a mon for good, so nothing has happened yet: the screen asks which
+        /// one the player meant.</summary>
+        public event Action<RosterGroup, int, RosterGroup, int> CombineOrSwapRequested;
 
         // The run this panel last drew. Kept so a completed drag can rebuild both rows itself
         // rather than the screen having to hand the state back in on every gesture.
@@ -167,19 +177,48 @@ namespace Pets.Gameplay
         }
 
         /// <summary>Applies a completed drop. A refused move (see RunState.MoveMon) still rebuilds,
-        /// which is what snaps the card back to where it came from.</summary>
+        /// which is what snaps the card back to where it came from.
+        ///
+        /// A drop onto a duplicate is handed to the screen instead: the rows are rebuilt first, so
+        /// the card is back in its slot while the question is asked, exactly as a release is.</summary>
         internal void MoveBetweenSlots(TeamSlotView source, TeamSlotView target)
         {
             if (state == null)
             {
                 return;
             }
+
+            if (IsDuplicateOf(source, target))
+            {
+                Rebuild();
+                CombineOrSwapRequested?.Invoke(source.Group, source.Index, target.Group, target.Index);
+                return;
+            }
+
             bool moved = state.MoveMon(source.Group, source.Index, target.Group, target.Index);
             Rebuild();
             if (moved)
             {
                 Changed?.Invoke();
             }
+        }
+
+        /// <summary>Whether these two slots hold two different mons of the same species — the only
+        /// drop that's ambiguous between a swap and a combine.</summary>
+        private bool IsDuplicateOf(TeamSlotView source, TeamSlotView target)
+        {
+            if (!target.IsFilled || !source.IsFilled)
+            {
+                return false;
+            }
+
+            var from = state.CollectionFor(source.Group);
+            var to = state.CollectionFor(target.Group);
+            if (source.Index >= from.Count || target.Index >= to.Count)
+            {
+                return false;
+            }
+            return from[source.Index] != to[target.Index] && from[source.Index].SpeciesId == to[target.Index].SpeciesId;
         }
 
         /// <summary>A card dropped on the release zone. The rows are rebuilt right away — the
@@ -234,7 +273,14 @@ namespace Pets.Gameplay
             var card = PokemonCardBuilder.CreateCard(slot, "Card");
             Stretch(card.GetComponent<RectTransform>());
 
-            PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  Lv.{mon.Level}",
+            // EXP rather than a level: with a flat gain per point there is no level any more (see
+            // Meta/ExperienceResolver), and the count that matters to a player is how close this mon
+            // is to evolving — so it's shown as progress toward that whenever there's something to
+            // evolve into.
+            string growth = ExperienceResolver.CanEverEvolve(mon, library)
+                ? $"EXP {mon.Exp}/{ExperienceResolver.ExpToNextEvolution(mon)}"
+                : $"EXP {mon.Exp}";
+            PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
                 CardRoleFontSize, FontStyle.Bold, Theme.TextMuted).name = "RoleText";
             PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.Load(species), CardSpriteHeight);
             PokemonCardBuilder.AddLine(card.transform, DisplayName(mon, species),

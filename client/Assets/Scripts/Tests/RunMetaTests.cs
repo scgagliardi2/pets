@@ -274,37 +274,131 @@ namespace Pets.Tests
             Assert.IsTrue(lineUp.All(m => m.SpeciesId == 1));
         }
 
-        [Test]
-        public void ExperienceResolver_LevelsUp_AndGrowsStats_WhenExpThresholdIsCrossed()
+        /// <summary>A two-stage line built for the EXP tests: base evolves into evolved, and both
+        /// are registered so ExperienceResolver can look either up by id.</summary>
+        private static (PokemonSpeciesDefinitionAsset first, PokemonSpeciesDefinitionAsset second, PokemonSpeciesLibrary library)
+            MakeEvolutionLine(int baseAttack = 10, int evolvedAttack = 40)
         {
-            var species = MakeSpecies(1, "Grower", PokemonType.Normal, attack: 10, health: 100, speed: 10);
-            var mon = PokemonInstanceFactory.Create(species, "mon-1");
-            int startingAttack = mon.CurrentStats.Attack;
-            int startingThreshold = mon.ExpToNextLevel;
-
-            ExperienceResolver.GrantExp(mon, startingThreshold);
-
-            Assert.AreEqual(2, mon.Level);
-            Assert.Greater(mon.CurrentStats.Attack, startingAttack);
-            Assert.AreEqual(0, mon.Exp);
-            Assert.Greater(mon.ExpToNextLevel, startingThreshold);
+            var second = MakeSpecies(2, "Evolved", PokemonType.Normal, attack: evolvedAttack, health: evolvedAttack, speed: evolvedAttack);
+            var first = MakeSpecies(1, "Basic", PokemonType.Normal, attack: baseAttack, health: baseAttack, speed: baseAttack);
+            first.EvolvesInto = second;
+            second.EvolutionStage = 1;
+            return (first, second, MakeLibrary(first, second));
         }
 
         [Test]
-        public void ExperienceResolver_CanCrossMultipleLevelsFromOneGrant()
+        public void ExperienceResolver_AddsAFlatStatGainPerExp_ToAllThreeStats()
         {
-            var species = MakeSpecies(1, "Grower", PokemonType.Normal);
+            var (species, _, library) = MakeEvolutionLine();
             var mon = PokemonInstanceFactory.Create(species, "mon-1");
 
-            ExperienceResolver.GrantExp(mon, mon.ExpToNextLevel * 5);
+            ExperienceResolver.GrantExp(mon, 2, library);
 
-            Assert.Greater(mon.Level, 2);
+            int gain = 2 * ExperienceResolver.StatGainPerExp;
+            Assert.AreEqual(2, mon.Exp);
+            Assert.AreEqual(species.BaseAttack + gain, mon.CurrentStats.Attack);
+            Assert.AreEqual(species.BaseHealth + gain, mon.CurrentStats.Health);
+            Assert.AreEqual(species.BaseSpeed + gain, mon.CurrentStats.Speed);
+            Assert.AreEqual(mon.CurrentStats.Health, mon.CurrentHP, "growing should leave the mon at full HP");
+        }
+
+        /// <summary>Stats are derived from species + EXP rather than accumulated, so the same total
+        /// EXP has to produce the same stats however it was granted. The previous percentage-based
+        /// model failed exactly this.</summary>
+        [Test]
+        public void ExperienceResolver_StatsDependOnTotalExpOnly_NotOnHowItArrived()
+        {
+            var (species, _, library) = MakeEvolutionLine();
+            var atOnce = PokemonInstanceFactory.Create(species, "at-once");
+            var piecemeal = PokemonInstanceFactory.Create(species, "piecemeal");
+
+            ExperienceResolver.GrantExp(atOnce, 2, library);
+            ExperienceResolver.GrantExp(piecemeal, 1, library);
+            ExperienceResolver.GrantExp(piecemeal, 1, library);
+
+            Assert.AreEqual(atOnce.CurrentStats.Attack, piecemeal.CurrentStats.Attack);
+            Assert.AreEqual(atOnce.CurrentStats.Health, piecemeal.CurrentStats.Health);
+            Assert.AreEqual(atOnce.CurrentStats.Speed, piecemeal.CurrentStats.Speed);
+        }
+
+        [Test]
+        public void ExperienceResolver_EvolvesAtTheThreshold_AndRebasesStatsOnTheNewSpecies()
+        {
+            var (species, evolved, library) = MakeEvolutionLine();
+            var mon = PokemonInstanceFactory.Create(species, "mon-1");
+
+            var below = ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution - 1, library);
+            CollectionAssert.IsEmpty(below, "nothing should evolve before the threshold");
+            Assert.AreEqual(species.Id, mon.SpeciesId);
+
+            var evolutions = ExperienceResolver.GrantExp(mon, 1, library);
+
+            Assert.AreEqual(1, evolutions.Count);
+            Assert.AreEqual("Basic", evolutions[0].FromName);
+            Assert.AreEqual("Evolved", evolutions[0].ToName);
+            Assert.AreEqual(evolved.Id, mon.SpeciesId);
+            Assert.AreEqual(1, mon.TimesEvolved);
+            Assert.AreEqual(evolved.BaseAttack + ExperienceResolver.ExpPerEvolution * ExperienceResolver.StatGainPerExp,
+                mon.CurrentStats.Attack, "stats should rebase on the new species, not keep the old base");
+        }
+
+        /// <summary>The threshold is per evolution, not a flat total — otherwise reaching 3 EXP
+        /// would run a mon up its whole chain in one go and the middle stage would never exist.</summary>
+        [Test]
+        public void ExperienceResolver_DoesNotChainStraightThroughTheNextEvolution()
+        {
+            var second = MakeSpecies(2, "Middle", PokemonType.Normal);
+            var third = MakeSpecies(3, "Final", PokemonType.Normal);
+            var first = MakeSpecies(1, "Basic", PokemonType.Normal);
+            first.EvolvesInto = second;
+            second.EvolvesInto = third;
+            var library = MakeLibrary(first, second, third);
+            var mon = PokemonInstanceFactory.Create(first, "mon-1");
+
+            ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution, library);
+            Assert.AreEqual(second.Id, mon.SpeciesId, "the first threshold is one step, not the whole chain");
+
+            ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution, library);
+            Assert.AreEqual(third.Id, mon.SpeciesId, "the second threshold is another step further");
+            Assert.AreEqual(2, mon.TimesEvolved);
+        }
+
+        [Test]
+        public void ExperienceResolver_LeavesAFinalFormAlone_HoweverMuchExpItEarns()
+        {
+            var species = MakeSpecies(1, "FinalForm", PokemonType.Normal);
+            var library = MakeLibrary(species);
+            var mon = PokemonInstanceFactory.Create(species, "mon-1");
+
+            var evolutions = ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution * 4, library);
+
+            CollectionAssert.IsEmpty(evolutions);
+            Assert.AreEqual(species.Id, mon.SpeciesId);
+            Assert.AreEqual(0, mon.TimesEvolved);
+            Assert.IsFalse(ExperienceResolver.CanEverEvolve(mon, library));
+        }
+
+        /// <summary>A curated base form whose real pre-evolution isn't in the roster (Pikachu, whose
+        /// chain starts at Pichu) is stage 1 but has still evolved zero times — so it must reach its
+        /// first evolution on the first threshold like anything else.</summary>
+        [Test]
+        public void ExperienceResolver_CountsThresholdsPerInstance_NotFromTheSpeciesChainDepth()
+        {
+            var (species, evolved, library) = MakeEvolutionLine();
+            species.EvolutionStage = 1;
+            evolved.EvolutionStage = 2;
+            var mon = PokemonInstanceFactory.Create(species, "mon-1");
+
+            ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution, library);
+
+            Assert.AreEqual(evolved.Id, mon.SpeciesId);
         }
 
         [Test]
         public void CampResolver_GrantsExpToTheWholeLineUp_AndSetsANextBattleBuff()
         {
             var species = MakeSpecies(1, "Camper", PokemonType.Normal);
+            var library = MakeLibrary(species);
             var state = new RunState
             {
                 LineUp = new List<PokemonInstance>
@@ -314,9 +408,9 @@ namespace Pets.Tests
                 }
             };
 
-            CampResolver.Resolve(state);
+            CampResolver.Resolve(state, library);
 
-            Assert.IsTrue(state.LineUp.All(m => m.Exp > 0));
+            Assert.IsTrue(state.LineUp.All(m => m.Exp == CampResolver.ExpGranted));
             Assert.Greater(state.NextBattleAttackBonusPercent, 0f);
         }
 
@@ -330,7 +424,6 @@ namespace Pets.Tests
         {
             var species = MakeSpecies(1, "Fighter", PokemonType.Normal, health: 80);
             var persisted = PokemonInstanceFactory.Create(species, "mon-1");
-            persisted.Level = 3;
 
             var combatant = BattleCombatant.FromInstance(persisted);
 
@@ -421,33 +514,111 @@ namespace Pets.Tests
             Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));
         }
 
-        /// <summary>Only the mons still standing are paid, and the EXP lands on the run's own mons
-        /// (a combatant's Source) rather than on the battle's copies, which are thrown away.</summary>
+        /// <summary>Every mon in the line-up is paid, not just whoever was left standing — a
+        /// Reserve behind a Lead that never faints would otherwise never grow. The Box is not:
+        /// EXP is for the team that fought.</summary>
         [Test]
-        public void BattleRewardResolver_PaysTheSurvivors_OnTheRunsOwnMons()
+        public void BattleRewardResolver_PaysEveryMonInTheLineUp_ButNotTheBox()
         {
             var species = MakeSpecies(1, "Winner", PokemonType.Normal);
-            var survivor = PokemonInstanceFactory.Create(species, "survivor");
-            var fallen = PokemonInstanceFactory.Create(species, "fallen");
+            var library = MakeLibrary(species);
+            var state = new RunState();
+            state.LineUp.Add(PokemonInstanceFactory.Create(species, "lead"));
+            state.LineUp.Add(PokemonInstanceFactory.Create(species, "reserve"));
+            state.Box.Add(PokemonInstanceFactory.Create(species, "boxed"));
 
-            BattleRewardResolver.GrantWinRewards(
-                new List<BattleCombatant> { BattleCombatant.FromInstance(survivor) }, isGym: false);
+            BattleRewardResolver.GrantWinRewards(state, library);
 
-            Assert.AreEqual(BattleRewardResolver.PvEWinExp, survivor.Exp);
-            Assert.AreEqual(0, fallen.Exp, "a mon that wasn't left standing isn't paid");
+            Assert.IsTrue(state.LineUp.All(m => m.Exp == BattleRewardResolver.ExpPerWin));
+            Assert.AreEqual(0, state.Box[0].Exp, "a mon sitting in the Box didn't fight");
         }
 
         [Test]
-        public void BattleRewardResolver_PaysMoreForAGym()
+        public void BattleRewardResolver_ReportsAnEvolutionTheWinSetOff()
         {
-            var species = MakeSpecies(1, "Champion", PokemonType.Normal);
-            var mon = PokemonInstanceFactory.Create(species, "mon");
+            var (species, evolved, library) = MakeEvolutionLine();
+            var state = new RunState();
+            var mon = PokemonInstanceFactory.Create(species, "lead");
+            mon.Exp = ExperienceResolver.ExpPerEvolution - BattleRewardResolver.ExpPerWin;
+            state.LineUp.Add(mon);
 
-            BattleRewardResolver.GrantWinRewards(
-                new List<BattleCombatant> { BattleCombatant.FromInstance(mon) }, isGym: true);
+            var evolutions = BattleRewardResolver.GrantWinRewards(state, library);
 
-            Assert.AreEqual(BattleRewardResolver.GymWinExp, mon.Exp);
-            Assert.Greater(BattleRewardResolver.GymWinExp, BattleRewardResolver.PvEWinExp);
+            Assert.AreEqual(1, evolutions.Count);
+            Assert.AreEqual(evolved.Id, evolutions[0].Mon.SpeciesId);
+        }
+
+        [Test]
+        public void CombineResolver_ConsumesTheDuplicate_AndPaysTheSurvivor()
+        {
+            var species = MakeSpecies(1, "Dupe", PokemonType.Normal);
+            var library = MakeLibrary(species);
+            var state = new RunState();
+            state.LineUp.Add(PokemonInstanceFactory.Create(species, "keeper"));
+            state.Box.Add(PokemonInstanceFactory.Create(species, "spare"));
+
+            CombineResolver.Combine(state, RosterGroup.Box, 0, RosterGroup.Party, 0, library);
+
+            Assert.IsEmpty(state.Box, "the duplicate should be consumed");
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.AreEqual(CombineResolver.ExpGranted, state.LineUp[0].Exp);
+            Assert.AreEqual("keeper", state.LineUp[0].InstanceId, "the mon dropped onto is the one that survives");
+        }
+
+        [Test]
+        public void CombineResolver_RefusesTwoDifferentSpecies()
+        {
+            var alpha = MakeSpecies(1, "Alpha", PokemonType.Normal);
+            var beta = MakeSpecies(2, "Beta", PokemonType.Water);
+            var library = MakeLibrary(alpha, beta);
+            var state = new RunState();
+            state.LineUp.Add(PokemonInstanceFactory.Create(alpha, "alpha"));
+            state.Box.Add(PokemonInstanceFactory.Create(beta, "beta"));
+
+            var eligibility = CombineResolver.CanCombine(state, RosterGroup.Box, 0, RosterGroup.Party, 0, library);
+            CombineResolver.Combine(state, RosterGroup.Box, 0, RosterGroup.Party, 0, library);
+
+            Assert.IsFalse(eligibility.Allowed);
+            StringAssert.Contains("aren't the same Pokemon", eligibility.Reason);
+            Assert.AreEqual(1, state.Box.Count, "nothing should have been consumed");
+            Assert.AreEqual(0, state.LineUp[0].Exp);
+        }
+
+        /// <summary>The same rule releasing obeys: a run always keeps someone to send out, so the
+        /// last party mon can't be fed to a Box duplicate.</summary>
+        [Test]
+        public void CombineResolver_RefusesToEmptyTheParty()
+        {
+            var species = MakeSpecies(1, "Dupe", PokemonType.Normal);
+            var library = MakeLibrary(species);
+            var state = new RunState();
+            state.LineUp.Add(PokemonInstanceFactory.Create(species, "only"));
+            state.Box.Add(PokemonInstanceFactory.Create(species, "spare"));
+
+            var eligibility = CombineResolver.CanCombine(state, RosterGroup.Party, 0, RosterGroup.Box, 0, library);
+            CombineResolver.Combine(state, RosterGroup.Party, 0, RosterGroup.Box, 0, library);
+
+            Assert.IsFalse(eligibility.Allowed);
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.AreEqual(0, state.Box[0].Exp);
+        }
+
+        /// <summary>Two combines is six EXP, which is two evolutions' worth — combining is the
+        /// fastest route to one, so it has to report them the same way a win does.</summary>
+        [Test]
+        public void CombineResolver_ReportsAnEvolutionTheGrantSetOff()
+        {
+            var (species, evolved, library) = MakeEvolutionLine();
+            var state = new RunState();
+            var keeper = PokemonInstanceFactory.Create(species, "keeper");
+            keeper.Exp = ExperienceResolver.ExpPerEvolution - CombineResolver.ExpGranted;
+            state.LineUp.Add(keeper);
+            state.Box.Add(PokemonInstanceFactory.Create(species, "spare"));
+
+            var evolutions = CombineResolver.Combine(state, RosterGroup.Box, 0, RosterGroup.Party, 0, library);
+
+            Assert.AreEqual(1, evolutions.Count);
+            Assert.AreEqual(evolved.Id, state.LineUp[0].SpeciesId);
         }
 
         [Test]

@@ -10,7 +10,9 @@ explains why what's built doesn't match the plan's order; and
 covers how a map node turns into a fight, and which simplifications the run loop deliberately
 carries; [`0004-full-roster-import-and-pokedex.md`](docs/architecture-decisions/0004-full-roster-import-and-pokedex.md)
 covers the jump from 28 hand-authored species to all 183, the content-import pipeline that did it,
-and what that expansion left unfinished. Between them they list the deviations from the design doc
+and what that expansion left unfinished; and
+[`0005-exp-as-a-small-counter.md`](docs/architecture-decisions/0005-exp-as-a-small-counter.md)
+covers the EXP/growth/evolution model and the duplicate-combining gesture. Between them they list the deviations from the design doc
 that are still open questions.
 
 ## Project snapshot
@@ -41,6 +43,11 @@ exists — the phase list under it describes intent, and the build has deviated 
   Pokémon Center adoption/healing, a Shop, type synergy, the badge reward, real Event/PvP nodes,
   the Trailblazer minigame, and the Region Hub. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
+- **Growth runs on a small EXP counter** (ADR 0005): 1 per battle won, 2 per duplicate combined,
+  each point a flat +10 to all three stats, evolution every 3 points. `PokemonInstance.CurrentStats`
+  is **derived** by `ExperienceResolver.Recompute` from species + EXP — writing stats onto a mon
+  directly works until the next EXP grant silently recomputes them away, which is the one trap in
+  this area. There is no `Level` any more.
 - **Content is all 183 roster species** (ADR 0004), imported by
   `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx`. Two things that
   expansion left open and that it's easy to mistake for finished: only the original 28 species have
@@ -169,7 +176,7 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the full-roster import and the Pokédex, ADR 0004): **146 EditMode, 83 PlayMode,
+  2026-09-12 (after the EXP/evolution model and combining, ADR 0005): **156 EditMode, 87 PlayMode,
   all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
