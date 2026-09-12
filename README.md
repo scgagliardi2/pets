@@ -31,8 +31,8 @@ but it only ever runs from the test suite.
 
 Built and covered: the simulator (`client/Assets/Scripts/Simulation`) with golden fixtures in
 `/shared/fixtures`; the pure-C# run layer (`Scripts/Meta`) including a branching map generator;
-28 curated species and 17 passives (`client/Assets/Content`); every screen listed above. 99 EditMode
-and 46 PlayMode tests pass.
+28 curated species and 17 passives (`client/Assets/Content`); every screen listed above. 103
+EditMode and 49 PlayMode tests pass.
 
 Not built: node resolution, Gym/Badge flow, catching, evolution, the Trailblazer minigame, Pokémon
 Center adoption, the Shop, type synergy, save/load, and the content-import pipeline. See
