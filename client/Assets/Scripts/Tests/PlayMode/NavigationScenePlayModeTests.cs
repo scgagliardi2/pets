@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -173,6 +174,7 @@ namespace Pets.Tests
 
             AssertNavigatesVia("MapButton", nameof(SceneNavigator.GoToMap));
             AssertNavigatesVia("TeamButton", nameof(SceneNavigator.GoToTeam));
+            AssertNavigatesVia("DevRosterButton", nameof(SceneNavigator.GoToDevRoster));
             AssertNavigatesVia("HomeButton", nameof(SceneNavigator.GoHome));
         }
 
@@ -250,6 +252,97 @@ namespace Pets.Tests
             Assert.AreEqual(1, typesRow.childCount, "the test species is single-typed");
         }
 
+        /// <summary>Dragging a card onto another slot is how the line-up is reordered, so this
+        /// drives the real drag handlers on the real slots rather than calling RunState.MoveMon
+        /// (RunMetaTests covers the rules themselves). Three mons so the party has both a filled
+        /// slot to trade with and empty ones to drop onto.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingAPartyCardOntoAnotherSlot_ReordersTheLineUp()
+        {
+            ActiveRun.Begin(MakeRun(3), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return Drag("PartySlot0", "PartySlot2");
+
+            Assert.AreEqual("Gamma", SlotText("PartySlot0", "NameText"), "the third mon should now lead");
+            Assert.AreEqual("Alpha", SlotText("PartySlot2", "NameText"));
+            Assert.AreEqual(3, ActiveRun.State.LineUp.Count, "a trade shouldn't change the party size");
+        }
+
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingAPartyCardIntoTheBox_MovesItOutOfTheLineUp()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return Drag("PartySlot1", "BoxSlot0");
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+            Assert.AreEqual(1, ActiveRun.State.Box.Count);
+            Assert.AreEqual("Beta", SlotText("BoxSlot0", "NameText"));
+            Assert.IsNull(GameObject.Find("PartySlot1").transform.Find("Card/NameText"),
+                "the slot the mon left should be drawn empty again");
+            Assert.IsFalse(FindButton("SwapButton").interactable,
+                "a one-mon line-up has nothing to swap");
+        }
+
+        /// <summary>The one hard rule on the screen: a run always keeps someone to send out, so
+        /// the drag is refused and the card goes back where it was.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingTheLastPartyMonIntoTheBox_IsRefused()
+        {
+            ActiveRun.Begin(MakeRun(1), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return Drag("PartySlot0", "BoxSlot0");
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the party must never be emptied");
+            Assert.IsEmpty(ActiveRun.State.Box);
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"),
+                "the refused card should be back in its own slot");
+        }
+
+        /// <summary>A card let go over nothing has to land back in its slot rather than stay
+        /// stranded on the drag layer.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DroppingACardOnNothing_LeavesEverythingWhereItWas()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            var source = SlotView("PartySlot0");
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+            source.OnBeginDrag(eventData);
+            source.OnDrag(eventData);
+            source.OnEndDrag(eventData);
+            yield return null;
+
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameText"));
+            Assert.AreEqual(0, GameObject.Find("DragLayer").transform.childCount,
+                "no card should be left on the drag layer");
+        }
+
+        /// <summary>An empty slot can be dropped onto but not picked up.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_AnEmptySlot_CannotBeDragged()
+        {
+            ActiveRun.Begin(MakeRun(1), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            Assert.IsFalse(SlotView("PartySlot3").IsFilled);
+
+            yield return Drag("PartySlot3", "PartySlot0");
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+        }
+
         [UnityTest]
         public IEnumerator TeamScene_BackButton_ReturnsToTheIngameMenu()
         {
@@ -272,6 +365,31 @@ namespace Pets.Tests
             Assert.IsNull(GameObject.Find("PartySlot0"),
                 "The party slots should be hidden when there's no run to show in them");
             Assert.IsFalse(FindButton("SwapButton").interactable);
+        }
+
+        private static TeamSlotView SlotView(string slotName)
+        {
+            var slot = GameObject.Find(slotName);
+            Assert.IsNotNull(slot, $"Expected a slot named '{slotName}' in the Team scene");
+            var view = slot.GetComponent<TeamSlotView>();
+            Assert.IsNotNull(view, $"{slotName} has no TeamSlotView");
+            return view;
+        }
+
+        /// <summary>Runs a whole drag gesture the way uGUI does: begin and move on the source
+        /// slot, drop on the target, then end on the source. pointerDrag is what OnDrop reads to
+        /// find out which slot the card came from, exactly as the input module sets it.</summary>
+        private static IEnumerator Drag(string fromSlot, string toSlot)
+        {
+            var source = SlotView(fromSlot);
+            var target = SlotView(toSlot);
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+
+            source.OnBeginDrag(eventData);
+            source.OnDrag(eventData);
+            target.OnDrop(eventData);
+            source.OnEndDrag(eventData);
+            yield return null;
         }
 
         /// <summary>The text of one line inside a Team screen slot's card — the slots are built
@@ -301,19 +419,23 @@ namespace Pets.Tests
         private static PokemonSpeciesLibrary MakeLibrary()
         {
             var library = ScriptableObject.CreateInstance<PokemonSpeciesLibrary>();
-            library.AllSpecies = new System.Collections.Generic.List<PokemonSpeciesDefinitionAsset>
+            library.AllSpecies = new System.Collections.Generic.List<PokemonSpeciesDefinitionAsset>();
+            for (int i = 0; i < MonNames.Length; i++)
             {
-                MakeSpecies(1, "Alpha"),
-                MakeSpecies(2, "Beta")
-            };
+                library.AllSpecies.Add(MakeSpecies(i + 1, MonNames[i]));
+            }
             return library;
         }
 
-        private static RunState MakeRun()
+        private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta" };
+
+        private static RunState MakeRun(int partyCount = 2)
         {
             var state = new RunState();
-            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(1, "Alpha"), "lead"));
-            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(2, "Beta"), "support"));
+            for (int i = 0; i < partyCount; i++)
+            {
+                state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(i + 1, MonNames[i]), $"mon-{i}"));
+            }
             return state;
         }
     }

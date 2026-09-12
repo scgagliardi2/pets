@@ -38,6 +38,8 @@ namespace Pets.Gameplay
 
         public void GoToCredits() => SceneManager.LoadScene(SceneNames.Credits);
 
+        public void GoToDevRoster() => SceneManager.LoadScene(SceneNames.DevRoster);
+
         /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
         /// the Ingame Menu rather than straight on the Map so the player sees where they are
         /// before moving. Guarded because a run only survives "Quit to Home" in memory (there's no

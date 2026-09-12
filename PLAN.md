@@ -222,12 +222,17 @@ criteria are met and the Forest Location is playable end to end:**
   `Pets > Build All Scenes`), so no single builder can leave it stale.
 - The game has a shell around the run: `Home.unity` (Continue Run / New Game, plus History,
   Credits and Quit) → `CharacterSelect.unity` → `RegionMap.unity`, with the Map's "Menu" button
-  opening `IngameMenu.unity` (Back to Map / Team / Quit to Home). `Team.unity` shows the run's
-  party as a row of six slots with the Box's first six below it, each filled slot drawing the
-  mon's sprite, type icons and stats through the same `UI/PokemonCardBuilder.cs` that draws
-  Character Select's cards — slot 0 is labelled Lead, slot 1 Support, and the rest are Reserve and
-  dimmed, since only the front two are ever mechanically active (design doc §7). The Lead/Support
-  swap is still the only line-up edit. `History.unity` and `Credits.unity` hang off Home: Credits
+  opening `IngameMenu.unity` (Back to Map / Team / Dev: Add Pokemon / Quit to Home). `Team.unity`
+  shows the run's party as a row of six slots with the Box's first six below it, each filled slot
+  drawing the mon's sprite, type icons and stats through the same `UI/PokemonCardBuilder.cs` that
+  draws Character Select's cards — slot 0 is labelled Lead, slot 1 Support, and the rest are
+  Reserve and dimmed, since only the front two are ever mechanically active (design doc §7).
+  Mons are rearranged by **dragging a card onto another slot** in either row: a drop on an
+  occupied slot trades the two, a drop on an empty one appends to that collection, and the party
+  can never be emptied (`RunState.MoveMon`, covered by `RunMetaTests.cs`; the gesture itself lives
+  in `Gameplay/TeamSlotView.cs` + `TeamPanelController`, covered by
+  `NavigationScenePlayModeTests.cs`). The Lead/Support button stays as a one-click shortcut for
+  the most common swap. `History.unity` and `Credits.unity` hang off Home: Credits
   carries the Pokémon/PokeAPI/font attribution and the non-commercial scope note, History is a
   real screen with an honest empty state (nothing records a finished run yet). The old Forest hub
   scene was converted into the Ingame Menu rather than kept alongside. Navigation is one
@@ -238,10 +243,17 @@ criteria are met and the Forest Location is playable end to end:**
   run still in memory this session (it's hidden when `ActiveRun` is empty) and Home has no
   Options, because "Quit to Home" doesn't save — real resuming, and anything for History to list,
   is the local-save work in Phase 2. Box slots past the first six aren't paged either.
+- `DevRoster.unity` (`Gameplay/DevRosterController.cs`, reached from the Ingame Menu) is a dev
+  tool, not a game screen: a Character Select-style grid of the whole roster where clicking a card
+  drops that species straight into the run's party or Box, duplicates allowed, so a team state
+  worth testing against doesn't have to be played for. It ships in the build like everything else
+  — per §9 there's no release channel to keep it out of — and it is *not* the Pokémon Center
+  (real adoption with costs and rules is Phase 1, design doc §12). Covered by
+  `DevRosterScenePlayModeTests.cs`.
 
 **Not yet built (Phase 1):** wiring the branching Region Map into an actual playable Location (node
 resolution, Gym/Badge battle, PvP/Event node behavior), Team management beyond the Lead/Support
-swap (Box promotion/release, reordering the reserves, paging a Box past six slots), the real drag-and-
+drag-reorder (releasing a mon, paging a Box past six slots, EXP/evolution from this screen), the real drag-and-
 drop catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
 economy, narrowing Character Select to match design doc §3 exactly, and any save/load layer.
 

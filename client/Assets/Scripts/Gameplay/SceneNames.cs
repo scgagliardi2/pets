@@ -14,5 +14,11 @@ namespace Pets.Gameplay
         public const string Team = "Team";
         public const string History = "History";
         public const string Credits = "Credits";
+
+        /// <summary>Dev-only roster screen for stuffing mons into a run by hand (see
+        /// DevRosterController). Shipped in the build like the rest — this is a personal,
+        /// non-commercial project (PLAN.md §9), so there's no release channel to keep it out
+        /// of.</summary>
+        public const string DevRoster = "DevRoster";
     }
 }

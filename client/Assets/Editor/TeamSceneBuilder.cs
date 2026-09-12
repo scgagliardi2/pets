@@ -10,11 +10,12 @@ using static Pets.EditorTools.SceneBuilderUtils;
 namespace Pets.EditorTools
 {
     /// <summary>Builds the Team screen, reached from the Ingame Menu: the run's party as a row of
-    /// six slots, the Box's first six as a second row below it, and the one line-up edit that's
-    /// unambiguous with two active slots — swapping which mon leads. Each filled slot shows the
-    /// mon's sprite, types and stats, built by the same Pets.UI.PokemonCardBuilder that draws
-    /// Character Select's roster cards. Fuller team management (promoting out of the Box,
-    /// reordering the reserves, paging a Box past six) waits on the Box rules in PLAN.md Phase 1.
+    /// six slots, the Box's first six as a second row below it, and the Lead/Support swap button.
+    /// Each filled slot shows the mon's sprite, types and stats, built by the same
+    /// Pets.UI.PokemonCardBuilder that draws Character Select's roster cards. Mons are rearranged
+    /// by dragging a card onto another slot in either row — see TeamPanelController for the
+    /// gesture and RunState.MoveMon for what each drop means. Paging a Box past six slots is still
+    /// PLAN.md Phase 1 work.
     ///
     /// Six slots is a view of the line-up "train" (design doc §7), not six active mons —
     /// TeamPanelController labels slot 0 Lead, slot 1 Support and dims the rest as dormant.
@@ -124,6 +125,12 @@ namespace Pets.EditorTools
 
             var backButton = CreateButton(bottomBar, "BackButton", "Back to Menu", Theme.ButtonStyle.Secondary, useSprite: true);
             var swapButton = CreateButton(bottomBar, "SwapButton", "Swap Lead / Support", Theme.ButtonStyle.Primary, useSprite: true);
+
+            // Last child of the canvas, so a card being dragged draws over both rows and the
+            // bottom bar. No Image of its own: it must never take the raycast away from the slot
+            // the player is dropping onto.
+            var dragLayer = CreatePanel(canvasRect, "DragLayer", Color.clear, Vector2.zero, Vector2.one);
+            SetField(teamPanel, "dragLayer", dragLayer);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
 

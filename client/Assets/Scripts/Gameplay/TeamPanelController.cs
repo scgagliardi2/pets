@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using Pets.Data;
 using Pets.Meta;
@@ -15,9 +17,13 @@ namespace Pets.Gameplay
     ///
     /// Six slots is a *view* of the line-up "train" (§7), not six active mons: only the front two
     /// are ever mechanically live, so slot 0 is labelled Lead, slot 1 Support, and slots 2-5 are
-    /// labelled Reserve and dimmed to read as dormant. Still read-only apart from the Lead/Support
-    /// swap TeamScreenController owns — promoting out of the Box and reordering the reserves need
-    /// the Box rules that are still PLAN.md Phase 1.</summary>
+    /// labelled Reserve and dimmed to read as dormant.
+    ///
+    /// Slots are rearranged by dragging a mon onto another slot, in either row — the rules for
+    /// what a given drop means, including that the party can never be emptied, live in
+    /// RunState.MoveMon. This class owns the gesture: it lifts the dragged card out of its slot
+    /// onto a drag layer so the slot underneath can receive the drop, and rebuilds both rows once
+    /// the drag is over.</summary>
     public sealed class TeamPanelController : MonoBehaviour
     {
         /// <summary>Slots rendered per row. The party is capped at this; the Box is not (design
@@ -48,41 +54,137 @@ namespace Pets.Gameplay
         /// it shouldn't compete with the mons on either side of it.</summary>
         private const float EmptySlotAlpha = 0.45f;
 
+        /// <summary>A card being dragged is slightly see-through, so the slot it's currently over
+        /// stays visible underneath it.</summary>
+        private const float DraggedCardAlpha = 0.85f;
+
         [SerializeField] private RectTransform partySlots;
         [SerializeField] private RectTransform boxSlots;
         [SerializeField] private Text partyHeaderText;
         [SerializeField] private Text boxHeaderText;
         [SerializeField] private GameObject typeIconPrefab;
 
+        /// <summary>Where a card being dragged is parked while it follows the pointer: a
+        /// full-screen, non-raycasting rect above the rest of the screen. It has to be outside the
+        /// slot rows for two reasons — the card must draw over its neighbours, and the slot
+        /// underneath the pointer has to be the thing that receives the drop.</summary>
+        [SerializeField] private RectTransform dragLayer;
+
+        /// <summary>Raised after a drag actually changed the run's line-up or Box, so the screen
+        /// around this panel can update whatever else depends on it.</summary>
+        public event Action Changed;
+
+        // The run this panel last drew. Kept so a completed drag can rebuild both rows itself
+        // rather than the screen having to hand the state back in on every gesture.
+        private RunState state;
+        private PokemonSpeciesLibrary library;
+
+        private RectTransform draggedCard;
+        private Vector2 draggedCardSize;
+
         public void Refresh(RunState state, PokemonSpeciesLibrary library)
         {
+            this.state = state;
+            this.library = library;
+            Rebuild();
+        }
+
+        private void Rebuild()
+        {
+            // Anything still parked on the drag layer belongs to the rows about to be thrown away.
+            Clear(dragLayer);
+            draggedCard = null;
+
             partyHeaderText.text = $"Party  {state.LineUp.Count} / {SlotsPerRow}";
             boxHeaderText.text = state.Box.Count > SlotsPerRow
                 ? $"Box  showing {SlotsPerRow} of {state.Box.Count}"
                 : $"Box  {state.Box.Count} / {SlotsPerRow}";
 
-            BuildRow(partySlots, "PartySlot", state.LineUp, library, isParty: true);
-            BuildRow(boxSlots, "BoxSlot", state.Box, library, isParty: false);
+            BuildRow(partySlots, "PartySlot", state.LineUp, RosterGroup.Party);
+            BuildRow(boxSlots, "BoxSlot", state.Box, RosterGroup.Box);
         }
 
-        private void BuildRow(RectTransform row, string slotNamePrefix, List<PokemonInstance> mons,
-            PokemonSpeciesLibrary library, bool isParty)
+        private void BuildRow(RectTransform row, string slotNamePrefix, List<PokemonInstance> mons, RosterGroup group)
         {
             Clear(row);
+            bool isParty = group == RosterGroup.Party;
             for (int i = 0; i < SlotsPerRow; i++)
             {
                 var mon = i < mons.Count ? mons[i] : null;
                 var slot = new GameObject($"{slotNamePrefix}{i}", typeof(RectTransform));
                 slot.transform.SetParent(row, false);
-                if (mon == null)
-                {
-                    BuildEmptySlot(slot.transform, isParty ? RoleLabel(i) : "Empty");
-                }
-                else
-                {
-                    BuildFilledSlot(slot.transform, mon, library, isParty ? RoleLabel(i) : "Box",
+                var card = mon == null
+                    ? BuildEmptySlot(slot.transform, isParty ? RoleLabel(i) : "Empty")
+                    : BuildFilledSlot(slot.transform, mon, library, isParty ? RoleLabel(i) : "Box",
                         dormant: isParty && i >= 2);
-                }
+                slot.AddComponent<TeamSlotView>()
+                    .Initialize(this, group, i, mon != null, card.GetComponent<RectTransform>());
+            }
+        }
+
+        /// <summary>Lifts the dragged slot's card onto the drag layer. Its size has to be pinned
+        /// first: inside a slot the card is stretched to fill it, and a stretched rect reparented
+        /// under a full-screen layer would stretch to the whole screen.</summary>
+        internal void BeginSlotDrag(TeamSlotView slot, PointerEventData eventData)
+        {
+            draggedCard = slot.Card;
+            draggedCardSize = draggedCard.rect.size;
+
+            draggedCard.SetParent(dragLayer, false);
+            draggedCard.anchorMin = draggedCard.anchorMax = new Vector2(0.5f, 0.5f);
+            draggedCard.pivot = new Vector2(0.5f, 0.5f);
+            draggedCard.sizeDelta = draggedCardSize;
+
+            var group = draggedCard.GetComponent<CanvasGroup>();
+            if (group == null)
+            {
+                group = draggedCard.gameObject.AddComponent<CanvasGroup>();
+            }
+            // Held cards read as picked up, and stop absorbing the raycast so the slot under the
+            // pointer is what receives the drop.
+            group.alpha = DraggedCardAlpha;
+            group.blocksRaycasts = false;
+
+            DragSlot(slot, eventData);
+        }
+
+        internal void DragSlot(TeamSlotView slot, PointerEventData eventData)
+        {
+            if (draggedCard == null)
+            {
+                return;
+            }
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    dragLayer, eventData.position, eventData.pressEventCamera, out var local))
+            {
+                draggedCard.anchoredPosition = local;
+            }
+        }
+
+        /// <summary>Applies a completed drop. A refused move (see RunState.MoveMon) still rebuilds,
+        /// which is what snaps the card back to where it came from.</summary>
+        internal void MoveBetweenSlots(TeamSlotView source, TeamSlotView target)
+        {
+            if (state == null)
+            {
+                return;
+            }
+            bool moved = state.MoveMon(source.Group, source.Index, target.Group, target.Index);
+            Rebuild();
+            if (moved)
+            {
+                Changed?.Invoke();
+            }
+        }
+
+        /// <summary>End of the gesture. After a drop the rows have already been rebuilt and the
+        /// drag layer is empty, so this only has work to do when the card was released somewhere
+        /// that wasn't a slot.</summary>
+        internal void EndSlotDrag()
+        {
+            if (draggedCard != null)
+            {
+                Rebuild();
             }
         }
 
@@ -99,7 +201,7 @@ namespace Pets.Gameplay
             }
         }
 
-        private void BuildFilledSlot(Transform slot, PokemonInstance mon, PokemonSpeciesLibrary library,
+        private GameObject BuildFilledSlot(Transform slot, PokemonInstance mon, PokemonSpeciesLibrary library,
             string roleLabel, bool dormant)
         {
             var species = library.GetById(mon.SpeciesId);
@@ -126,12 +228,13 @@ namespace Pets.Gameplay
             {
                 Fade(card, ReserveAlpha);
             }
+            return card;
         }
 
         /// <summary>An unfilled slot: the same card frame, faded further, holding only what the
         /// slot is for. Drawn rather than left blank so the party reads as six slots with room to
         /// grow instead of as however many mons the run happens to have.</summary>
-        private void BuildEmptySlot(Transform slot, string label)
+        private GameObject BuildEmptySlot(Transform slot, string label)
         {
             var card = PokemonCardBuilder.CreateCard(slot, "Card");
             Stretch(card.GetComponent<RectTransform>());
@@ -140,6 +243,7 @@ namespace Pets.Gameplay
             PokemonCardBuilder.AddLine(card.transform, label, CardLineFontSize, FontStyle.Bold, Theme.TextMuted)
                 .name = "RoleText";
             Fade(card, EmptySlotAlpha);
+            return card;
         }
 
         private static string DisplayName(PokemonInstance mon, PokemonSpeciesDefinitionAsset species)
@@ -156,7 +260,15 @@ namespace Pets.Gameplay
         /// to know which children are allowed to be recoloured and which aren't.</summary>
         private static void Fade(GameObject card, float alpha)
         {
-            card.AddComponent<CanvasGroup>().alpha = alpha;
+            // Explicit == null rather than ??: GetComponent can hand back a "fake null" — a live
+            // managed wrapper around no native component — which the null-coalescing operator
+            // happily accepts, and the first property access on it then throws.
+            var group = card.GetComponent<CanvasGroup>();
+            if (group == null)
+            {
+                group = card.AddComponent<CanvasGroup>();
+            }
+            group.alpha = alpha;
         }
 
         private static void Stretch(RectTransform rect)

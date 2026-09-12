@@ -46,6 +46,132 @@ namespace Pets.Tests
             Assert.AreEqual(1, state.LineUp[1].SpeciesId);
         }
 
+        private static RunState MakeRun(int partyCount, int boxCount)
+        {
+            var state = new RunState();
+            for (int i = 0; i < partyCount; i++)
+            {
+                state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(100 + i, $"Party{i}", PokemonType.Normal), $"party-{i}"));
+            }
+            for (int i = 0; i < boxCount; i++)
+            {
+                state.Box.Add(PokemonInstanceFactory.Create(MakeSpecies(200 + i, $"Box{i}", PokemonType.Normal), $"box-{i}"));
+            }
+            return state;
+        }
+
+        [Test]
+        public void MoveMon_OntoAnOccupiedSlot_TradesThePlacesOfTheTwoMons()
+        {
+            var state = MakeRun(partyCount: 3, boxCount: 0);
+
+            Assert.IsTrue(state.MoveMon(RosterGroup.Party, 0, RosterGroup.Party, 2));
+
+            Assert.AreEqual(102, state.LineUp[0].SpeciesId, "the third mon should now lead");
+            Assert.AreEqual(100, state.LineUp[2].SpeciesId);
+            Assert.AreEqual(3, state.LineUp.Count, "a trade should never change either count");
+        }
+
+        [Test]
+        public void MoveMon_FromTheBoxOntoAnOccupiedPartySlot_TradesAcrossTheTwoCollections()
+        {
+            var state = MakeRun(partyCount: 2, boxCount: 1);
+
+            Assert.IsTrue(state.MoveMon(RosterGroup.Box, 0, RosterGroup.Party, 0));
+
+            Assert.AreEqual(200, state.LineUp[0].SpeciesId, "the Box mon should now lead");
+            Assert.AreEqual(100, state.Box[0].SpeciesId, "the old Lead should be in the Box");
+            Assert.AreEqual(2, state.LineUp.Count);
+            Assert.AreEqual(1, state.Box.Count);
+        }
+
+        /// <summary>Slots fill from the front: the collections stay gap-free, so a drop onto any
+        /// empty slot means "append", wherever in the row that slot happened to be.</summary>
+        [Test]
+        public void MoveMon_OntoAnEmptySlot_AppendsToThatCollection()
+        {
+            var state = MakeRun(partyCount: 3, boxCount: 0);
+
+            Assert.IsTrue(state.MoveMon(RosterGroup.Party, 0, RosterGroup.Box, 4));
+
+            Assert.AreEqual(2, state.LineUp.Count);
+            Assert.AreEqual(101, state.LineUp[0].SpeciesId, "the mons behind the one that left should close up");
+            Assert.AreEqual(1, state.Box.Count);
+            Assert.AreEqual(100, state.Box[0].SpeciesId);
+        }
+
+        [Test]
+        public void MoveMon_WithinTheParty_OntoAnEmptySlot_MovesItToTheBack()
+        {
+            var state = MakeRun(partyCount: 3, boxCount: 0);
+
+            Assert.IsTrue(state.MoveMon(RosterGroup.Party, 0, RosterGroup.Party, 5));
+
+            Assert.AreEqual(3, state.LineUp.Count);
+            Assert.AreEqual(101, state.LineUp[0].SpeciesId);
+            Assert.AreEqual(100, state.LineUp[2].SpeciesId);
+        }
+
+        /// <summary>The rule the Team screen leans on: a run always has someone to send out, so
+        /// the last mon in the line-up can't be moved to the Box.</summary>
+        [Test]
+        public void MoveMon_MovingTheLastPartyMonToTheBox_IsRefused()
+        {
+            var state = MakeRun(partyCount: 1, boxCount: 0);
+
+            Assert.IsFalse(state.MoveMon(RosterGroup.Party, 0, RosterGroup.Box, 0));
+
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.IsEmpty(state.Box);
+        }
+
+        /// <summary>Trading the last party mon for a Box mon is fine, though — the party still
+        /// has one afterwards, which is the actual rule.</summary>
+        [Test]
+        public void MoveMon_TradingTheLastPartyMonForABoxMon_IsAllowed()
+        {
+            var state = MakeRun(partyCount: 1, boxCount: 1);
+
+            Assert.IsTrue(state.MoveMon(RosterGroup.Party, 0, RosterGroup.Box, 0));
+
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.AreEqual(200, state.LineUp[0].SpeciesId);
+            Assert.AreEqual(100, state.Box[0].SpeciesId);
+        }
+
+        [Test]
+        public void MoveMon_ToAnEmptySlotPastThePartysCapacity_IsRefused()
+        {
+            var state = MakeRun(partyCount: RunState.MaxPartySize, boxCount: 1);
+
+            Assert.IsFalse(state.MoveMon(RosterGroup.Box, 0, RosterGroup.Party, RunState.MaxPartySize));
+
+            Assert.AreEqual(RunState.MaxPartySize, state.LineUp.Count);
+            Assert.AreEqual(1, state.Box.Count);
+        }
+
+        [Test]
+        public void MoveMon_OntoItsOwnSlot_ChangesNothing()
+        {
+            var state = MakeRun(partyCount: 2, boxCount: 0);
+
+            Assert.IsFalse(state.MoveMon(RosterGroup.Party, 1, RosterGroup.Party, 1));
+
+            Assert.AreEqual(100, state.LineUp[0].SpeciesId);
+            Assert.AreEqual(101, state.LineUp[1].SpeciesId);
+        }
+
+        [Test]
+        public void MoveMon_FromAnEmptySlot_ChangesNothing()
+        {
+            var state = MakeRun(partyCount: 1, boxCount: 0);
+
+            Assert.IsFalse(state.MoveMon(RosterGroup.Box, 0, RosterGroup.Party, 1));
+
+            Assert.AreEqual(1, state.LineUp.Count);
+            Assert.IsEmpty(state.Box);
+        }
+
         /// <summary>A run that's down to one mon still has a Team screen with a Swap button on it,
         /// so the no-second-slot case has to be a no-op rather than an index error.</summary>
         [Test]
