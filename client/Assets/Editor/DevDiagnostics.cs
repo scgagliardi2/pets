@@ -9,6 +9,26 @@ namespace Pets.EditorTools
     /// without needing to click around the Editor by hand. Not part of the game — safe to delete.</summary>
     public static class DevDiagnostics
     {
+        /// <summary>Dumps the player/quality settings that are easy to set wrong in the YAML and
+        /// impossible to eyeball there, because they serialize as bare ints (orientation is a
+        /// UIOrientation enum, vSyncCount a count, render pipeline a per-tier asset reference).
+        /// Useful after editing ProjectSettings by hand rather than through the Inspector.</summary>
+        [MenuItem("Pets/Dev/Log Player Settings")]
+        public static void LogPlayerSettings()
+        {
+            Debug.Log(
+                $"defaultInterfaceOrientation = {PlayerSettings.defaultInterfaceOrientation}\n" +
+                $"allowedAutorotate portrait/upsideDown/right/left = " +
+                $"{PlayerSettings.allowedAutorotateToPortrait}/{PlayerSettings.allowedAutorotateToPortraitUpsideDown}/" +
+                $"{PlayerSettings.allowedAutorotateToLandscapeRight}/{PlayerSettings.allowedAutorotateToLandscapeLeft}\n" +
+                $"accelerometerFrequency = {PlayerSettings.accelerometerFrequency}\n" +
+                $"vSyncCount = {QualitySettings.vSyncCount}\n" +
+                $"activeQualityLevel = {QualitySettings.names[QualitySettings.GetQualityLevel()]}\n" +
+                $"renderPipeline (tier) = {QualitySettings.renderPipeline}\n" +
+                $"defaultRenderPipeline = {UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline}\n" +
+                $"spritePackerMode = {EditorSettings.spritePackerMode}");
+        }
+
         [MenuItem("Pets/Dev/Diagnose Sort Buttons")]
         public static void DiagnoseSortButtons()
         {

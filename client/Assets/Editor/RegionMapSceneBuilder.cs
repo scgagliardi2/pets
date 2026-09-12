@@ -22,6 +22,11 @@ namespace Pets.EditorTools
     /// Pets &gt; Build Region Map Scene after changing RegionMapController's serialized fields.</summary>
     public static class RegionMapSceneBuilder
     {
+        /// <summary>Matches every other scene builder. Leaving this to CreateCanvas's own default
+        /// (960x720) is what made the Map's chrome ~33% bigger than the rest of the game and
+        /// visibly jump size when navigating to the Ingame Menu or Team.</summary>
+        private static readonly Vector2 ReferenceResolution = new Vector2(1280f, 720f);
+
         public const string ScenePath = "Assets/Scenes/" + SceneNames.Map + ".unity";
         private static readonly Color PlaceholderBackground = new Color(0.29f, 0.42f, 0.29f);
 
@@ -43,7 +48,7 @@ namespace Pets.EditorTools
 
             CreateMainCamera(Theme.ChromeBg);
             CreateEventSystem();
-            var canvasRect = CreateCanvas();
+            var canvasRect = CreateCanvas(ReferenceResolution);
 
             var titleBar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
             PinToTop(titleBar, TitleHeight);
