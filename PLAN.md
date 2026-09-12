@@ -212,7 +212,9 @@ the CLI commands).
   tests that click the real `Button`s in the saved scenes:
   - `Home.unity` — Continue Run (only when a run is live in memory) / New Game / History /
     Credits / Quit.
-  - `CharacterSelect.unity` — the whole curated roster in a scrollable stat grid with a Type
+  - `CharacterSelect.unity` — the whole curated roster in a scrollable stat grid (each card laid out
+    like a battle panel: name with a sword + attack, type icons, and HP/SPD bars from
+    `Prefabs/UI/HealthBar.prefab` / `SpeedBar.prefab`, speed drawn against the 200 cap) with a Type
     filter and Attack/Speed/Health sort toggles; picks Starter then Secondary, hands the pair to
     `RunBootstrapper` via `PendingRunSelection`. Simpler than design doc §3 (which wants a
     fixed/chosen starter, a narrowed 3-option secondary, and cosmetics) — full §3 parity is open.
@@ -234,8 +236,10 @@ the CLI commands).
 - Plumbing: `Gameplay/SceneNavigator.cs` (one component every menu button is wired to),
   `Gameplay/ActiveRun.cs` (holds `RunState` across scene loads), `Assets/Editor/SceneCatalog.cs`
   (owns the Build Settings list + `Pets > Build All Scenes`), `Assets/Editor/SceneBuilderUtils.cs`
-  (shared uGUI construction), `Assets/Prefabs/UI` (Button/TextBox/TypeIcon prefabs the builders
-  instantiate).
+  (shared uGUI construction), `Assets/Prefabs/UI` (Button/TextBox/TypeIcon/HealthBar/SpeedBar prefabs the
+  builders and screens instantiate). `UI/HealthBarView` (and `UI/StatBarView` for speed) is built for the battle screen's Lead/Support
+  panels (current/max, green→yellow→red) but only Character Select uses it so far — no scene runs
+  a battle yet.
 
 **The two big structural gaps** — these are the real Phase 1 work, and everything in "Next Steps"
 below flows from them:

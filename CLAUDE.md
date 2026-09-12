@@ -154,7 +154,7 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12: **103 EditMode, 49 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-12: **116 EditMode, 51 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

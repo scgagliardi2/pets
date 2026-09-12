@@ -68,7 +68,7 @@ namespace Pets.UI
         private static Sprite textBoxSprite;
 
         // Same lazy Resources.Load pattern as GameFont, backing the 9-sliced button/panel art.
-        // All five share one 12x12 / 5px-border geometry — see tools/generate_ui_sprites.py for
+        // Every sprite in Sprites/UI shares one 12x12 / 5px-border geometry — see tools/generate_ui_sprites.py for
         // the art itself and UiSpriteImportProcessor for the import settings that make them render
         // correctly as Image.Type.Sliced.
         public static Sprite ButtonBlueSprite =>
@@ -85,6 +85,58 @@ namespace Pets.UI
 
         public static Sprite TextBoxSprite =>
             textBoxSprite != null ? textBoxSprite : textBoxSprite = Resources.Load<Sprite>("Sprites/UI/TextBox");
+
+        private static Sprite barTrackSprite;
+        private static Sprite healthLabelSprite;
+        private static Sprite speedLabelSprite;
+        private static Sprite speedFillSprite;
+        private static Sprite attackIconSprite;
+        private static Sprite healthGreenSprite;
+        private static Sprite healthYellowSprite;
+        private static Sprite healthRedSprite;
+
+        // Health bar art (Pets.UI.HealthBarView) — same generated 12x12 geometry and import settings
+        // as the sprites above, drawn at pixelsPerUnitMultiplier 2 so a bar only 16 units tall still
+        // lands every source pixel on a whole canvas unit.
+        public static Sprite BarTrackSprite =>
+            barTrackSprite != null ? barTrackSprite : barTrackSprite = Resources.Load<Sprite>("Sprites/UI/BarTrack");
+
+        public static Sprite HealthLabelSprite =>
+            healthLabelSprite != null ? healthLabelSprite : healthLabelSprite = Resources.Load<Sprite>("Sprites/UI/HpLabel");
+
+        public static Sprite SpeedLabelSprite =>
+            speedLabelSprite != null ? speedLabelSprite : speedLabelSprite = Resources.Load<Sprite>("Sprites/UI/SpdLabel");
+
+        public static Sprite SpeedFillSprite =>
+            speedFillSprite != null ? speedFillSprite : speedFillSprite = Resources.Load<Sprite>("Sprites/UI/SpdFill");
+
+        /// <summary>A 12x12 pixel-art sword, shown beside a card's attack value. Not 9-sliced —
+        /// draw it as Image.Type.Simple at a whole multiple of 12.</summary>
+        public static Sprite AttackIconSprite =>
+            attackIconSprite != null ? attackIconSprite : attackIconSprite = Resources.Load<Sprite>("Sprites/UI/AttackIcon");
+
+        public static Sprite HealthGreenSprite =>
+            healthGreenSprite != null ? healthGreenSprite : healthGreenSprite = Resources.Load<Sprite>("Sprites/UI/HpGreen");
+
+        public static Sprite HealthYellowSprite =>
+            healthYellowSprite != null ? healthYellowSprite : healthYellowSprite = Resources.Load<Sprite>("Sprites/UI/HpYellow");
+
+        public static Sprite HealthRedSprite =>
+            healthRedSprite != null ? healthRedSprite : healthRedSprite = Resources.Load<Sprite>("Sprites/UI/HpRed");
+
+        /// <summary>Health-bar fill bands, as in the mainline games: green above half, yellow down
+        /// to a fifth, red below that.</summary>
+        public const float HealthYellowBelow = 0.5f;
+        public const float HealthRedBelow = 0.2f;
+
+        public static Sprite HealthFillSprite(float fraction)
+        {
+            if (fraction > HealthYellowBelow)
+            {
+                return HealthGreenSprite;
+            }
+            return fraction > HealthRedBelow ? HealthYellowSprite : HealthRedSprite;
+        }
 
         public enum ButtonStyle { Primary, Secondary, Confirm, Danger, Disabled }
 

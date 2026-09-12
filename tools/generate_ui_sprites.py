@@ -39,6 +39,42 @@ PALETTES = {
     # a neutral button. Keyed to the same dark-outline family as the other three.
     "ButtonGray":  ((30, 38, 50),  (146, 157, 171), (205, 213, 223), (178, 188, 200), (99, 110, 126)),
     "TextBox":     ((2, 43, 58),  (252, 240, 219), (232, 213, 180), (208, 183, 144), (208, 183, 144)),
+    # Stat bars (Pets.UI.HealthBarView / StatBarView). Same geometry, drawn at half the buttons'
+    # scale via Image.pixelsPerUnitMultiplier so a 16-unit bar keeps whole-pixel chamfers. The
+    # track's bevel is inverted (dark top, light bottom) so it reads as a recessed groove the fill
+    # sits in. HP: an orange pill and the familiar green/yellow/red health bands. SPD: a navy pill
+    # and a single blue fill.
+    "BarTrack":    ((20, 26, 36),  (52, 60, 74),    (34, 40, 52),    (44, 50, 62),   (76, 86, 102)),
+    "HpLabel":     ((74, 30, 4),   (240, 128, 40),  (252, 184, 110), (246, 154, 70), (190, 86, 16)),
+    "HpGreen":     ((12, 70, 36),  (72, 200, 88),   (150, 240, 140), (100, 220, 110), (36, 150, 64)),
+    "HpYellow":    ((90, 64, 6),   (240, 196, 40),  (252, 236, 130), (248, 214, 80), (196, 146, 16)),
+    "HpRed":       ((70, 6, 12),   (226, 58, 52),   (252, 138, 120), (240, 96, 88),  (170, 20, 30)),
+    "SpdLabel":    ((10, 20, 48),  (38, 64, 120),   (80, 110, 170),  (58, 86, 146),  (22, 40, 86)),
+    "SpdFill":     ((6, 40, 100),  (52, 140, 236),  (130, 200, 252), (88, 170, 248), (20, 96, 196)),
+}
+
+# Small non-sliced icons, drawn pixel by pixel. They live in the same folder, so the import
+# processor gives them a 5px border too — harmless, since they're shown as Image.Type.Simple.
+ICON_SIZE = 12
+ICONS = {
+    # A sword for Attack, tip top-right, pommel bottom-left.
+    "AttackIcon": (
+        [
+            ".........ooo",
+            "........owwo",
+            ".......owwgo",
+            "......owwgo.",
+            ".....owwgo..",
+            "....owwgo...",
+            ".ooowwgo....",
+            ".ohhogo.....",
+            "..ohho......",
+            ".obohho.....",
+            "obo.oho.....",
+            "oo...o......",
+        ],
+        {"o": (28, 32, 44), "w": (236, 240, 246), "g": (150, 160, 178), "h": (232, 176, 48), "b": (140, 84, 40)},
+    ),
 }
 
 # The solid buttons carry two white specular pixels in each top corner, like the original
@@ -97,6 +133,23 @@ def build(name):
     print(f"wrote {path} ({SIZE}x{SIZE}, border {BORDER})")
 
 
+def build_icon(name):
+    rows, colours = ICONS[name]
+    assert len(rows) == ICON_SIZE and all(len(r) == ICON_SIZE for r in rows), name
+    img = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
+    px = img.load()
+    for y, row in enumerate(rows):
+        for x, key in enumerate(row):
+            if key != ".":
+                px[x, y] = colours[key] + (255,)
+
+    path = os.path.normpath(os.path.join(OUT_DIR, name + ".png"))
+    img.save(path)
+    print(f"wrote {path} ({ICON_SIZE}x{ICON_SIZE} icon)")
+
+
 if __name__ == "__main__":
     for n in PALETTES:
         build(n)
+    for n in ICONS:
+        build_icon(n)

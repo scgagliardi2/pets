@@ -42,12 +42,13 @@ namespace Pets.EditorTools
         private const int GridColumns = 5;
         private const float GridSpacing = 24f;
         private const float GridPadding = 16f;
-        // Tall enough for the card to hold a 96-unit sprite, a name line, a TypesRow of
-        // TypeIconView icons, and a stats line, at sizes that still resolve to real pixels on
-        // screen (see CharacterSelectController's card metrics). At 16:9 this leaves room for two
-        // full rows plus most of a third in the grid viewport (16 + 3*186 + 2*24 = 622 against the
-        // 596 units the chrome leaves) — the rest scrolls, same as any longer roster page would.
-        private const float CardHeight = 186f;
+        // Tall enough for the card to hold a 96-unit sprite, a name/attack row, a TypesRow of
+        // TypeIconView icons, and HP and SPD bars, at sizes that still resolve to real
+        // pixels on screen (see CharacterSelectController's card metrics). At 16:9 this leaves room
+        // for two full rows plus over half of a third in the grid viewport (the third row starts at
+        // 16 + 2*205 + 2*24 = 474 of the 596 units the chrome leaves) — the rest scrolls, same as
+        // any longer roster page would.
+        private const float CardHeight = 205f;
 
         /// <summary>Card width that divides the grid viewport into exactly GridColumns columns
         /// (200 at the current numbers). Derived rather than hand-typed so changing a margin or the
@@ -143,6 +144,7 @@ namespace Pets.EditorTools
 
             var library = AssetDatabase.LoadAssetAtPath<PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
             var typeIconPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TypeIconPrefabBuilder.PrefabPath);
+            var healthBarPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.HealthBarPrefabPath);
 
             var controller = new GameObject("CharacterSelect").AddComponent<CharacterSelectController>();
             SetField(controller, "speciesLibrary", library);
@@ -155,6 +157,8 @@ namespace Pets.EditorTools
             SetField(controller, "sortSpeedButton", sortSpeedButton);
             SetField(controller, "sortHealthButton", sortHealthButton);
             SetField(controller, "typeIconPrefab", typeIconPrefab);
+            SetField(controller, "healthBarPrefab", healthBarPrefab);
+            SetField(controller, "speedBarPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.SpeedBarPrefabPath));
 
             // Dropdown.onValueChanged is a UnityEvent<int> — UnityEventTools only exposes
             // baked-constant persistent listeners (AddIntPersistentListener requires a fixed
