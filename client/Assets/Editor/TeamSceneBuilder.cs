@@ -13,9 +13,11 @@ namespace Pets.EditorTools
     /// six slots, the Box's first six as a second row below it, and the Lead/Support swap button.
     /// Each filled slot shows the mon's sprite, types and stats, built by the same
     /// Pets.UI.PokemonCardBuilder that draws Character Select's roster cards. Mons are rearranged
-    /// by dragging a card onto another slot in either row — see TeamPanelController for the
-    /// gesture and RunState.MoveMon for what each drop means. Paging a Box past six slots is still
-    /// PLAN.md Phase 1 work.
+    /// by dragging a card onto another slot in either row, and let go for good by dragging one
+    /// onto the release zone in the bottom bar — see TeamPanelController for the gesture,
+    /// RunState.MoveMon/ReleaseMon for what each drop means, and CreateReleaseConfirm below for
+    /// the confirmation a release has to pass. Paging a Box past six slots is still PLAN.md
+    /// Phase 1 work.
     ///
     /// Six slots is a view of the line-up "train" (design doc §7), not six active mons —
     /// TeamPanelController labels slot 0 Lead, slot 1 Support and dims the rest as dormant.
@@ -37,6 +39,10 @@ namespace Pets.EditorTools
         /// exactly this number, so the two move together.</summary>
         private const float SlotHeight = 186f;
         private const float SlotSpacing = 12f;
+        private const float ReleaseZoneHeight = 64f;
+        private static readonly Vector2 DialogSize = new Vector2(560f, 260f);
+        private const float DialogButtonWidth = 210f;
+        private const float DialogButtonHeight = 64f;
 
         /// <summary>Both sections stacked: header, row, gap, header, row.</summary>
         private static float SectionsHeight =>
@@ -125,6 +131,7 @@ namespace Pets.EditorTools
 
             var backButton = CreateButton(bottomBar, "BackButton", "Back to Menu", Theme.ButtonStyle.Secondary, useSprite: true);
             var swapButton = CreateButton(bottomBar, "SwapButton", "Swap Lead / Support", Theme.ButtonStyle.Primary, useSprite: true);
+            CreateReleaseZone(bottomBar, teamPanel);
 
             // Last child of the canvas, so a card being dragged draws over both rows and the
             // bottom bar. No Image of its own: it must never take the raycast away from the slot
@@ -132,15 +139,23 @@ namespace Pets.EditorTools
             var dragLayer = CreatePanel(canvasRect, "DragLayer", Color.clear, Vector2.zero, Vector2.one);
             SetField(teamPanel, "dragLayer", dragLayer);
 
+            var (releaseConfirmPanel, releaseConfirmText, releaseConfirmButton, releaseCancelButton) =
+                CreateReleaseConfirm(canvasRect);
+
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
 
             var screen = new GameObject("TeamScreen").AddComponent<TeamScreenController>();
             SetField(screen, "teamPanel", teamPanel);
             SetField(screen, "swapButton", swapButton);
             SetField(screen, "emptyStateText", emptyStateText);
+            SetField(screen, "releaseConfirmPanel", releaseConfirmPanel.gameObject);
+            SetField(screen, "releaseConfirmText", releaseConfirmText);
+            SetField(screen, "releaseConfirmButton", releaseConfirmButton);
 
             UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.GoToIngameMenu);
             UnityEventTools.AddVoidPersistentListener(swapButton.onClick, screen.OnSwapLeadAndSupportClicked);
+            UnityEventTools.AddVoidPersistentListener(releaseConfirmButton.onClick, screen.OnConfirmReleaseClicked);
+            UnityEventTools.AddVoidPersistentListener(releaseCancelButton.onClick, screen.OnCancelReleaseClicked);
 
             // Both slot rows stay live: TeamPanelController fills them with slot cards at runtime
             // from whatever the run's party and Box hold, so their GridLayoutGroups have to be
@@ -189,6 +204,93 @@ namespace Pets.EditorTools
             grid.spacing = new Vector2(SlotSpacing, SlotSpacing);
             grid.childAlignment = TextAnchor.UpperLeft;
             return row;
+        }
+
+        /// <summary>The drop target that lets a mon go: red 9-sliced art with a label saying what
+        /// to do with it, sitting in the bottom bar beside the other two controls. It carries its
+        /// own Image, which is what makes it a raycast target and therefore a legal place to drop
+        /// a dragged card.</summary>
+        private static void CreateReleaseZone(RectTransform bottomBar, TeamPanelController panel)
+        {
+            var zone = new GameObject("ReleaseZone", typeof(RectTransform));
+            zone.transform.SetParent(bottomBar, false);
+            // Explicit height: the bottom bar's HorizontalLayoutGroup controls width but not
+            // height (see AddHorizontalLayout's expandHeight), so a fresh RectTransform would keep
+            // its 100-unit default and hang out of the 84-unit bar. The sprite buttons beside it
+            // get their 64 from the prefab instead.
+            zone.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, ReleaseZoneHeight);
+
+            var image = zone.AddComponent<Image>();
+            image.sprite = Theme.ButtonRedSprite;
+            image.type = Image.Type.Sliced;
+
+            var layoutElement = zone.AddComponent<LayoutElement>();
+            layoutElement.preferredHeight = ReleaseZoneHeight;
+            layoutElement.flexibleWidth = 1f;
+
+            var label = CreatePlainText(zone.transform, "Label", "Drag here to Release",
+                Theme.FontSizeBody, TextAnchor.MiddleCenter, Theme.TextLight);
+            label.fontStyle = FontStyle.Bold;
+            label.raycastTarget = false;
+            var labelRect = label.GetComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(12f, 8f);
+            labelRect.offsetMax = new Vector2(-12f, -8f);
+
+            SetField(zone.AddComponent<ReleaseZoneView>(), "panel", panel);
+        }
+
+        /// <summary>The release confirmation: a dimmed full-screen backdrop with a small dialog
+        /// centred on it. Releasing can't be undone, so it's the one thing on this screen that
+        /// asks before acting.
+        ///
+        /// The backdrop keeps its Image — it has to take the raycast, so the rows underneath can't
+        /// be dragged while the question is open — and everything inside is anchored by hand
+        /// rather than laid out by a group, since the message text changes at runtime and there'd
+        /// be no surviving LayoutGroup to reflow it (see ForceLayoutRebuild).</summary>
+        private static (RectTransform panel, Text message, Button confirm, Button cancel) CreateReleaseConfirm(RectTransform canvasRect)
+        {
+            var backdrop = CreatePanel(canvasRect, "ReleaseConfirm", new Color(0f, 0f, 0f, 0.6f), Vector2.zero, Vector2.one);
+
+            var dialog = new GameObject("Dialog", typeof(RectTransform));
+            dialog.transform.SetParent(backdrop, false);
+            var dialogImage = dialog.AddComponent<Image>();
+            dialogImage.sprite = Theme.TextBoxSprite;
+            dialogImage.type = Image.Type.Sliced;
+            var dialogRect = dialog.GetComponent<RectTransform>();
+            dialogRect.anchorMin = dialogRect.anchorMax = new Vector2(0.5f, 0.5f);
+            dialogRect.pivot = new Vector2(0.5f, 0.5f);
+            dialogRect.sizeDelta = DialogSize;
+
+            var message = CreatePlainText(dialog.transform, "MessageText", string.Empty,
+                Theme.FontSizeHeading, TextAnchor.MiddleCenter, Theme.TextDark);
+            message.fontStyle = FontStyle.Bold;
+            var messageRect = message.GetComponent<RectTransform>();
+            messageRect.anchorMin = new Vector2(0f, 0f);
+            messageRect.anchorMax = new Vector2(1f, 1f);
+            messageRect.offsetMin = new Vector2(24f, DialogButtonHeight + 36f);
+            messageRect.offsetMax = new Vector2(-24f, -24f);
+
+            var confirm = CreateDialogButton(dialogRect, "ReleaseConfirmButton", "Release",
+                Theme.ButtonStyle.Danger, alignRight: true);
+            var cancel = CreateDialogButton(dialogRect, "ReleaseCancelButton", "Cancel",
+                Theme.ButtonStyle.Secondary, alignRight: false);
+
+            return (backdrop, message, confirm, cancel);
+        }
+
+        private static Button CreateDialogButton(RectTransform dialog, string name, string label,
+            Theme.ButtonStyle style, bool alignRight)
+        {
+            var button = CreateButton(dialog, name, label, style, useSprite: true);
+            var rect = button.GetComponent<RectTransform>();
+            float x = alignRight ? 1f : 0f;
+            rect.anchorMin = rect.anchorMax = new Vector2(x, 0f);
+            rect.pivot = new Vector2(x, 0f);
+            rect.sizeDelta = new Vector2(DialogButtonWidth, DialogButtonHeight);
+            rect.anchoredPosition = new Vector2(alignRight ? -24f : 24f, 24f);
+            return button;
         }
 
         /// <summary>Moves already-built rects under a new parent, keeping their anchoring. They're

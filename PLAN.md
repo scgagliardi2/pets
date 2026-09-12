@@ -231,8 +231,10 @@ criteria are met and the Forest Location is playable end to end:**
   occupied slot trades the two, a drop on an empty one appends to that collection, and the party
   can never be emptied (`RunState.MoveMon`, covered by `RunMetaTests.cs`; the gesture itself lives
   in `Gameplay/TeamSlotView.cs` + `TeamPanelController`, covered by
-  `NavigationScenePlayModeTests.cs`). The Lead/Support button stays as a one-click shortcut for
-  the most common swap. `History.unity` and `Credits.unity` hang off Home: Credits
+  `NavigationScenePlayModeTests.cs`). Dragging a card onto the bottom bar's release zone lets that
+  mon go for good (`RunState.ReleaseMon`) — irreversible, so it asks first, and it obeys the same
+  party-never-empty rule, saying so in the dialog rather than silently doing nothing. The
+  Lead/Support button stays as a one-click shortcut for the most common swap. `History.unity` and `Credits.unity` hang off Home: Credits
   carries the Pokémon/PokeAPI/font attribution and the non-commercial scope note, History is a
   real screen with an honest empty state (nothing records a finished run yet). The old Forest hub
   scene was converted into the Ingame Menu rather than kept alongside. Navigation is one
@@ -253,7 +255,7 @@ criteria are met and the Forest Location is playable end to end:**
 
 **Not yet built (Phase 1):** wiring the branching Region Map into an actual playable Location (node
 resolution, Gym/Badge battle, PvP/Event node behavior), Team management beyond the Lead/Support
-drag-reorder (releasing a mon, paging a Box past six slots, EXP/evolution from this screen), the real drag-and-
+drag-reorder and release (paging a Box past six slots, EXP/evolution from this screen), the real drag-and-
 drop catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
 economy, narrowing Character Select to match design doc §3 exactly, and any save/load layer.
 
