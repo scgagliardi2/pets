@@ -135,17 +135,37 @@ namespace Pets.Tests
         }
 
         [Test]
-        public void Generate_EveryNode_CanReachAtLeastTwoDistinctNodeTypes_ExceptIntoTheSingleNodeGymLayer()
+        public void Generate_EveryNode_CanReachAtLeastTwoDistinctNodeTypes_ExceptWhereAKnownRuleOverridesIt()
         {
             for (int seed = 1; seed <= 25; seed++)
             {
                 var map = RegionMapGenerator.Generate(seed);
                 foreach (var node in map.Nodes.Where(n => n.NextIds.Count > 0))
                 {
+                    var fromLayer = map.NodesInLayer(node.Layer);
                     var targetLayer = map.GetById(node.NextIds[0]).Layer;
-                    if (map.NodesInLayer(targetLayer).Count == 1)
+                    var toLayer = map.NodesInLayer(targetLayer);
+
+                    if (toLayer.Count == 1)
                     {
                         // Only the Gym layer is ever a single node — nothing to diversify into.
+                        continue;
+                    }
+
+                    if (node.NextIds.Count == 1)
+                    {
+                        // The rare single-connection case deliberately trades diversity for a
+                        // narrow path (see ApplyRareSingleConnection) — nothing to check here.
+                        continue;
+                    }
+
+                    bool isEdgeSource = fromLayer.Count > 1 &&
+                        (node.IndexInLayer == 0 || node.IndexInLayer == fromLayer.Count - 1);
+                    if (isEdgeSource)
+                    {
+                        // The opposite-edge rule can bound a leftmost/rightmost source's range so
+                        // tightly that 2 types genuinely aren't reachable — the edge rule wins that
+                        // conflict over diversity (see MinDistinctReachableTypes's doc comment).
                         continue;
                     }
 
@@ -202,6 +222,107 @@ namespace Pets.Tests
         public void Generate_Throws_WhenLayerCountIsTooSmallToFitAStartAndAGym()
         {
             Assert.Throws<System.ArgumentOutOfRangeException>(() => RegionMapGenerator.Generate(seed: 1, layerCount: 2));
+        }
+
+        [Test]
+        public void Generate_OnlyPlacesPokemonCenters_InLayerThree_OrTheLayerRightBeforeTheGym()
+        {
+            for (int seed = 1; seed <= 25; seed++)
+            {
+                var map = RegionMapGenerator.Generate(seed);
+                int layerBeforeGym = map.LayerCount - 2;
+
+                foreach (var node in map.Nodes.Where(n => n.Type == NodeType.Camp))
+                {
+                    Assert.IsTrue(node.Layer == 3 || node.Layer == layerBeforeGym,
+                        $"seed {seed}: {node.Id} is a Pokémon Center outside the allowed layers (3, {layerBeforeGym})");
+                }
+            }
+        }
+
+        [Test]
+        public void Generate_NeverConnectsAnEdgeNode_ToTheOppositeEdgeOfTheNextLayer()
+        {
+            for (int seed = 1; seed <= 50; seed++)
+            {
+                var map = RegionMapGenerator.Generate(seed, layerCount: 8);
+                for (int layer = 0; layer < map.LayerCount - 1; layer++)
+                {
+                    var from = map.NodesInLayer(layer);
+                    var to = map.NodesInLayer(layer + 1);
+                    if (from.Count <= 1 || to.Count <= 1)
+                    {
+                        // A lone source must reach everything, and a lone target has no "opposite
+                        // edge" to speak of — the rule only applies once both sides branch.
+                        continue;
+                    }
+
+                    var leftmostSource = from.First(n => n.IndexInLayer == 0);
+                    var rightmostSource = from.First(n => n.IndexInLayer == from.Count - 1);
+                    var leftmostTargetId = to.First(n => n.IndexInLayer == 0).Id;
+                    var rightmostTargetId = to.First(n => n.IndexInLayer == to.Count - 1).Id;
+
+                    CollectionAssert.DoesNotContain(leftmostSource.NextIds, rightmostTargetId,
+                        $"seed {seed}, layer {layer}: leftmost node reaches the opposite (rightmost) edge");
+                    CollectionAssert.DoesNotContain(rightmostSource.NextIds, leftmostTargetId,
+                        $"seed {seed}, layer {layer}: rightmost node reaches the opposite (leftmost) edge");
+                }
+            }
+        }
+
+        [Test]
+        public void Generate_MakesThreeNodeFanOuts_RarerThanOtherFanOutWidths()
+        {
+            // Statistical check across many seeds/layers: a fan-out to exactly 3 nodes should be
+            // noticeably less common than fanning out to 2 or 4, not just an equally likely shape.
+            var widthCounts = new Dictionary<int, int>();
+            for (int seed = 1; seed <= 200; seed++)
+            {
+                var map = RegionMapGenerator.Generate(seed, layerCount: 8);
+                // Restrict to middle-layer-to-middle-layer edges: the start layer always fans out
+                // to exactly StartingOptionCount nodes, and the layer before the Gym always fans
+                // out to exactly one (the Gym), so both would skew a "how common is width X" count.
+                foreach (var node in map.Nodes.Where(n => n.NextIds.Count > 0 && n.Layer >= 1 && n.Layer < map.LayerCount - 2))
+                {
+                    int width = node.NextIds.Count;
+                    widthCounts[width] = widthCounts.TryGetValue(width, out var count) ? count + 1 : 1;
+                }
+            }
+
+            int width3Count = widthCounts.TryGetValue(3, out var w3) ? w3 : 0;
+            int width2Count = widthCounts.TryGetValue(2, out var w2) ? w2 : 0;
+            int width4Count = widthCounts.TryGetValue(4, out var w4) ? w4 : 0;
+
+            Assert.Greater(width2Count + width4Count, 0, "expected some 2- or 4-wide fan-outs to compare against");
+            Assert.Less(width3Count, width2Count + width4Count,
+                $"3-wide fan-outs ({width3Count}) should be rarer than 2- and 4-wide combined ({width2Count + width4Count})");
+        }
+
+        [Test]
+        public void Generate_OccasionallyProducesASingleNodeFanOut_OutsideTheGymLayer()
+        {
+            // Small-chance feature: over enough seeds, at least one non-Gym source should collapse
+            // to exactly one outgoing edge (ApplyRareSingleConnection), but only rarely.
+            int singleConnectionCount = 0;
+            int totalNonGymEdgesFrom = 0;
+            for (int seed = 1; seed <= 200; seed++)
+            {
+                var map = RegionMapGenerator.Generate(seed, layerCount: 8);
+                // Restrict to middle-layer-to-middle-layer edges: the start layer always fans out
+                // to exactly StartingOptionCount nodes, and the layer before the Gym always fans
+                // out to exactly one (the Gym), so both would skew a "how common is width X" count.
+                foreach (var node in map.Nodes.Where(n => n.NextIds.Count > 0 && n.Layer >= 1 && n.Layer < map.LayerCount - 2))
+                {
+                    totalNonGymEdgesFrom++;
+                    if (node.NextIds.Count == 1)
+                    {
+                        singleConnectionCount++;
+                    }
+                }
+            }
+
+            Assert.Greater(singleConnectionCount, 0, "expected the rare single-connection case to show up at least once across 200 seeds");
+            Assert.Less(singleConnectionCount * 4, totalNonGymEdgesFrom, "single-node fan-outs should stay rare, not become a common shape");
         }
 
         private static List<int> TargetIndices(RegionMap map, RegionMapNode node) =>

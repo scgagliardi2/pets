@@ -42,8 +42,28 @@ namespace Pets.Meta
         /// <summary>From any node, the set of nodes it can step to must include at least this many
         /// distinct types — so a choice is always actually a choice, never just "which copy of the
         /// same node." Doesn't apply to the final choice layer's edges into the Gym, since the Gym
-        /// layer is always exactly one node/type by design (see ConnectLayers).</summary>
+        /// layer is always exactly one node/type by design (see ConnectLayers); nor to the rare
+        /// single-connection case ApplyRareSingleConnection can deliberately introduce; nor,
+        /// best-effort, to the leftmost/rightmost source in a layer transition where the
+        /// opposite-edge rule's bound makes 2 types structurally unreachable — the edge rule is the
+        /// harder constraint of the two when they conflict (see edgeRuleApplies in ConnectLayers).</summary>
         private const int MinDistinctReachableTypes = 2;
+
+        /// <summary>Pokémon Center (Camp) is a deliberate checkpoint, not a random drop-in: it can
+        /// only land on this fixed mid-run choice layer or on the layer directly before the Gym
+        /// (see the campAllowed check in Generate), so healing/shopping shows up as a predictable
+        /// beat rather than wherever the type roll happens to land it.</summary>
+        private const int PokeCenterMidRunLayer = 3;
+
+        /// <summary>Chance (of 100) that a fan-out of exactly 3 nodes is left alone instead of
+        /// nudged to 2 or 4 — connecting to 3 nodes in the next layer should read as an uncommon
+        /// shape, not a default one.</summary>
+        private const int TripleFanOutKeepChancePercent = 15;
+
+        /// <summary>Chance (of 100) that an otherwise multi-node fan-out is collapsed down to a
+        /// single connection, when doing so is safe (see ApplyRareSingleConnection) — a rare,
+        /// deliberately narrow path rather than the norm.</summary>
+        private const int SingleConnectionChancePercent = 8;
 
         /// <summary>layerCount includes the single start layer and the single Gym layer, so the
         /// minimum meaningful map is 3 layers (start -> one choice layer -> Gym).</summary>
@@ -70,11 +90,13 @@ namespace Pets.Meta
                     ? StartingOptionCount
                     : MinNodesPerLayer + rng.NextInt(MaxNodesPerLayer - MinNodesPerLayer + 1);
 
+                bool campAllowed = layer == PokeCenterMidRunLayer || layer == layerCount - 2;
+
                 var currentLayer = new List<RegionMapNode>();
                 var typeCountsInLayer = new Dictionary<NodeType, int>();
                 for (int i = 0; i < nodeCount; i++)
                 {
-                    var type = PickNodeType(rng, typeCountsInLayer);
+                    var type = PickNodeType(rng, typeCountsInLayer, campAllowed);
                     currentLayer.Add(new RegionMapNode { Id = $"L{layer}-{i}", Type = type, Layer = layer, IndexInLayer = i });
                 }
                 map.Nodes.AddRange(currentLayer);
@@ -92,16 +114,22 @@ namespace Pets.Meta
 
         /// <summary>Draws a node type for a layer from the same weighted pool as always (PvE most
         /// common), re-rolling any draw that would push a type over its per-layer cap
-        /// (MaxOfAnyTypePerLayer generally, the tighter MaxCampPerLayer for Camp). With a layer no
-        /// bigger than MaxNodesPerLayer and caps well above what a layer needs to fill, a valid type
-        /// is always available — the exception is genuinely unreachable and fails loudly rather than
-        /// silently producing a cap-violating layer.</summary>
-        private static NodeType PickNodeType(DeterministicRandom rng, Dictionary<NodeType, int> typeCountsInLayer)
+        /// (MaxOfAnyTypePerLayer generally, the tighter MaxCampPerLayer for Camp) or that draws Camp
+        /// in a layer where it isn't allowed to appear at all (<paramref name="campAllowed"/>). With
+        /// a layer no bigger than MaxNodesPerLayer and caps well above what a layer needs to fill, a
+        /// valid type is always available — the exception is genuinely unreachable and fails loudly
+        /// rather than silently producing a cap-violating layer.</summary>
+        private static NodeType PickNodeType(DeterministicRandom rng, Dictionary<NodeType, int> typeCountsInLayer, bool campAllowed)
         {
             const int maxAttempts = 64;
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
                 var candidate = MiddleNodeTypes[rng.NextInt(MiddleNodeTypes.Length)];
+                if (candidate == NodeType.Camp && !campAllowed)
+                {
+                    continue;
+                }
+
                 int cap = candidate == NodeType.Camp ? MaxCampPerLayer : MaxOfAnyTypePerLayer;
                 int current = typeCountsInLayer.TryGetValue(candidate, out var count) ? count : 0;
                 if (current < cap)
@@ -112,7 +140,7 @@ namespace Pets.Meta
             }
 
             throw new InvalidOperationException(
-                $"Could not draw a node type honoring per-layer caps (max {MaxOfAnyTypePerLayer}/type, {MaxCampPerLayer} Camp) after {maxAttempts} attempts.");
+                $"Could not draw a node type honoring per-layer caps (max {MaxOfAnyTypePerLayer}/type, {MaxCampPerLayer} Camp, campAllowed={campAllowed}) after {maxAttempts} attempts.");
         }
 
         /// <summary>Spreads <paramref name="to"/> across <paramref name="from"/> as a monotonically
@@ -121,46 +149,81 @@ namespace Pets.Meta
         /// (nothing unreachable) with every source keeping at least one outgoing edge (no dead
         /// ends).
         ///
-        /// Each source's range is then widened — growing lo/hi outward, never leaving gaps — until
-        /// it reaches at least MinDistinctReachableTypes distinct node types, so every choice is a
-        /// real choice rather than several copies of the same node. That widening can make
-        /// neighbouring sources' ranges overlap more than the base staircase would on its own;
-        /// reachable-type diversity wins that trade-off over a perfectly uncrossed look. The one
-        /// case this can't apply is a single-node target layer (the Gym) — there's only one type to
-        /// reach, so every source simply connects to it, same as before.</summary>
+        /// Three shaping passes run on top of that base staircase, in order:
+        /// 1. AvoidRareTripleFanOut nudges a fresh 3-node-wide range to 2 or 4 most of the time — a
+        ///    node connecting to exactly 3 others is meant to read as an uncommon shape.
+        /// 2. WidenForTypeDiversity grows lo/hi outward, never shrinking, until the range reaches at
+        ///    least MinDistinctReachableTypes distinct node types, so every choice is a real choice.
+        ///    This can re-widen a range step 1 just narrowed, and can make neighbouring ranges
+        ///    overlap more than the base staircase would on its own — reachable-type diversity wins
+        ///    that trade-off over a perfectly uncrossed look or a rare-shape guarantee.
+        /// 3. ApplyRareSingleConnection, once every source has a range, occasionally collapses a
+        ///    multi-node range down to one node — but only where every other node it would stop
+        ///    covering still has another incoming source, so nothing is stranded.
+        ///
+        /// Two structural caps bound where ranges can sit at all: a single-node target layer (the
+        /// Gym) skips all of the above, since there's only one node/type to reach; and where both
+        /// layers have more than one node, the leftmost source can't reach the rightmost target and
+        /// the rightmost source can't reach the leftmost target (see edgeRuleApplies) — no edge
+        /// connects straight across to the opposite edge of the next row. The leftmost target is
+        /// always covered by the leftmost source (whose range always starts at lo=0) and the
+        /// rightmost target is always covered by the rightmost source (which always mops up through
+        /// hi=to.Count-1), so forbidding the opposite-edge reach never strands either end.</summary>
         private static void ConnectLayers(List<RegionMapNode> from, List<RegionMapNode> to, DeterministicRandom rng)
         {
+            bool edgeRuleApplies = from.Count > 1 && to.Count > 1;
+            var ranges = new (int lo, int hi)[from.Count];
+
             int lo = 0;
             for (int i = 0; i < from.Count; i++)
             {
+                bool isLast = i == from.Count - 1;
+                int maxHi = edgeRuleApplies && i == 0 ? to.Count - 2 : to.Count - 1;
+                int minLo = edgeRuleApplies && isLast ? 1 : 0;
+
                 int hi;
-                if (i == from.Count - 1)
+                if (isLast)
                 {
                     // The last source mops up everything still unclaimed so no target is stranded.
                     hi = to.Count - 1;
+                    lo = Math.Max(lo, minLo);
                 }
                 else
                 {
                     // Advance roughly proportionally, with a one-node jitter so fan-out varies
                     // between layers instead of every node getting an identical share.
                     int ideal = ((i + 1) * (to.Count - 1)) / from.Count;
-                    hi = Math.Min(Math.Max(ideal + rng.NextInt(2), lo), to.Count - 1);
+                    hi = Math.Min(Math.Max(ideal + rng.NextInt(2), lo), maxHi);
                 }
 
-                (lo, hi) = WidenForTypeDiversity(to, lo, hi);
+                // A lone source (e.g. the start node into layer 1) must keep its full range —
+                // it's the only path to every target in "to", so it has nothing to spare.
+                if (from.Count > 1)
+                {
+                    (lo, hi) = AvoidRareTripleFanOut(rng, lo, hi, minLo, maxHi, hiIsFixed: isLast);
+                }
+                (lo, hi) = WidenForTypeDiversity(to, lo, hi, minLo, maxHi);
 
-                for (int target = lo; target <= hi; target++)
+                ranges[i] = (lo, hi);
+                lo = hi;
+            }
+
+            ApplyRareSingleConnection(rng, to, ranges);
+
+            for (int i = 0; i < from.Count; i++)
+            {
+                for (int target = ranges[i].lo; target <= ranges[i].hi; target++)
                 {
                     from[i].NextIds.Add(to[target].Id);
                 }
-                lo = hi;
             }
         }
 
         /// <summary>Grows [lo, hi] outward (alternating sides, starting right) until the range
-        /// covers at least MinDistinctReachableTypes distinct types or the whole list — never
-        /// shrinking, so every guarantee the caller already established still holds.</summary>
-        private static (int lo, int hi) WidenForTypeDiversity(List<RegionMapNode> to, int lo, int hi)
+        /// covers at least MinDistinctReachableTypes distinct types or fills [minLo, maxHi] — never
+        /// shrinking, so every guarantee the caller already established still holds, and never
+        /// crossing minLo/maxHi, so the opposite-edge rule survives widening.</summary>
+        private static (int lo, int hi) WidenForTypeDiversity(List<RegionMapNode> to, int lo, int hi, int minLo, int maxHi)
         {
             var reachableTypes = new HashSet<NodeType>();
             for (int i = lo; i <= hi; i++)
@@ -169,19 +232,19 @@ namespace Pets.Meta
             }
 
             bool growRightNext = true;
-            while (reachableTypes.Count < MinDistinctReachableTypes && (lo > 0 || hi < to.Count - 1))
+            while (reachableTypes.Count < MinDistinctReachableTypes && (lo > minLo || hi < maxHi))
             {
-                if (growRightNext && hi < to.Count - 1)
+                if (growRightNext && hi < maxHi)
                 {
                     hi++;
                     reachableTypes.Add(to[hi].Type);
                 }
-                else if (lo > 0)
+                else if (lo > minLo)
                 {
                     lo--;
                     reachableTypes.Add(to[lo].Type);
                 }
-                else if (hi < to.Count - 1)
+                else if (hi < maxHi)
                 {
                     hi++;
                     reachableTypes.Add(to[hi].Type);
@@ -190,6 +253,120 @@ namespace Pets.Meta
             }
 
             return (lo, hi);
+        }
+
+        /// <summary>If [lo, hi] is exactly 3 nodes wide, nudges it to 2 or 4 most of the time
+        /// (TripleFanOutKeepChancePercent of the time it's left alone) by moving whichever end isn't
+        /// pinned down: <paramref name="hiIsFixed"/> sources (the staircase's mop-up source, which
+        /// must keep hi at the target layer's last index) get nudged via lo instead. Only moves
+        /// within [minLo, maxHi], so this never reopens the opposite-edge rule those bounds enforce;
+        /// if neither direction is free, the range is left at width 3.</summary>
+        private static (int lo, int hi) AvoidRareTripleFanOut(DeterministicRandom rng, int lo, int hi, int minLo, int maxHi, bool hiIsFixed)
+        {
+            if (hi - lo + 1 != 3 || rng.NextInt(100) < TripleFanOutKeepChancePercent)
+            {
+                return (lo, hi);
+            }
+
+            if (hiIsFixed)
+            {
+                bool canNarrow = lo + 1 <= hi;
+                bool canWiden = lo - 1 >= minLo;
+                if (canNarrow && canWiden)
+                {
+                    lo += rng.NextInt(2) == 0 ? 1 : -1;
+                }
+                else if (canNarrow)
+                {
+                    lo += 1;
+                }
+                else if (canWiden)
+                {
+                    lo -= 1;
+                }
+            }
+            else
+            {
+                bool canNarrow = hi - 1 >= lo;
+                bool canWiden = hi + 1 <= maxHi;
+                if (canNarrow && canWiden)
+                {
+                    hi += rng.NextInt(2) == 0 ? -1 : 1;
+                }
+                else if (canNarrow)
+                {
+                    hi -= 1;
+                }
+                else if (canWiden)
+                {
+                    hi += 1;
+                }
+            }
+
+            return (lo, hi);
+        }
+
+        /// <summary>With small probability (SingleConnectionChancePercent), collapses a source's
+        /// multi-node range down to a single node — a rare, deliberately narrow path. Only does so
+        /// when it's safe: every node the range would stop covering must still have at least one
+        /// other source reaching it, so this can never strand a target. Runs once, after every
+        /// source's range is finalized, using a shared coverage count so an earlier collapse in this
+        /// same layer transition is accounted for before a later one is attempted. Exempt when
+        /// there's only one source in this layer transition, since it alone must cover every target
+        /// and has nothing to spare.</summary>
+        private static void ApplyRareSingleConnection(DeterministicRandom rng, List<RegionMapNode> to, (int lo, int hi)[] ranges)
+        {
+            if (ranges.Length <= 1)
+            {
+                return;
+            }
+
+            var coverage = new int[to.Count];
+            foreach (var (rangeLo, rangeHi) in ranges)
+            {
+                for (int target = rangeLo; target <= rangeHi; target++)
+                {
+                    coverage[target]++;
+                }
+            }
+
+            for (int i = 0; i < ranges.Length; i++)
+            {
+                var (lo, hi) = ranges[i];
+                if (lo == hi || rng.NextInt(100) >= SingleConnectionChancePercent)
+                {
+                    continue;
+                }
+
+                for (int keep = lo; keep <= hi; keep++)
+                {
+                    bool safeToCollapse = true;
+                    for (int target = lo; target <= hi; target++)
+                    {
+                        if (target != keep && coverage[target] <= 1)
+                        {
+                            safeToCollapse = false;
+                            break;
+                        }
+                    }
+
+                    if (!safeToCollapse)
+                    {
+                        continue;
+                    }
+
+                    for (int target = lo; target <= hi; target++)
+                    {
+                        if (target != keep)
+                        {
+                            coverage[target]--;
+                        }
+                    }
+
+                    ranges[i] = (keep, keep);
+                    break;
+                }
+            }
         }
     }
 }
