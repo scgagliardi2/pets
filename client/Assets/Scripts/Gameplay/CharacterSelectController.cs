@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Pets.Data;
 using Pets.Simulation;
@@ -110,7 +109,7 @@ namespace Pets.Gameplay
         {
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
-            SceneManager.LoadScene(SceneNames.Map);
+            ScreenFade.TransitionTo(SceneNames.Map);
         }
 
         /// <summary>Wired to typeFilterDropdown.onValueChanged. Dropdown option 0 is "All Types";
@@ -153,9 +152,8 @@ namespace Pets.Gameplay
         }
 
         /// <summary>Re-applies the active Type filter and stat sort to currentPhaseRoster and
-        /// repopulates the grid — called on every phase change and every filter/sort click, since
-        /// none of those are expensive enough (roster is a few dozen entries) to warrant anything
-        /// smarter than a full rebuild.</summary>
+        /// repoints the grid at the result — called on every phase change and every filter/sort
+        /// click.</summary>
         private void RefreshGrid()
         {
             IEnumerable<PokemonSpeciesDefinitionAsset> filtered = currentPhaseRoster;
@@ -182,7 +180,7 @@ namespace Pets.Gameplay
                     break;
             }
 
-            PopulateGrid(ordered, currentPhaseHandler);
+            PopulateGrid(ordered);
             UpdateToolbarVisuals();
         }
 
@@ -207,42 +205,106 @@ namespace Pets.Gameplay
             button.image.sprite = active ? Theme.ButtonGreenSprite : Theme.ButtonBlueSprite;
         }
 
-        private void PopulateGrid(List<PokemonSpeciesDefinitionAsset> species, Action<PokemonSpeciesDefinitionAsset> onChosen)
+        /// <summary>One reusable card in the grid, holding the pieces a rebind has to write to.
+        /// The alternative — finding them by name or index on the card each time — is the kind of
+        /// thing that breaks silently when a line is added to the card.</summary>
+        private sealed class CardView
         {
-            ClearGrid();
-            foreach (var s in species)
+            public GameObject Root;
+            public Button Button;
+            public Image Sprite;
+            public Text NameLine;
+            public PokemonCardBuilder.TypeIconRow TypeIcons;
+            public Text StatsLine;
+            public PokemonSpeciesDefinitionAsset Species;
+        }
+
+        /// <summary>Cards are built once and reused, hidden rather than destroyed.
+        ///
+        /// A filter or sort click used to Destroy the whole grid and rebuild it: at 28 species
+        /// that's around 210 GameObjects and 700 components torn down and recreated per click, and
+        /// Destroy is deferred to end of frame, so both sets existed at once while the layout
+        /// system rebuilt. It's a visible hitch on a phone today and gets linearly worse as the
+        /// roster grows toward the full 183 (PLAN.md §8). Rebinding touches only the handful of
+        /// fields that actually differ.</summary>
+        private readonly List<CardView> cardPool = new List<CardView>();
+
+        private void PopulateGrid(List<PokemonSpeciesDefinitionAsset> species)
+        {
+            for (int i = 0; i < species.Count; i++)
             {
-                CreateCard(s, onChosen);
+                if (i == cardPool.Count)
+                {
+                    cardPool.Add(CreateCard());
+                }
+                Bind(cardPool[i], species[i]);
+            }
+
+            // Whatever the previous, longer result left over. Kept alive for the next refresh that
+            // needs it rather than destroyed.
+            for (int i = species.Count; i < cardPool.Count; i++)
+            {
+                cardPool[i].Root.SetActive(false);
             }
         }
 
         private void ClearGrid()
         {
-            for (int i = gridContainer.childCount - 1; i >= 0; i--)
+            foreach (var card in cardPool)
             {
-                Destroy(gridContainer.GetChild(i).gameObject);
+                card.Root.SetActive(false);
             }
         }
 
-        private void CreateCard(PokemonSpeciesDefinitionAsset species, Action<PokemonSpeciesDefinitionAsset> onChosen)
+        /// <summary>Builds one empty card. The click listener is attached here exactly once —
+        /// re-adding one per rebind would stack them up and fire the handler once per refresh the
+        /// card had survived — so it resolves both the species *and* the handler at click time.
+        /// Capturing either would be wrong: a card built during the Starter pick gets reused for
+        /// the Secondary pick, when both the species it shows and what a click should do have
+        /// changed.</summary>
+        private CardView CreateCard()
         {
-            var go = PokemonCardBuilder.CreateCard(gridContainer, $"Card_{species.DisplayName}");
+            var go = PokemonCardBuilder.CreateCard(gridContainer, "Card");
 
             var button = go.AddComponent<Button>();
             button.targetGraphic = go.GetComponent<Image>();
-            button.onClick.AddListener(() => onChosen(species));
 
-            PokemonCardBuilder.AddSprite(go.transform, PokemonSprites.Load(species), CardSpriteHeight);
-            PokemonCardBuilder.AddLine(go.transform, species.DisplayName, CardNameFontSize, FontStyle.Bold, Theme.TextDark);
-            PokemonCardBuilder.AddTypeIcons(go.transform, typeIconPrefab, CardTypesRowHeight,
-                species.Type1, species.HasSecondType, species.Type2);
+            var view = new CardView
+            {
+                Root = go,
+                Button = button,
+                Sprite = PokemonCardBuilder.AddSprite(go.transform, null, CardSpriteHeight),
+                NameLine = PokemonCardBuilder.AddLine(go.transform, string.Empty, CardNameFontSize, FontStyle.Bold, Theme.TextDark),
+                TypeIcons = PokemonCardBuilder.AddTypeIconRow(go.transform, typeIconPrefab, CardTypesRowHeight),
+            };
             // All three stats on one line: it buys the height that lets the sprite go back to 96
             // and every line go up a couple of sizes, which matters more for readability than
             // giving Attack a row of its own did. Bold like the name — Handjet's Regular weight is
             // too thin to hold up at this size.
-            PokemonCardBuilder.AddLine(go.transform,
-                $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}",
-                CardLineFontSize, FontStyle.Bold, Theme.TextDark);
+            view.StatsLine = PokemonCardBuilder.AddLine(go.transform, string.Empty, CardLineFontSize, FontStyle.Bold, Theme.TextDark);
+
+            button.onClick.AddListener(() =>
+            {
+                if (view.Species != null)
+                {
+                    currentPhaseHandler?.Invoke(view.Species);
+                }
+            });
+
+            return view;
+        }
+
+        private static void Bind(CardView card, PokemonSpeciesDefinitionAsset species)
+        {
+            card.Species = species;
+            // Named for the species so the PlayMode tests (and anyone reading the hierarchy) can
+            // still tell the cards apart by object name.
+            card.Root.name = $"Card_{species.DisplayName}";
+            card.Sprite.sprite = PokemonSprites.Load(species);
+            card.NameLine.text = species.DisplayName;
+            card.TypeIcons.SetTypes(species.Type1, species.HasSecondType, species.Type2);
+            card.StatsLine.text = $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}";
+            card.Root.SetActive(true);
         }
     }
 }

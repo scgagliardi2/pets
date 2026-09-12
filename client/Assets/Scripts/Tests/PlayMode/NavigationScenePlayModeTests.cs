@@ -161,10 +161,12 @@ namespace Pets.Tests
             Assert.IsTrue(ActiveRun.HasRun);
 
             Object.FindFirstObjectByType<SceneNavigator>().StartNewGame();
-            yield return null;
 
+            // Cleared synchronously, before the transition starts — that's the part that matters
+            // here, since the Map's RunBootstrapper adopts whatever ActiveRun holds.
             Assert.IsFalse(ActiveRun.HasRun, "StartNewGame should clear the run in progress");
-            Assert.AreEqual(SceneNames.CharacterSelect, SceneManager.GetActiveScene().name);
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.CharacterSelect);
         }
 
         [UnityTest]
@@ -249,7 +251,18 @@ namespace Pets.Tests
             // this is really checking the slot asked for the type row at all.
             var typesRow = GameObject.Find("PartySlot0").transform.Find("Card/TypesRow");
             Assert.IsNotNull(typesRow, "a filled party slot should show its type icons");
-            Assert.AreEqual(1, typesRow.childCount, "the test species is single-typed");
+            // Active children, not all children: the row always builds both icon slots and hides
+            // the second one, so it can be re-pointed at another species without instantiating
+            // (PokemonCardBuilder.TypeIconRow). What matters is how many the player sees.
+            int visibleIcons = 0;
+            for (int i = 0; i < typesRow.childCount; i++)
+            {
+                if (typesRow.GetChild(i).gameObject.activeSelf)
+                {
+                    visibleIcons++;
+                }
+            }
+            Assert.AreEqual(1, visibleIcons, "the test species is single-typed");
         }
 
         /// <summary>Dragging a card onto another slot is how the line-up is reordered, so this

@@ -22,6 +22,11 @@ namespace Pets.EditorTools
     /// Pets &gt; Build Region Map Scene after changing RegionMapController's serialized fields.</summary>
     public static class RegionMapSceneBuilder
     {
+        /// <summary>Matches every other scene builder. Leaving this to CreateCanvas's own default
+        /// (960x720) is what made the Map's chrome ~33% bigger than the rest of the game and
+        /// visibly jump size when navigating to the Ingame Menu or Team.</summary>
+        private static readonly Vector2 ReferenceResolution = new Vector2(1280f, 720f);
+
         public const string ScenePath = "Assets/Scenes/" + SceneNames.Map + ".unity";
         private static readonly Color PlaceholderBackground = new Color(0.29f, 0.42f, 0.29f);
 
@@ -43,7 +48,10 @@ namespace Pets.EditorTools
 
             CreateMainCamera(Theme.ChromeBg);
             CreateEventSystem();
-            var canvasRect = CreateCanvas();
+            // pixelPerfect: false — unlike every other screen, this one animates. The player
+            // token lerps between nodes and the scroll position lerps with it, and snapping to
+            // whole pixels turns both into a series of small jumps. See CreateCanvas.
+            var canvasRect = CreateCanvas(ReferenceResolution, pixelPerfect: false);
 
             var titleBar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
             PinToTop(titleBar, TitleHeight);
@@ -82,7 +90,7 @@ namespace Pets.EditorTools
             // units tall, so the top and bottom node of such a column would otherwise be clipped
             // by a few units with no way to reach them. With ScrollRect.movementType Clamped a map
             // that does fit can't be dragged off-centre, so this costs nothing in the common case.
-            var (scrollRect, _, content) = CreateScrollView(canvasRect, "MapScroll", Vector2.zero, Vector2.one, horizontal: true, vertical: true);
+            var (scrollRect, viewport, content) = CreateScrollView(canvasRect, "MapScroll", Vector2.zero, Vector2.one, horizontal: true, vertical: true);
             // Stretched to the canvas and then inset in pixels, so the map area absorbs whatever
             // vertical room the two fixed-height bars leave on a given aspect ratio instead of
             // scaling with it.
@@ -101,8 +109,15 @@ namespace Pets.EditorTools
             content.pivot = new Vector2(0f, 0.5f);
             content.sizeDelta = new Vector2(860, 560);
 
+            // Parented to the viewport, not to content, and therefore sized to the area the map is
+            // seen through rather than to the map's own extents. As a child of content it was only
+            // as wide as the generated graph (860 units for a default seven-layer map), which left
+            // the rest of a 1280-wide viewport showing the bare screen colour. It also means the
+            // placeholder colour doesn't slide around under the nodes when the map scrolls.
+            // First child of the viewport so it draws behind content.
             var backgroundGO = new GameObject("Background", typeof(RectTransform));
-            backgroundGO.transform.SetParent(content, false);
+            backgroundGO.transform.SetParent(viewport, false);
+            backgroundGO.transform.SetAsFirstSibling();
             var background = backgroundGO.AddComponent<Image>();
             background.color = PlaceholderBackground;
             background.raycastTarget = false;

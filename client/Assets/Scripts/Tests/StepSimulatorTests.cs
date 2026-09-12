@@ -6,7 +6,7 @@ using Pets.Simulation;
 namespace Pets.Tests
 {
     /// <summary>
-    /// Direct unit tests against hand-built PokemonInstance POCOs, covering every mechanic in
+    /// Direct unit tests against hand-built BattleCombatant POCOs, covering every mechanic in
     /// battle-sim-spec.md: the Step loop's ordering, charge-meter timing, simultaneous Lead
     /// exchange, passive triggering (incl. same-Step tie-breaking), Lead/Support promotion on
     /// faint, statuses, and battle-end/safety-cap conditions. See GoldenFixtureTests.cs for
@@ -14,9 +14,9 @@ namespace Pets.Tests
     /// </summary>
     public class StepSimulatorTests
     {
-        private static PokemonInstance Mon(string id, int attack, int health, int speed, PassiveDefinition passive = null)
+        private static BattleCombatant Mon(string id, int attack, int health, int speed, PassiveDefinition passive = null)
         {
-            return new PokemonInstance
+            return new BattleCombatant
             {
                 InstanceId = id,
                 CurrentStats = new Stats { Attack = attack, Health = health, Speed = speed },
@@ -25,7 +25,7 @@ namespace Pets.Tests
             };
         }
 
-        private static BattleState State(List<PokemonInstance> a, List<PokemonInstance> b)
+        private static BattleState State(List<BattleCombatant> a, List<BattleCombatant> b)
         {
             return new BattleState { LineUpA = a, LineUpB = b };
         }
@@ -37,7 +37,7 @@ namespace Pets.Tests
         {
             var a = Mon("a-lead", attack: 5, health: 20, speed: 0);
             var b = Mon("b-lead", attack: 3, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -49,7 +49,7 @@ namespace Pets.Tests
         public void AttackExchange_DoesNotHappen_WhenEitherSideHasNoLead()
         {
             var a = Mon("a-lead", attack: 5, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance>());
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant>());
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -69,7 +69,7 @@ namespace Pets.Tests
             };
             var a = Mon("a-lead", attack: 0, health: 20, speed: BattleConfig.ChargeThreshold, passive: passive);
             var b = Mon("b-lead", attack: 0, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -88,7 +88,7 @@ namespace Pets.Tests
             };
             var a = Mon("a-lead", attack: 0, health: 20, speed: BattleConfig.ChargeThreshold - 1, passive: passive);
             var b = Mon("b-lead", attack: 0, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -106,7 +106,7 @@ namespace Pets.Tests
             };
             var a = Mon("a-lead", attack: 0, health: 999, speed: BattleConfig.ChargeThreshold, passive: passive);
             var b = Mon("b-lead", attack: 0, health: 999, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
             var rng = new DeterministicRandom(1);
 
             int triggerCount = 0;
@@ -128,7 +128,7 @@ namespace Pets.Tests
             var lead = Mon("a-lead", 0, 20, BattleConfig.ChargeThreshold, leadEffect);
             var support = Mon("a-support", 0, 20, BattleConfig.ChargeThreshold, supportEffect);
             var enemy = Mon("b-lead", 0, 20, 0);
-            var state = State(new List<PokemonInstance> { lead, support }, new List<PokemonInstance> { enemy });
+            var state = State(new List<BattleCombatant> { lead, support }, new List<BattleCombatant> { enemy });
 
             var triggers = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1))
                 .Where(e => e.Kind == StepEventKind.PassiveTriggered).Select(e => e.SourceInstanceId).ToList();
@@ -142,7 +142,7 @@ namespace Pets.Tests
             var fx = new PassiveDefinition { Id = "fx", Effects = { new EffectDefinition { Type = EffectType.BuffAttack, Target = TargetSelector.Self, Amount = 1 } } };
             var slowLead = Mon("a-lead", 0, 20, BattleConfig.ChargeThreshold, fx);
             var fastLead = Mon("b-lead", 0, 20, BattleConfig.ChargeThreshold * 2, fx);
-            var state = State(new List<PokemonInstance> { slowLead }, new List<PokemonInstance> { fastLead });
+            var state = State(new List<BattleCombatant> { slowLead }, new List<BattleCombatant> { fastLead });
 
             var triggers = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1))
                 .Where(e => e.Kind == StepEventKind.PassiveTriggered).Select(e => e.SourceInstanceId).ToList();
@@ -156,7 +156,7 @@ namespace Pets.Tests
             var fx = new PassiveDefinition { Id = "fx", Effects = { new EffectDefinition { Type = EffectType.BuffAttack, Target = TargetSelector.Self, Amount = 1 } } };
             var a = Mon("a-lead", 0, 20, BattleConfig.ChargeThreshold, fx);
             var b = Mon("b-lead", 0, 20, BattleConfig.ChargeThreshold, fx);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             var triggers = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1))
                 .Where(e => e.Kind == StepEventKind.PassiveTriggered).Select(e => e.SourceInstanceId).ToList();
@@ -173,7 +173,7 @@ namespace Pets.Tests
             var b = Mon("b-lead", attack: 100, health: 20, speed: 0);
             var bSupport = Mon("b-support", attack: 0, health: 20, speed: 0);
             var bDormant = Mon("b-dormant", attack: 0, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b, bSupport, bDormant });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b, bSupport, bDormant });
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -188,7 +188,7 @@ namespace Pets.Tests
             var aSupport = Mon("a-support", attack: 0, health: 20, speed: 0);
             var aDormant = Mon("a-dormant", attack: 0, health: 20, speed: 0);
             var bLead = Mon("b-lead", attack: 5, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { aLead, aSupport, aDormant }, new List<PokemonInstance> { bLead });
+            var state = State(new List<BattleCombatant> { aLead, aSupport, aDormant }, new List<BattleCombatant> { bLead });
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -210,7 +210,7 @@ namespace Pets.Tests
             var aSupport = Mon("a-support", attack: 0, health: 20, speed: 0);
             var aDormant = Mon("a-dormant", attack: 0, health: 20, speed: 50);
             var bLead = Mon("b-lead", attack: 5, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { aLead, aSupport, aDormant }, new List<PokemonInstance> { bLead });
+            var state = State(new List<BattleCombatant> { aLead, aSupport, aDormant }, new List<BattleCombatant> { bLead });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -226,7 +226,7 @@ namespace Pets.Tests
             var a = Mon("a-lead", 0, 999, 100);
             a.Status = StatusType.Paralyzed;
             var b = Mon("b-lead", 0, 999, 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -239,7 +239,7 @@ namespace Pets.Tests
             var a = Mon("a-lead", 0, 999, 100);
             a.Status = StatusType.Asleep;
             var b = Mon("b-lead", 0, 999, 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -254,7 +254,7 @@ namespace Pets.Tests
             a.StatusTickDamage = 2;
             a.PoisonStacks = 1;
             var b = Mon("b-lead", 0, 999, 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
             var rng = new DeterministicRandom(1);
 
             BattleSimulator.AdvanceStep(state, rng); // tick 1: 2 * 1 = 2
@@ -271,7 +271,7 @@ namespace Pets.Tests
             a.Status = StatusType.Burned;
             a.StatusTickDamage = 3;
             var b = Mon("b-lead", 0, 999, 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
             var rng = new DeterministicRandom(1);
 
             BattleSimulator.AdvanceStep(state, rng);
@@ -291,7 +291,7 @@ namespace Pets.Tests
             var cleanseFx = new PassiveDefinition { Id = "cleanse", Effects = { new EffectDefinition { Type = EffectType.ClearStatus, Target = TargetSelector.Ally } } };
             var aSupport = Mon("a-support", 0, 999, BattleConfig.ChargeThreshold, cleanseFx);
             var bLead = Mon("b-lead", 0, 999, 0);
-            var state = State(new List<PokemonInstance> { aLead, aSupport }, new List<PokemonInstance> { bLead });
+            var state = State(new List<BattleCombatant> { aLead, aSupport }, new List<BattleCombatant> { bLead });
             var rng = new DeterministicRandom(1);
 
             BattleSimulator.AdvanceStep(state, rng);
@@ -310,7 +310,7 @@ namespace Pets.Tests
             var a = Mon("a-lead", attack: 0, health: 20, speed: 0);
             a.Shield = 3;
             var b = Mon("b-lead", attack: 5, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -324,7 +324,7 @@ namespace Pets.Tests
             var a = Mon("a-lead", attack: 0, health: 20, speed: 0);
             a.DamageReductionFlat = 3;
             var b = Mon("b-lead", attack: 5, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -338,7 +338,7 @@ namespace Pets.Tests
             a.CurrentHP = 10;
             a.LifestealPercent = 0.5f;
             var b = Mon("b-lead", attack: 0, health: 20, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -354,7 +354,7 @@ namespace Pets.Tests
             var fx = new PassiveDefinition { Id = "fx", Effects = { new EffectDefinition { Type = EffectType.Heal, Target = TargetSelector.Ally, Amount = 5 } } };
             var a = Mon("a-lead", 0, 20, BattleConfig.ChargeThreshold, fx);
             var b = Mon("b-lead", 0, 20, 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -369,7 +369,7 @@ namespace Pets.Tests
             var b = Mon("b-lead", 0, 20, 0);
             var faintedSupport = Mon("b-support", 0, 20, 0);
             faintedSupport.CurrentHP = 0;
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b, faintedSupport });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b, faintedSupport });
 
             var events = BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -382,7 +382,7 @@ namespace Pets.Tests
         public void Battle_SideWithZeroMonsLoses()
         {
             var a = Mon("a-lead", 0, 20, 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance>());
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant>());
 
             Assert.AreEqual(BattleOutcome.SideAWins, BattleSimulator.DetermineOutcome(state));
         }
@@ -390,7 +390,7 @@ namespace Pets.Tests
         [Test]
         public void Battle_BothSidesEmpty_IsADraw()
         {
-            var state = State(new List<PokemonInstance>(), new List<PokemonInstance>());
+            var state = State(new List<BattleCombatant>(), new List<BattleCombatant>());
 
             Assert.AreEqual(BattleOutcome.Draw, BattleSimulator.DetermineOutcome(state));
         }
@@ -400,7 +400,7 @@ namespace Pets.Tests
         {
             var a = Mon("a-lead", attack: 100, health: 1, speed: 0);
             var b = Mon("b-lead", attack: 100, health: 1, speed: 0);
-            var state = State(new List<PokemonInstance> { a }, new List<PokemonInstance> { b });
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
@@ -416,7 +416,7 @@ namespace Pets.Tests
             var a = Mon("a-lead", attack: 0, health: 1000, speed: BattleConfig.ChargeThreshold, healFx);
             var b = Mon("b-lead", attack: 0, health: 1000, speed: BattleConfig.ChargeThreshold, healFx);
 
-            var log = PrecomputedStepLogRunner.Run(new List<PokemonInstance> { a }, new List<PokemonInstance> { b }, seed: 1);
+            var log = PrecomputedStepLogRunner.Run(new List<BattleCombatant> { a }, new List<BattleCombatant> { b }, seed: 1);
 
             Assert.AreEqual(BattleOutcome.Draw, log.Outcome);
             Assert.IsTrue(log.Events.Last().Kind == StepEventKind.BattleEnd);
@@ -427,12 +427,12 @@ namespace Pets.Tests
         [Test]
         public void PrecomputedRunner_SameSeedAndLineUps_ProduceIdenticalEventLogs()
         {
-            List<PokemonInstance> BuildA() => new List<PokemonInstance>
+            List<BattleCombatant> BuildA() => new List<BattleCombatant>
             {
                 Mon("a-lead", 4, 15, 60, new PassiveDefinition { Id = "fx", Effects = { new EffectDefinition { Type = EffectType.DealDamage, Target = TargetSelector.EnemyLead, Amount = 2 } } }),
                 Mon("a-support", 2, 10, 30)
             };
-            List<PokemonInstance> BuildB() => new List<PokemonInstance>
+            List<BattleCombatant> BuildB() => new List<BattleCombatant>
             {
                 Mon("b-lead", 3, 15, 45),
                 Mon("b-support", 2, 10, 20)

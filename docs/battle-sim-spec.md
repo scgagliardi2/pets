@@ -27,17 +27,24 @@ line-up between Steps, but the catch-chance formula and drag-and-drop handling l
 
 ## 2. Formation model
 
-- A **line-up** is an ordered list of `PokemonInstance`s (design doc §9). Position 0 is the
-  **Lead**, position 1 is the **Support**. Everyone else is dormant.
+- A **line-up** is an ordered list of `BattleCombatant`s — one mon's state *inside this battle*,
+  copied from the run's `PokemonInstance`s at battle start by `BattleCombatant.FromLineUp`. The
+  simulator only ever sees combatants, so nothing it does reaches the run's roster; see
+  content-schema.md §8 for the split and why it exists. Position 0 is the **Lead**, position 1 is
+  the **Support**. Everyone else is dormant.
 - **Only the Lead and Support have live stats, a charge meter, and an active passive.** A dormant
   mon has none of these computed — don't allocate charge/passive state for it until it's promoted.
 - When the Lead's `currentHP` reaches 0, it's removed: the Support is promoted to Lead, and the
   next dormant mon (if any) is promoted to Support. A line-up with only one mon left has a Lead
   and no Support; a line-up with zero mons left has lost.
-- A mon's effective stats when it becomes active (Lead or Support) are its `currentStats` from
-  `PokemonInstance` (design doc §9) — already leveled — plus any active team-synergy bonus (§8
-  below) and any equipped-item modifiers. There is no additional per-Step stat recomputation
-  beyond what buffs/statuses apply (§5).
+- A mon's effective stats when it becomes active (Lead or Support) are the `currentStats` copied
+  onto its combatant — already leveled — plus any active team-synergy bonus (§8 below) and any
+  equipped-item modifiers. There is no additional per-Step stat recomputation beyond what
+  buffs/statuses apply (§5).
+- Anything applied **at line-up assembly** (team synergy, a Camp buff, item modifiers) is written
+  onto the combatants, never onto the `PokemonInstance`s — otherwise a one-fight buff becomes
+  permanent and compounds every battle. Build the combatants yourself and pass them to the
+  runner's combatant overload when a fight needs any of this.
 
 ## 3. The Step loop
 
@@ -145,7 +152,14 @@ logic:
   or one tick of autoplay). At any Step boundary — after `AdvanceStep` returns and before the next
   call — the catching interaction layer (`Gameplay`, out of scope here) may mutate the enemy
   line-up (remove the caught mon) before the next `AdvanceStep` call. The simulator itself needs
-  no special "catch" concept; it just operates on whatever `BattleState` it's given next.
+  no special "catch" concept; it just operates on whatever `BattleState` it's given next. Removing
+  a combatant from that line-up is safe precisely because it isn't the run's roster; each
+  combatant's `Source` is how the caller gets back to the mon to add to the Box.
+
+Because a battle runs on copies, its **result has to be reported rather than read off the
+line-ups** the caller passed in. The precomputed runner's `StepLog` therefore carries
+`FinalState` — the combatants as the last Step left them, holding only the mons still standing —
+and `Faint` events are the record of who fell and in what order.
 
 ## 8. Team synergy (not Step-triggered)
 

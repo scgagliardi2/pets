@@ -110,8 +110,11 @@ namespace Pets.Gameplay
         private RectTransform nodeRoot;
         private RectTransform playerToken;
         private Coroutine moveRoutine;
+        private Coroutine initialScrollRoutine;
+        private RunState standaloneRun;
 
-        /// <summary>The walk state over the currently displayed map. Rebuilt by <see cref="Regenerate"/>.</summary>
+        /// <summary>The walk state over the currently displayed map — a view over the run's own
+        /// map and walked path (see <see cref="Show"/>), not state this screen owns.</summary>
         public RegionMapTraversal Traversal { get; private set; }
 
         public IReadOnlyList<RegionMapNode> LastGeneratedNodes => Traversal?.Map.Nodes;
@@ -126,27 +129,50 @@ namespace Pets.Gameplay
             {
                 newMapButton.onClick.AddListener(Regenerate);
             }
-            Regenerate();
+            Show();
         }
 
-        /// <summary>Throws away the current map and walks a brand new one. Uses the serialized seed
-        /// when it's set (so a specific map can be pinned while iterating on layout) and a fresh
-        /// random one otherwise.</summary>
+        /// <summary>Shows the run's map, generating one on first arrival. Re-entering this scene
+        /// (from the Ingame Menu, Team, and later from a resolved node) therefore lands the player
+        /// back on the same map at the same node — the map and the walked path live on RunState,
+        /// not here. Falls back to a standalone map when there's no run, so the scene still works
+        /// opened directly in the Editor and from the PlayMode tests.</summary>
+        private void Show()
+        {
+            StopWalking();
+            Build(RegionMapTraversal.ForRun(Run, SeedForNewMap(), layerCount));
+        }
+
+        /// <summary>Throws the run's map away and walks a brand new one — the "New Map" button.
+        /// Uses the serialized seed when it's set (so a specific map can be pinned while iterating
+        /// on layout) and a fresh random one otherwise.</summary>
         public void Regenerate()
+        {
+            StopWalking();
+            Build(RegionMapTraversal.RegenerateForRun(Run, SeedForNewMap(), layerCount));
+        }
+
+        private int SeedForNewMap() => seed != 0 ? seed : Random.Range(1, int.MaxValue);
+
+        private void StopWalking()
         {
             if (moveRoutine != null)
             {
                 StopCoroutine(moveRoutine);
                 moveRoutine = null;
             }
-
-            int usedSeed = seed != 0 ? seed : Random.Range(1, int.MaxValue);
-            Build(RegionMapGenerator.Generate(usedSeed, layerCount));
         }
 
-        private void Build(RegionMap map)
+        /// <summary>The run whose map this screen shows. When the scene is opened on its own there
+        /// is no ActiveRun, so a throwaway RunState stands in — it keeps the map/walk in one place
+        /// either way, rather than giving this class a second code path that owns its own state.</summary>
+        private RunState Run =>
+            standaloneRun ?? (ActiveRun.HasRun ? ActiveRun.State : standaloneRun = new RunState());
+
+        private void Build(RegionMapTraversal traversal)
         {
-            Traversal = new RegionMapTraversal(map);
+            Traversal = traversal;
+            var map = traversal.Map;
 
             EnsureContainers();
             ClearContainer(edgeRoot);
@@ -174,8 +200,24 @@ namespace Pets.Gameplay
             playerToken.anchoredPosition = PlayerPositionFor(Traversal.CurrentNodeId);
 
             Refresh();
-            Canvas.ForceUpdateCanvases();
+
+            // Next frame rather than Canvas.ForceUpdateCanvases() here: the ScrollRect needs its
+            // viewport and content rects resolved before horizontalNormalizedPosition means
+            // anything, and forcing it synchronously updates *every* canvas in the scene, on every
+            // map build — including one per click of New Map. Waiting a frame costs a single frame
+            // of the map sitting at scroll 0, which the fade-in covers on scene entry.
+            if (initialScrollRoutine != null)
+            {
+                StopCoroutine(initialScrollRoutine);
+            }
+            initialScrollRoutine = StartCoroutine(SetScrollAfterLayout());
+        }
+
+        private IEnumerator SetScrollAfterLayout()
+        {
+            yield return null;
             SetScroll(ScrollPositionFor(playerToken.anchoredPosition.x));
+            initialScrollRoutine = null;
         }
 
         /// <summary>Places layer 0 at the left and the Gym at the right, so the map reads as a
@@ -363,6 +405,14 @@ namespace Pets.Gameplay
 
             var go = new GameObject("PlayerToken", typeof(RectTransform));
             go.transform.SetParent(content, false);
+
+            // Its own nested Canvas: the token is the one thing here that moves every frame (see
+            // WalkTo), and a canvas rebuilds its batched geometry as a unit, so without this the
+            // token's slide re-batches every node, edge and caption alongside it. Costs one extra
+            // draw call for the token. overrideSorting stays off, so it keeps its hierarchy draw
+            // order and the scroll viewport's RectMask2D still clips it.
+            go.AddComponent<Canvas>();
+
             var image = go.AddComponent<Image>();
             image.color = Theme.TabSelectedBg;
             image.raycastTarget = false;

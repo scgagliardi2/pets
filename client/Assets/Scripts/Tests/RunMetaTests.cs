@@ -343,23 +343,49 @@ namespace Pets.Tests
             Assert.Greater(state.NextBattleAttackBonusPercent, 0f);
         }
 
+        /// <summary>The roster-to-battle boundary: a combatant starts from the run's stats and HP
+        /// with every battle-only field at its default, and keeps a way back to the mon it came
+        /// from. This replaces a test of PokemonInstanceFactory.ResetForBattle, which existed to
+        /// work around the simulator mutating roster objects and is unnecessary now that a battle
+        /// runs on copies.</summary>
         [Test]
-        public void PokemonInstanceFactory_ResetForBattle_RestoresFullHealthAndClearsTransientState()
+        public void BattleCombatant_FromInstance_StartsCleanAndRemembersItsSource()
         {
             var species = MakeSpecies(1, "Fighter", PokemonType.Normal, health: 80);
             var persisted = PokemonInstanceFactory.Create(species, "mon-1");
-            persisted.CurrentHP = 1;
-            persisted.Charge = 75;
-            persisted.Status = StatusType.Poisoned;
             persisted.Level = 3;
 
-            var fresh = PokemonInstanceFactory.ResetForBattle(persisted);
+            var combatant = BattleCombatant.FromInstance(persisted);
 
-            Assert.AreEqual(80, fresh.CurrentHP);
-            Assert.AreEqual(0, fresh.Charge);
-            Assert.IsNull(fresh.Status);
-            Assert.AreEqual(3, fresh.Level);
-            Assert.AreEqual(persisted.InstanceId, fresh.InstanceId);
+            Assert.AreEqual(80, combatant.CurrentHP);
+            Assert.AreEqual(80, combatant.CurrentStats.Health);
+            Assert.AreEqual(0, combatant.Charge);
+            Assert.AreEqual(0, combatant.Shield);
+            Assert.AreEqual(0, combatant.DamageReductionFlat);
+            Assert.AreEqual(0, combatant.PoisonStacks);
+            Assert.AreEqual(1f, combatant.ChargeRateMultiplier);
+            Assert.AreEqual(0f, combatant.LifestealPercent);
+            Assert.IsNull(combatant.Status);
+            Assert.AreEqual("mon-1", combatant.InstanceId);
+            Assert.AreSame(persisted, combatant.Source);
+        }
+
+        /// <summary>The reason the split exists: simulating must not write back onto the roster.
+        /// Before it, a fight left shields, buffs and damage on the player's own mons.</summary>
+        [Test]
+        public void RunningABattle_LeavesTheRosterInstancesUntouched()
+        {
+            var species = MakeSpecies(1, "Brawler", PokemonType.Normal, attack: 20, health: 40, speed: 10);
+            var a = new List<PokemonInstance> { PokemonInstanceFactory.Create(species, "a-1") };
+            var b = new List<PokemonInstance> { PokemonInstanceFactory.Create(species, "b-1") };
+
+            var log = PrecomputedStepLogRunner.Run(a, b, seed: 99);
+
+            Assert.IsTrue(log.Events.Any(e => e.Kind == StepEventKind.Damage),
+                "the fight should actually have done something");
+            Assert.AreEqual(species.BaseHealth, a[0].CurrentHP, "the roster mon took damage");
+            Assert.AreEqual(species.BaseHealth, b[0].CurrentHP, "the roster mon took damage");
+            Assert.AreEqual(species.BaseAttack, a[0].CurrentStats.Attack, "the roster mon's stats changed");
         }
 
         [Test]
@@ -369,12 +395,24 @@ namespace Pets.Tests
             var library = MakeLibrary(species);
             var state = new RunState();
 
-            var fainted = PokemonInstanceFactory.Create(species, "wild-0");
-            fainted.CurrentHP = 0;
-            var survivor = PokemonInstanceFactory.Create(species, "wild-1");
-            var snapshot = new List<PokemonInstance> { fainted, survivor };
+            var wildLineUp = new List<PokemonInstance>
+            {
+                PokemonInstanceFactory.Create(species, "wild-0"),
+                PokemonInstanceFactory.Create(species, "wild-1")
+            };
 
-            var defeated = CatchResolver.GetDefeated(snapshot);
+            // Which mons are catchable comes from the fight's Faint events now, not from testing
+            // the line-up's HP — a battle runs on copies, so these instances are never damaged.
+            var log = new StepLog();
+            log.Events.Add(new StepEvent
+            {
+                Step = 1,
+                Kind = StepEventKind.Faint,
+                SourceSide = Side.B,
+                SourceInstanceId = "wild-0"
+            });
+
+            var defeated = CatchResolver.GetDefeated(wildLineUp, log, Side.B);
             Assert.AreEqual(1, defeated.Count);
             Assert.AreEqual("wild-0", defeated[0].InstanceId);
 

@@ -10,8 +10,8 @@ namespace Pets.Tests
     /// ScriptableObject under Assets/Content has to be reachable at runtime, and every runtime
     /// lookup key it carries has to actually resolve. These are the failure modes a data-driven
     /// content layer has that code doesn't — an asset authored but never added to its library, a
-    /// duplicated Id that makes GetById order-dependent, or a SpriteSource string pointing at a
-    /// file that was moved or renamed. None of those break compilation, and the existing
+    /// duplicated Id that makes GetById order-dependent, or a species authored without its sprite
+    /// reference, which renders as an empty card. None of those break compilation, and the existing
     /// PokemonContentTests (which walk the library, not the folder) can't see them, because an
     /// unregistered asset is exactly the thing that isn't in the library.
     /// </summary>
@@ -63,10 +63,10 @@ namespace Pets.Tests
 
             foreach (var species in library.AllSpecies)
             {
-                Assert.IsNotEmpty(species.SpriteSource, $"{species.DisplayName} has no SpriteSource");
                 Assert.IsNotNull(PokemonSprites.Load(species),
-                    $"{species.DisplayName}'s SpriteSource '{species.SpriteSource}' doesn't resolve to a Sprite " +
-                    "under Assets/Resources — the path is a plain string, so a moved or renamed file fails silently at runtime");
+                    $"{species.DisplayName} has no Sprite assigned — every curated species needs its " +
+                    "artwork from Assets/Art/Pokemon wired up, or it renders as an empty card. " +
+                    "Run Pets > Migrations > Assign Species Sprites From Art Folder to fill these in by Id.");
             }
         }
 

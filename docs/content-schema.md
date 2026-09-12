@@ -42,7 +42,7 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `passive` | `PassiveDefinition` reference | Empty/none for most of the 183 species today — the source sheet's Ability column is blank. Fill in as passives are hand-authored (PLAN.md §8). |
 | `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). |
 | `evolutionExpThreshold` | `int` | Only meaningful if `evolvesInto` is set. |
-| `spriteSource` | `string` (PokeAPI sprite URL or local cache path) | Resolved by the content-import pipeline (PLAN.md §8), not hand-entered per species. |
+| `sprite` | `Sprite` reference | Direct reference to the PNG under `client/Assets/Art/Pokemon/{id}.png`, **not** a path string: only the sprites curated species point at are pulled into a build, and a wrong reference is visibly missing in the Inspector rather than a silent runtime null. Assigned by the content-import pipeline (PLAN.md §8) once it exists; `Pets > Migrations > Assign Species Sprites From Art Folder` fills them in by Id in the meantime. |
 | `isLegendary` | `bool` | Manually flagged for the 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre, Groudon) per PLAN.md §8 — the source sheet carries no rarity flag, so this is set by hand at import time, not derived. |
 
 ## 3. `PassiveDefinition` (ScriptableObject)
@@ -147,12 +147,14 @@ Equip-slot count per mon is still TBD per design doc §20 — don't hardcode an 
 the slot count a `RunConfig`-style tunable (see the old schema's `ShopConfig` for the pattern) once
 it's implemented.
 
-## 8. `PokemonInstance` (runtime, not a ScriptableObject)
+## 8. `PokemonInstance` and `BattleCombatant` (runtime, not ScriptableObjects)
 
-The plain-C# runtime shape a `PokemonSpeciesDefinition` + level/EXP/caught-state produces —
-mirrors design doc §9's `PokemonInstance` interface exactly:
+Design doc §9 describes a single `PokemonInstance` carrying both run-level and in-battle state.
+The implementation splits it in two, because the two halves have different lifetimes and the
+simulator mutates its subject in place:
 
 ```csharp
+// Persistent: what the run holds. A battle never touches one of these.
 public class PokemonInstance {
     public string InstanceId;
     public int SpeciesId;
@@ -160,19 +162,45 @@ public class PokemonInstance {
     public int Level;
     public int Exp;
     public int ExpToNextLevel;
-    public Stats CurrentStats;       // attack, health, speed — leveled + synergy + item modifiers folded in at line-up assembly
+    public Stats CurrentStats;       // attack, health, speed — leveled, plus permanent modifiers
+    public int CurrentHP;            // HP it starts its next battle at
+    public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
+    public PassiveDefinition ResolvedPassive;
+    public List<ItemInstance> EquippedItems;   // not implemented yet
+    public int CaughtWithBallTier;             // not implemented yet
+}
+
+// Transient: one mon's state inside one battle. Built by BattleCombatant.FromLineUp at
+// battle start; discarded when the battle ends.
+public class BattleCombatant {
+    public string InstanceId;        // copied, and what every StepEvent identifies a combatant by
+    public PokemonInstance Source;   // the mon this was built from; the simulator never reads or writes through it
+    public Stats CurrentStats;       // the copy BuffAttack/BuffSpeed mutate, plus synergy folded in at assembly
     public int CurrentHP;
     public StatusType? Status;       // poisoned | burned | paralyzed | asleep — see battle-sim-spec.md §5
-    public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
-    public List<ItemInstance> EquippedItems;
-    public int CaughtWithBallTier;
+    public PassiveDefinition ResolvedPassive;
+    public int Charge, Shield, DamageReductionFlat, StatusTickDamage, PoisonStacks;
+    public float ChargeRateMultiplier, LifestealPercent;
 }
 ```
 
-Produced from a `PokemonSpeciesDefinition` + save data by a converter (analogous to the old
-schema's `TeamStateConverter`) — never authored directly. `Simulation`/`BattleRunner` code (§7 of
-`docs/battle-sim-spec.md`) operates on these, never on the ScriptableObject directly, for the same
-reason as before: the sim has zero Unity/editor dependencies.
+**Why the split.** When these were one type, running a battle wrote shields, poison stacks, stat
+buffs and damage permanently onto the player's roster objects. Buffs leaked into the next fight; a
+"precomputed Step log for playback" could not actually be played back, because the state was
+already at the end of the fight before the animation started; and the same line-up could not be
+simulated twice, which both a fight preview and Phase 3's server-side re-verification of a PvP
+result need to do.
+
+So a battle starts by copying, and nothing the simulator does is visible outside it. Writing a
+result back to the run — damage carried between nodes, EXP, a caught mon joining the Box — is the
+caller's explicit decision afterwards, made against `Source` or `StepLog.FinalState`, not a side
+effect of having simulated. `Meta/CatchResolver` is the worked example: it reads which wild mons
+fell from the log's `Faint` events rather than by testing the line-up's HP.
+
+Both are produced from a `PokemonSpeciesDefinition` + save data by a converter
+(`Data/PokemonInstanceFactory`, analogous to the old schema's `TeamStateConverter`) — never
+authored directly. `Simulation`/`BattleRunner` code (§7 of `docs/battle-sim-spec.md`) operates on
+these, never on the ScriptableObject, so the sim keeps zero Unity/editor dependencies.
 
 ## 9. Location & Gym content (brief — full detail in the design doc)
 
@@ -203,7 +231,7 @@ Analogous to the old schema's export, adapted to the new fields. A `PokemonSpeci
   "baseSpeed": 7,
   "passiveId": "ember-burst",
   "evolvesInto": { "speciesId": 5, "expThreshold": 120 },
-  "spriteSource": "cached/sprites/4.png",
+  "spriteId": 4,
   "isLegendary": false
 }
 ```

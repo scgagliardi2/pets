@@ -134,9 +134,12 @@ to look like a missing piece.
         /UI                   # Shared view helpers (PokemonCardBuilder, TypeIconView, Theme, UiButton)
         /Tests                # EditMode tests at the root, PlayMode tests under /Tests/PlayMode
       /Content                # ScriptableObject data instances (species, passives, libraries)
-      /Editor                 # Scene/prefab builders + dev tooling (see the scene-builder rule below)
+      /Editor                 # Scene/prefab builders, texture-import processors, the sprite-atlas
+                              #   builder, one-off content migrations, dev capture/diagnostic helpers
       /Prefabs/UI             # Shared uGUI prefabs the scene builders instantiate
-      /Resources              # Runtime-loaded assets: Sprites/{Pokemon,Types,Nodes,UI}, Fonts
+      /Art/Pokemon            # Species artwork, referenced directly by the species assets
+      /Art/Atlases            # Generated sprite atlases (Pets > Build Sprite Atlases)
+      /Resources              # Runtime-loaded-by-path assets only: Sprites/{Types,Nodes,UI}, Fonts
       /Scenes                 # Generated scenes — never hand-edit (see below)
   /server                     # Node/TS backend — folder structure + package.json only, no code
                               #   until Phase 3
@@ -157,9 +160,8 @@ Folders the earlier version of this plan listed that deliberately **don't** exis
 - `Scripts/BattleRunner` — the two runners are `Simulation/BattleRunner.cs`; splitting them into
   their own assembly folder bought nothing.
 - `Scripts/Minigame` — Trailblazer isn't built (Phase 1).
-- `Assets/Art` — exists but is empty; all art is runtime-loaded from `Assets/Resources/Sprites/`
-  via `Pets.Data.PokemonSprites` and the sprite-name lookups in the scene controllers, so new art
-  goes under `Resources`, not `Art`.
+- (`Assets/Art` was empty at the 2026-09-12 re-alignment; it now holds the species sprites — see
+  §8 and `client/Assets/Art/README.md` for which art belongs there versus in `Resources`.)
 
 **Scenes are generated from code.** Every scene in `Assets/Scenes` is produced by an
 `Assets/Editor/*SceneBuilder.cs`, with `Assets/Editor/SceneCatalog.cs` owning the Build Settings
@@ -187,8 +189,8 @@ rearrange/release) / `DevRoster` (stuff mons into the run) hanging off it, plus 
 `Credits` off Home. **No battle is playable in any scene.** Arriving at a node does nothing yet;
 the simulator only ever runs from tests.
 
-*Verified green as of this writing:* 99 EditMode and 46 PlayMode tests pass (see CLAUDE.md for the
-CLI commands).
+*Verified green as of this writing:* 103 EditMode and 49 PlayMode tests pass (see CLAUDE.md for
+the CLI commands).
 
 **Built and covered by tests:**
 - `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
@@ -197,9 +199,9 @@ CLI commands).
 - 28 curated species and 17 hand-authored type-flavored passives under `client/Assets/Content`,
   with `PokemonContentTests.cs` running a full real-content fight start to end and
   `ContentIntegrityTests.cs` guarding that every on-disk asset is registered in its library and
-  resolves its sprite. All 183 roster sprites are cached under
-  `Assets/Resources/Sprites/Pokemon/{id}.png`, so authoring a not-yet-curated species only needs
-  its `SpriteSource` set — no fresh art fetch.
+  resolves its sprite. All 183 roster sprites are cached under `Assets/Art/Pokemon/{id}.png`, so
+  authoring a not-yet-curated species only needs its `Sprite` reference pointed at the matching
+  file — no fresh art fetch.
 - `Scripts/Meta` (pure C#): `RunState` (line-up/Box/Money/Morale/seed, `MoveMon`, `ReleaseMon`),
   seeded wild-encounter generation, EXP/level-up, Camp's EXP+buff grant, the stubbed
   "pick 1 from defeated" catch, and a branching map generator + traversal model
@@ -245,11 +247,16 @@ below flows from them:
    scene**, orphaned when the Forest hub scene became the Ingame Menu. They're kept for the
    Shop/Center/PvE work they'll be reused for; the retired hub scene is recoverable from git
    history if that turns out to be the wrong call.
-2. **Two unreconciled map models.** `RunState.Nodes`/`CurrentNodeIndex`/`AdvanceToNextNode` model
-   the *linear* Phase 0 Forest sequence (`ForestLocationFactory`: PvE/PvE/Camp/PvE/PvE), and
-   `RunBootstrapper` still seeds a run with it. `RegionMapTraversal` separately models the walk
-   over the *branching* generated graph the map scene actually draws. Neither knows about the
-   other. Collapsing them onto one model is prerequisite to node resolution.
+2. **Two unreconciled map models.** `RunState` now holds *both*: `LocationMap` +
+   `VisitedMapNodeIds` (the branching graph the map screen draws and walks, via
+   `RegionMapTraversal.ForRun`) and `Nodes`/`CurrentNodeIndex`/`AdvanceToNextNode` (the linear
+   Phase 0 Forest sequence from `ForestLocationFactory`, which `RunBootstrapper` still seeds and
+   the sceneless `LocationFlowController` still walks). Neither knows about the other.
+
+   The 2026-09-12 structure pass fixed the *ownership* half of this — the walk used to live on
+   `RegionMapController`, so leaving the map screen and coming back rerolled the map and reset the
+   player's position — but not the duplication. Collapsing the two onto one model is still the
+   prerequisite for node resolution.
 
 **Known naming debt** (noted rather than fixed, so nobody assumes the names are meaningful):
 - `RegionMap*` (`Meta/RegionMap.cs`, `RegionMapNode`, `RegionMapGenerator`, `RegionMapTraversal`,
@@ -375,12 +382,20 @@ and content done; the Location it was supposed to prove out is currently unplaya
   Groudon) currently have no rarity flag in the source sheet; per the design doc's carried-forward
   assumption, treat them as Legendary-tier (ultra-rare, PvE-only, full-party-wipe-risk
   encounters) unless a future decision says otherwise.
-- **Art:** PokeAPI official-artwork sprites are cached locally at `client/Assets/Resources/Sprites/Pokemon/{id}.png`
+- **Art:** PokeAPI official-artwork sprites are cached locally at `client/Assets/Art/Pokemon/{id}.png`
   for all 183 roster species (fetched by name from PokeAPI, resized to 256px) and wired up via each
-  curated species' `SpriteSource` field + the `Pets.Data.PokemonSprites.Load(...)` runtime helper —
-  see Character Select for the first usage. Species not yet curated already have a cached sprite
-  waiting, so authoring their `PokemonSpeciesDefinition` asset only needs its `SpriteSource` set to
-  `Sprites/Pokemon/{id}`, not a fresh art fetch.
+  curated species' `Sprite` reference + the `Pets.Data.PokemonSprites.Load(...)` accessor — see
+  Character Select for the first usage. Species not yet curated already have a cached sprite
+  waiting, so authoring their `PokemonSpeciesDefinition` asset only needs that reference set, not a
+  fresh art fetch.
+
+  These live under `Art`, not `Resources`, deliberately: everything in a `Resources` folder ships
+  whether or not anything references it, so the 155 not-yet-curated species were adding ~13 MB to
+  every build. A direct reference means only curated species' art is included. Import settings
+  (mipmaps off, block compression on) are applied from code by
+  `Assets/Editor/PokemonSpriteImportProcessor.cs` — see `client/Assets/Art/README.md`. Sprites that
+  *are* resolved by string path at runtime (UI chrome, type badges, node icons) still live under
+  `Assets/Resources/Sprites/`.
 
 ## 9. Scope, IP & Distribution
 
@@ -422,11 +437,12 @@ The shell is built; the run inside it is not (see §6 Status). The ordering belo
 items 1 and 2 unblock everything else, and until they land there is no game loop to test any of
 the rest against.
 
-1. **Collapse the two map models onto one.** Make `RunState` hold the branching graph
-   `RegionMapGenerator` produces and the traversal position `RegionMapTraversal` tracks, instead
-   of `Nodes` + `CurrentNodeIndex`; retire `ForestLocationFactory`'s linear list (or keep it only
-   as a seeded fixture for tests). `RunBootstrapper` and `RegionMapController` should be reading
-   the same map afterward. EditMode-testable, so do it before touching any screen.
+1. **Collapse the two map models onto one.** Half done: `RunState` now holds the branching graph
+   and the walked path (`LocationMap`, `VisitedMapNodeIds`, bound by `RegionMapTraversal.ForRun`),
+   so the map survives leaving and re-entering the screen. What's left is retiring
+   `Nodes` + `CurrentNodeIndex` and `ForestLocationFactory`'s linear list (or keeping the latter
+   only as a seeded fixture for tests), and pointing `RunBootstrapper` and `LocationFlowController`
+   at the branching map instead. EditMode-testable, so do it before touching any screen.
 2. **Node resolution on arrival.** Hook the end of `RegionMapController.WalkTo` into a per-node-type
    handler and re-land the orphaned screens on the map scene: PvE (`PvEClashController` — this is
    what makes a battle playable in-game again) and Camp (`CampPanelController` +
@@ -441,8 +457,10 @@ the rest against.
 5. **The real drag-and-drop catching system** (Step-boundary ball throws, HP%/status-based odds,
    design doc §12.1) in place of the "pick 1 from defeated" stub. Depends on 2.
 6. **Rename `RegionMap*` → `LocationMap*`** before building the actual Region Hub / Location
-   selection tier (§6 naming debt). Mechanical but touches ~8 files plus a scene regeneration, so
-   do it as its own commit, not folded into feature work.
+   selection tier (§6 naming debt). Still open, and now slightly wider than before —
+   `RunState.LocationMap` is already correctly named and holds a `RegionMap`, which reads oddly.
+   Mechanical, but touches ~8 files plus a scene regeneration, so do it as its own commit, not
+   folded into feature work.
 7. Evolution (via PokeAPI evolution chains), the Trailblazer minigame, Pokémon Center adoption,
    and a real Shop economy.
 8. Narrow Character Select toward design doc §3's actual flow (fixed/chosen starter + a 3-option

@@ -26,6 +26,7 @@ namespace Pets.Gameplay
         private RunState state;
         private PokemonSpeciesLibrary library;
         private List<PokemonInstance> wildSnapshot;
+        private StepLog lastLog;
         private bool lastOutcomeWon;
 
         public void Begin(RunState runState, PokemonSpeciesLibrary speciesLibrary)
@@ -38,7 +39,11 @@ namespace Pets.Gameplay
             continueButton.gameObject.SetActive(false);
             ClearCatchButtons();
 
-            var playerLineUp = state.LineUp.Select(PokemonInstanceFactory.ResetForBattle).ToList();
+            // Combatants built here rather than letting the runner do it, because the Camp buff has
+            // to be applied at line-up assembly (battle-sim-spec.md §8) and must land on the
+            // battle's copies — multiplying the roster's own CurrentStats would buff those mons
+            // permanently, every fight, compounding.
+            var playerLineUp = BattleCombatant.FromLineUp(state.LineUp);
             if (state.NextBattleAttackBonusPercent > 0f)
             {
                 foreach (var mon in playerLineUp)
@@ -49,12 +54,11 @@ namespace Pets.Gameplay
             }
 
             int seed = state.RunSeed + state.CurrentNodeIndex;
-            var wildLineUp = EncounterGenerator.GenerateWildLineUp(
+            wildSnapshot = EncounterGenerator.GenerateWildLineUp(
                 library, ForestLocationFactory.TypeBias, seed, $"wild-{state.CurrentNodeIndex}");
-            wildSnapshot = new List<PokemonInstance>(wildLineUp);
 
-            var log = PrecomputedStepLogRunner.Run(playerLineUp, wildLineUp, seed);
-            StartCoroutine(PlayLog(log));
+            lastLog = PrecomputedStepLogRunner.Run(playerLineUp, BattleCombatant.FromLineUp(wildSnapshot), seed);
+            StartCoroutine(PlayLog(lastLog));
         }
 
         private IEnumerator PlayLog(StepLog log)
@@ -104,7 +108,7 @@ namespace Pets.Gameplay
 
             if (lastOutcomeWon)
             {
-                foreach (var defeated in CatchResolver.GetDefeated(wildSnapshot))
+                foreach (var defeated in CatchResolver.GetDefeated(wildSnapshot, lastLog, Side.B))
                 {
                     CreateCatchButton(defeated);
                 }

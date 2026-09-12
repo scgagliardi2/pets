@@ -84,7 +84,8 @@ exists — the phase list under it describes intent, and the build has deviated 
   Assets/Scripts/Tests        EditMode at the root, PlayMode under Tests/PlayMode
   Assets/Content              species/passive assets + their libraries
   Assets/Editor               scene + prefab builders, dev tooling
-  Assets/Resources            runtime-loaded Sprites/{Pokemon,Types,Nodes,UI} and Fonts
+  Assets/Art/Pokemon          species artwork, referenced directly by the species assets
+  Assets/Resources            loaded-by-path only: Sprites/{Types,Nodes,UI} and Fonts
   Assets/Scenes               GENERATED — never hand-edit (see Working conventions)
 /server    Node/TS backend — scaffolding only; introduced once solo loop is solid
 /shared    Golden battle-sim fixtures (JSON) used by both client and (later) server tests
@@ -93,8 +94,10 @@ exists — the phase list under it describes intent, and the build has deviated 
            (roster), battle-sim-spec.md, content-schema.md, architecture-decisions/
 ```
 
-There is no `Scripts/BattleRunner` or `Scripts/Minigame`, and `Assets/Art` is empty — art lives
-under `Assets/Resources/Sprites`. See PLAN.md §5 for why.
+There is no `Scripts/BattleRunner` or `Scripts/Minigame` — see PLAN.md §5 for why. Art splits two
+ways: anything resolved by string path at runtime goes in `Resources` (and therefore ships whether
+referenced or not), everything else goes in `Art` behind a direct reference. See
+`client/Assets/Art/README.md`.
 
 ## Working conventions
 
@@ -115,6 +118,15 @@ under `Assets/Resources/Sprites`. See PLAN.md §5 for why.
 - **A new scene must go in `SceneCatalog.AllScenePaths` and `Gameplay/SceneNames`**, or
   `SceneManager.LoadScene` won't resolve it and the button that navigates there fails at runtime
   only.
+- **Navigate with `ScreenFade.TransitionTo(sceneName)`, not `SceneManager.LoadScene`.** A
+  synchronous load stalls the main thread through the next screen's `Start`, which is where these
+  screens do their work; the fade covers an async load instead. A PlayMode test that drives a real
+  navigation must therefore wait for it — use `SceneTransitionWait`, not a fixed frame count.
+- **Texture import settings come from an `AssetPostprocessor`, not the Inspector.** One per art
+  folder under `Assets/Editor` (`UiSprite`/`TypeIcon`/`NodeIcon`/`PokemonSprite`). Hand-tuning a
+  file's settings is how the species sprites ended up uncompressed with mipmaps on, and the node
+  icons at 1312px to draw a 52px node. A new art folder needs a processor and an entry in
+  `SpriteAtlasBuilder`; after adding one, run `Pets > Build Sprite Atlases`.
 - **C# style:** standard Unity/.NET conventions (PascalCase for public members/types, camelCase
   for private fields, no Hungarian notation). Prefer plain C# classes/structs over
   MonoBehaviours wherever scene attachment isn't actually needed (this matters most in the
@@ -142,8 +154,14 @@ under `Assets/Resources/Sprites`. See PLAN.md §5 for why.
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12: **99 EditMode, 46 PlayMode, all passing**. Same binary rebuilds scenes headlessly:
-  `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll`.
+  2026-09-12: **103 EditMode, 49 PlayMode, all passing**. The same binary runs any Editor entry
+  point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
+  and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
+  PNG, which is the only way to actually look at the UI without opening the Editor.
+
+  Note a batch run that has just exited can leave `client/Temp/UnityLockfile` behind for a few
+  seconds; a second run started immediately fails with a bare exit code 1 and an almost empty log.
+  Wait for the process to clear rather than debugging the log.
 - **CI is not a gate yet:** the client job in `.github/workflows/ci.yml` is `continue-on-error`
   until `UNITY_LICENSE` secrets exist, so a red client suite won't block a merge. Run the suites
   locally before saying work is done.
