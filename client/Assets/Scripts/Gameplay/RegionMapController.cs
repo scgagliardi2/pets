@@ -11,38 +11,46 @@ namespace Pets.Gameplay
 {
     /// <summary>Renders a generated Location node-map (design doc §5) and lets the player walk it:
     /// a random branching graph from a start node, through five layers of choices, to the mandatory
-    /// Gym. Only nodes connected forward from where the player stands are clickable; clicking one
-    /// slides the player token along the edge and opens up that node's own options.
+    /// Gym. The map flows left to right — one column of branches per layer — at spacings that fit a
+    /// default run end to end on screen. Only nodes connected forward from where the player stands
+    /// are clickable; clicking one slides the player token along the edge and opens up that node's
+    /// own options.
     ///
     /// What a node *does* on arrival is deliberately not handled here (PLAN.md Phase 1) — stepping
     /// onto a node doesn't start its fight/event/center visit yet. This is the map and the movement
     /// on it; node resolution hooks onto the end of a step, in WalkTo, once it exists.</summary>
     public sealed class RegionMapController : MonoBehaviour
     {
-        private const float HorizontalSpacing = 180f;
-        private const float VerticalSpacing = 160f;
-        private const float EdgePadding = 100f;
-        private const float NodeSize = 76f;
+        /// <summary>Gap between one layer and the next, along the map's left-to-right flow.</summary>
+        private const float LayerSpacing = 120f;
+
+        /// <summary>Gap between the branching options within a single layer, which stack
+        /// vertically into a column.</summary>
+        private const float BranchSpacing = 118f;
+
+        private const float EdgePadding = 70f;
+        private const float NodeSize = 52f;
 
         /// <summary>The Gym is every path's terminus, so it reads as the visually bigger "boss"
         /// node even before it has a bespoke icon.</summary>
         private const float GymNodeScale = 1.5f;
 
         /// <summary>Nudges nodes off their exact grid column so a generated map looks hand-drawn
-        /// rather than like a spreadsheet. Stays well under half the gap between columns so two
-        /// neighbours can never visually collide.</summary>
-        private const float MaxHorizontalJitter = 20f;
+        /// rather than like a spreadsheet. Applied along the flow axis (x) rather than across it,
+        /// so it can never eat into the vertical gap a column's captions and player token need.</summary>
+        private const float MaxLayerJitter = 12f;
 
-        private const float PlayerTokenSize = 34f;
+        private const float PlayerTokenSize = 28f;
         private const float MoveDuration = 0.4f;
 
-        /// <summary>How far the current/available highlight panel extends past the icon's own
-        /// edge on each side.</summary>
-        private const float BackdropPadding = 10f;
+        /// <summary>Every node, edge, caption and the player token is anchored to the content's
+        /// middle-left, matching the left-to-right flow LayOutNodes lays out against: x grows with
+        /// the layer, y is signed off the vertical center of the column.</summary>
+        private static readonly Vector2 MapOrigin = new Vector2(0f, 0.5f);
 
-        private const float CaptionWidth = 130f;
-        private const float CaptionHeight = 30f;
-        private const float CaptionGap = 6f;
+        private const float CaptionWidth = 116f;
+        private const float CaptionHeight = 22f;
+        private const float CaptionGap = 4f;
 
         /// <summary>What each node actually represents to the player (this is a flavor/label
         /// concern only — NodeType itself stays the shared enum other Meta code keys off of, see
@@ -167,11 +175,13 @@ namespace Pets.Gameplay
 
             Refresh();
             Canvas.ForceUpdateCanvases();
-            SetScroll(ScrollPositionFor(playerToken.anchoredPosition.y));
+            SetScroll(ScrollPositionFor(playerToken.anchoredPosition.x));
         }
 
-        /// <summary>Places layer 0 at the bottom and the Gym at the top, so walking the map reads as
-        /// climbing toward the finale (and so the scroll view starts where the player starts).</summary>
+        /// <summary>Places layer 0 at the left and the Gym at the right, so the map reads as a
+        /// journey across the Location and a whole run's worth of layers fits on screen at once
+        /// (the scroll view still exists for a longer map or a narrower window, and starts where
+        /// the player starts).</summary>
         private Dictionary<string, Vector2> LayOutNodes(RegionMap map)
         {
             // Seeded separately from the generator so nudging the layout can never change which
@@ -186,22 +196,26 @@ namespace Pets.Gameplay
                 var nodes = map.NodesInLayer(layer);
                 widestLayer = Mathf.Max(widestLayer, nodes.Count);
 
-                float y = EdgePadding + layer * VerticalSpacing;
-                float rowWidth = (nodes.Count - 1) * HorizontalSpacing;
+                float x = EdgePadding + layer * LayerSpacing;
+                float columnHeight = (nodes.Count - 1) * BranchSpacing;
                 for (int i = 0; i < nodes.Count; i++)
                 {
-                    // The start and Gym nodes stay dead-centered — they're the map's two anchors.
+                    // The start and Gym nodes stay dead-on their column — they're the map's two
+                    // anchors.
                     bool isAnchorLayer = layer == 0 || layer == map.LayerCount - 1;
                     float jitter = isAnchorLayer
                         ? 0f
-                        : (jitterRng.NextInt(2001) / 1000f - 1f) * MaxHorizontalJitter;
-                    positions[nodes[i].Id] = new Vector2(-rowWidth / 2f + i * HorizontalSpacing + jitter, y);
+                        : (jitterRng.NextInt(2001) / 1000f - 1f) * MaxLayerJitter;
+                    positions[nodes[i].Id] = new Vector2(x + jitter, columnHeight / 2f - i * BranchSpacing);
                 }
             }
 
+            // Content is centered vertically on y = 0 (see the scene builder's middle-left anchor),
+            // so the height only has to cover the tallest column plus what hangs below its lowest
+            // node — its caption.
             content.sizeDelta = new Vector2(
-                widestLayer * HorizontalSpacing + EdgePadding * 2f,
-                (map.LayerCount - 1) * VerticalSpacing + EdgePadding * 2f + CaptionHeight);
+                (map.LayerCount - 1) * LayerSpacing + EdgePadding * 2f,
+                (widestLayer - 1) * BranchSpacing + NodeSize + CaptionGap + CaptionHeight + EdgePadding * 2f);
 
             return positions;
         }
@@ -246,7 +260,7 @@ namespace Pets.Gameplay
             image.raycastTarget = false;
 
             var rect = go.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.anchorMin = rect.anchorMax = MapOrigin;
             rect.pivot = new Vector2(0f, 0.5f);
 
             Vector2 diff = to - from;
@@ -261,27 +275,16 @@ namespace Pets.Gameplay
         {
             float size = node.Type == NodeType.Gym ? NodeSize * GymNodeScale : NodeSize;
 
-            // A plain color panel behind the icon, slightly larger than it, standing in for a
-            // "you are here"/"you can go here" highlight. Drawn first so the icon renders on top
-            // of it. (An earlier version used a uGUI Outline component for this — a single-offset
-            // drop-shadow effect, not a true outline — which reads as a hazy blur rather than a
-            // crisp highlight against pixel art's soft anti-aliased edges. A backdrop avoids that
-            // entirely and matches the rest of this UI's flat-panel look.)
-            var backdropGO = new GameObject($"Backdrop_{node.Id}", typeof(RectTransform));
-            backdropGO.transform.SetParent(nodeRoot, false);
-            var backdropRect = backdropGO.GetComponent<RectTransform>();
-            backdropRect.anchorMin = backdropRect.anchorMax = new Vector2(0.5f, 0f);
-            backdropRect.pivot = new Vector2(0.5f, 0.5f);
-            backdropRect.sizeDelta = new Vector2(size + BackdropPadding * 2f, size + BackdropPadding * 2f);
-            backdropRect.anchoredPosition = position;
-            var backdrop = backdropGO.AddComponent<Image>();
-            backdrop.raycastTarget = false;
-
+            // The icon is the whole node — nothing is drawn behind it. (Earlier versions put a
+            // color panel back there as a "you are here"/"you can go here" highlight; it read as a
+            // stray orange/white square around the art rather than as a highlight. Where the
+            // player is, is what the player token says; what's reachable is carried by Refresh's
+            // brightness and by the thicker, brighter edges leading out of the current node.)
             var go = new GameObject($"Node_{node.Id}_{node.Type}", typeof(RectTransform));
             go.transform.SetParent(nodeRoot, false);
 
             var rect = go.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.anchorMin = rect.anchorMax = MapOrigin;
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(size, size);
             rect.anchoredPosition = position;
@@ -317,7 +320,6 @@ namespace Pets.Gameplay
                 Node = node,
                 Rect = rect,
                 Image = image,
-                Backdrop = backdrop,
                 Button = button,
                 Label = caption,
                 BaseColor = baseTint
@@ -334,14 +336,14 @@ namespace Pets.Gameplay
             go.transform.SetParent(nodeRoot, false);
 
             var rect = go.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.anchorMin = rect.anchorMax = MapOrigin;
             rect.pivot = new Vector2(0.5f, 1f);
             rect.sizeDelta = new Vector2(CaptionWidth, CaptionHeight);
             rect.anchoredPosition = nodePosition + new Vector2(0f, -(nodeSize * 0.5f + CaptionGap));
 
             var text = go.AddComponent<Text>();
             text.font = Theme.GameFont;
-            text.fontSize = 13;
+            text.fontSize = 11;
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.UpperCenter;
             text.color = Theme.TextLight;
@@ -366,7 +368,7 @@ namespace Pets.Gameplay
             image.raycastTarget = false;
 
             playerToken = go.GetComponent<RectTransform>();
-            playerToken.anchorMin = playerToken.anchorMax = new Vector2(0.5f, 0f);
+            playerToken.anchorMin = playerToken.anchorMax = MapOrigin;
             playerToken.pivot = new Vector2(0.5f, 0.5f);
             playerToken.sizeDelta = new Vector2(PlayerTokenSize, PlayerTokenSize);
 
@@ -374,7 +376,7 @@ namespace Pets.Gameplay
             label.transform.SetParent(go.transform, false);
             var text = label.AddComponent<Text>();
             text.font = Theme.GameFont;
-            text.fontSize = 12;
+            text.fontSize = 10;
             text.fontStyle = FontStyle.Bold;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Theme.TextDark;
@@ -418,8 +420,8 @@ namespace Pets.Gameplay
 
             Vector2 from = playerToken.anchoredPosition;
             Vector2 to = PlayerPositionFor(nodeId);
-            float fromScroll = scrollRect != null ? scrollRect.verticalNormalizedPosition : 0f;
-            float toScroll = ScrollPositionFor(to.y);
+            float fromScroll = scrollRect != null ? scrollRect.horizontalNormalizedPosition : 0f;
+            float toScroll = ScrollPositionFor(to.x);
 
             float elapsed = 0f;
             while (elapsed < MoveDuration)
@@ -452,10 +454,6 @@ namespace Pets.Gameplay
                 view.Image.color = isCurrent || isAvailable ? view.BaseColor
                     : isVisited ? Dim(view.BaseColor, 0.75f)
                     : Dim(view.BaseColor, 0.4f);
-
-                view.Backdrop.color = isCurrent ? Theme.TextLight
-                    : isAvailable ? Theme.TabSelectedBg
-                    : new Color(0f, 0f, 0f, 0f);
 
                 view.Label.color = isCurrent || isAvailable || isVisited ? Theme.TextLight : Theme.TextMuted;
             }
@@ -504,29 +502,31 @@ namespace Pets.Gameplay
                 : $"Step {Traversal.CurrentNode.Layer} / {map.LayerCount - 1} — pick one of {Traversal.AvailableNextNodes.Count} paths.   (seed {map.Seed})";
         }
 
-        private float ScrollPositionFor(float nodeY)
+        private float ScrollPositionFor(float nodeX)
         {
             if (scrollRect == null || scrollRect.viewport == null)
             {
                 return 0f;
             }
 
-            float viewportHeight = scrollRect.viewport.rect.height;
-            float scrollable = content.rect.height - viewportHeight;
+            float viewportWidth = scrollRect.viewport.rect.width;
+            float scrollable = content.rect.width - viewportWidth;
             if (scrollable <= 0f)
             {
+                // A map that already fits edge to edge — the common case at these spacings — has
+                // nothing to scroll to.
                 return 0f;
             }
 
             // Centers the player's node in the viewport where there's room to do so.
-            return Mathf.Clamp01((nodeY - viewportHeight * 0.5f) / scrollable);
+            return Mathf.Clamp01((nodeX - viewportWidth * 0.5f) / scrollable);
         }
 
         private void SetScroll(float normalized)
         {
             if (scrollRect != null)
             {
-                scrollRect.verticalNormalizedPosition = normalized;
+                scrollRect.horizontalNormalizedPosition = normalized;
             }
         }
 
@@ -558,7 +558,6 @@ namespace Pets.Gameplay
             public RegionMapNode Node;
             public RectTransform Rect;
             public Image Image;
-            public Image Backdrop;
             public Button Button;
             public Text Label;
             public Color BaseColor;

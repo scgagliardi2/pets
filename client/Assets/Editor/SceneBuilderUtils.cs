@@ -43,6 +43,12 @@ namespace Pets.EditorTools
             var go = new GameObject("Canvas", typeof(RectTransform));
             var canvas = go.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            // Snap every UI graphic to whole device pixels. Without this, a canvas scale factor
+            // that isn't a round number (it rarely is — it's screenWidth/referenceWidth, e.g.
+            // 1.875 on a 2400-wide phone) lands glyph and sprite edges on fractional pixels, and
+            // they get filtered across two pixels instead of landing on one. Costs nothing for a
+            // static UI like this one and is the single cheapest sharpness win available.
+            canvas.pixelPerfect = true;
             var scaler = go.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = referenceResolution ?? new Vector2(960, 720);

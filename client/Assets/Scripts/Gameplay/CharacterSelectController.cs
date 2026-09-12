@@ -22,6 +22,23 @@ namespace Pets.Gameplay
     public sealed class CharacterSelectController : MonoBehaviour
     {
         private const string GameSceneName = "Game";
+
+        // Card metrics for the 200x176 grid cell CharacterSelectSceneBuilder lays out (five columns
+        // of a 1280-wide landscape canvas). Sizes are chosen against how many REAL pixels they end
+        // up with, not just how they fit the cell: an element's on-screen size is
+        // (units / 1280) * screenWidth, so a 13-unit line is only 13px on a 1280-wide view. Handjet
+        // is a thin segmented display font and mushes into grey below roughly 16px, which is what
+        // made the first pass of this card read as blurry. Everything here is therefore sized to
+        // fill the cell rather than float in it — the sprite is back to the 96 the pre-landscape
+        // card used, and the three text lines sit above Theme.FontSizeSmall (13), the theme's
+        // documented floor for this font, instead of at it.
+        //
+        // Budget: 12 padding + 96 sprite + 23 name + 20 type + 20 stats + 3 one-unit gaps = 174,
+        // inside the 176 cell. Grow CharacterSelectSceneBuilder.CardHeight with any of these.
+        private const int CardSpriteHeight = 96;
+        private const int CardNameFontSize = 17;
+        private const int CardLineFontSize = 14;
+
         private static readonly PokemonType[] AllTypes = (PokemonType[])Enum.GetValues(typeof(PokemonType));
 
         private enum SortKey { None, Attack, Speed, Health }
@@ -217,8 +234,8 @@ namespace Pets.Gameplay
             button.onClick.AddListener(() => onChosen(species));
 
             var layout = go.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(8, 8, 8, 8);
-            layout.spacing = 2;
+            layout.padding = new RectOffset(6, 6, 6, 6);
+            layout.spacing = 1;
             layout.childForceExpandWidth = true;
             layout.childForceExpandHeight = false;
             layout.childControlWidth = true;
@@ -230,11 +247,14 @@ namespace Pets.Gameplay
             AddCardSprite(go.transform, species);
 
             string typeLabel = species.HasSecondType ? $"{species.Type1}/{species.Type2}" : species.Type1.ToString();
-            AddCardLine(go.transform, species.DisplayName, 18, FontStyle.Bold, Theme.TextDark);
-            AddCardLine(go.transform, typeLabel, 14, FontStyle.Bold, Theme.GetTypeColor(species.Type1));
-            AddCardLine(go.transform, $"ATK {species.BaseAttack}", 14, FontStyle.Normal, Theme.TextDark);
-            AddCardLine(go.transform, $"HP {species.BaseHealth}", 14, FontStyle.Normal, Theme.TextDark);
-            AddCardLine(go.transform, $"SPD {species.BaseSpeed}", 14, FontStyle.Normal, Theme.TextDark);
+            AddCardLine(go.transform, species.DisplayName, CardNameFontSize, FontStyle.Bold, Theme.TextDark);
+            AddCardLine(go.transform, typeLabel, CardLineFontSize, FontStyle.Bold, Theme.GetTypeColor(species.Type1));
+            // All three stats on one line: it buys the height that lets the sprite go back to 96
+            // and every line go up a couple of sizes, which matters more for readability than
+            // giving Attack a row of its own did. Bold like the type line — Handjet's Regular
+            // weight is too thin to hold up at this size.
+            AddCardLine(go.transform, $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}",
+                CardLineFontSize, FontStyle.Bold, Theme.TextDark);
         }
 
         private static void AddCardSprite(Transform parent, PokemonSpeciesDefinitionAsset species)
@@ -245,7 +265,7 @@ namespace Pets.Gameplay
             image.sprite = PokemonSprites.Load(species);
             image.preserveAspect = true;
             var layoutElement = go.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = 96;
+            layoutElement.preferredHeight = CardSpriteHeight;
         }
 
         private static void AddCardLine(Transform parent, string content, int fontSize, FontStyle style, Color color)

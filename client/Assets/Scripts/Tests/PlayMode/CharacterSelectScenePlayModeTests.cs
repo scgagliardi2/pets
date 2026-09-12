@@ -43,6 +43,47 @@ namespace Pets.Tests
             yield break;
         }
 
+        /// <summary>The grid is laid out for a phone held horizontally, where width is plentiful and
+        /// height is not: five small cards per row. Asserted here rather than eyeballed because a
+        /// GridLayoutGroup will happily overflow its viewport, so the column count and the width
+        /// actually available to it have to agree.</summary>
+        [UnityTest]
+        public IEnumerator Grid_LaysOutExactlyFiveCardsPerRow()
+        {
+            var content = GridContent().GetComponent<RectTransform>();
+            var grid = content.GetComponent<GridLayoutGroup>();
+            Assert.AreEqual(GridLayoutGroup.Constraint.FixedColumnCount, grid.constraint);
+            Assert.AreEqual(5, grid.constraintCount);
+
+            float required = grid.padding.left + grid.padding.right + 5 * grid.cellSize.x + 4 * grid.spacing.x;
+            Assert.LessOrEqual(required, content.rect.width + 0.5f,
+                "five columns plus spacing/padding must fit the grid's own width, or the last column hangs off-screen");
+
+            var cards = GridContent().GetComponentsInChildren<Button>();
+            Assert.Greater(cards.Length, 5, "need more than one row's worth of cards to prove the row width");
+            float firstRowY = cards[0].GetComponent<RectTransform>().anchoredPosition.y;
+            int inFirstRow = cards.Count(c => Mathf.Approximately(c.GetComponent<RectTransform>().anchoredPosition.y, firstRowY));
+            Assert.AreEqual(5, inFirstRow);
+            yield break;
+        }
+
+        /// <summary>Landscape-first scaling: the canvas must match the reference *width* so the
+        /// grid's five columns divide a known, device-independent width, leaving only height to vary
+        /// with aspect ratio (which the pixel-pinned chrome absorbs).</summary>
+        [UnityTest]
+        public IEnumerator Canvas_ScalesToALandscapeReferenceByWidth()
+        {
+            var scaler = GameObject.Find("Canvas").GetComponent<CanvasScaler>();
+            Assert.AreEqual(CanvasScaler.ScaleMode.ScaleWithScreenSize, scaler.uiScaleMode);
+            Assert.AreEqual(new Vector2(1280f, 720f), scaler.referenceResolution);
+            Assert.AreEqual(0f, scaler.matchWidthOrHeight, 0.001f, "match width, so canvas width is always the reference width");
+
+            var canvasRect = GameObject.Find("Canvas").GetComponent<RectTransform>();
+            Assert.AreEqual(1280f, canvasRect.rect.width, 0.5f);
+            Assert.Greater(canvasRect.rect.width, canvasRect.rect.height, "the reference canvas should be landscape");
+            yield break;
+        }
+
         [UnityTest]
         public IEnumerator EveryCard_HasItsPokemonSpriteLoaded()
         {
@@ -174,8 +215,10 @@ namespace Pets.Tests
             int previous = descending ? int.MaxValue : int.MinValue;
             foreach (var button in buttons)
             {
-                string atkText = button.GetComponentsInChildren<Text>()[2].text; // "ATK 49"
-                int attack = int.Parse(atkText.Substring("ATK ".Length));
+                // Text[2] is the combined stat line, "ATK 49  HP 45  SPD 45" — take the first number.
+                string statLine = button.GetComponentsInChildren<Text>()[2].text;
+                StringAssert.StartsWith("ATK ", statLine);
+                int attack = int.Parse(statLine.Substring("ATK ".Length).Split(' ')[0]);
                 if (descending)
                 {
                     Assert.LessOrEqual(attack, previous, "cards should be sorted by Attack, highest first");

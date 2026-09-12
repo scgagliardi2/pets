@@ -46,14 +46,17 @@ namespace Pets.EditorTools
             var newMapButton = CreateButton(canvasRect, "NewMapButton", "New Map", Theme.ButtonStyle.Confirm);
             StretchTo(newMapButton.GetComponent<RectTransform>(), new Vector2(0.76f, 0.015f), new Vector2(0.97f, 0.075f));
 
-            var (scrollRect, _, content) = CreateScrollView(canvasRect, "MapScroll", new Vector2(0.02f, 0.09f), new Vector2(0.98f, 0.92f), horizontal: false, vertical: true);
+            var (scrollRect, _, content) = CreateScrollView(canvasRect, "MapScroll", new Vector2(0.02f, 0.09f), new Vector2(0.98f, 0.92f), horizontal: true, vertical: false);
             scrollRect.scrollSensitivity = 25f;
 
-            // Bottom-anchored content: layer 0 sits at the bottom and the Gym at the top, so the
-            // map reads as a climb toward the finale and the view starts where the player does.
-            content.anchorMin = content.anchorMax = new Vector2(0.5f, 0f);
-            content.pivot = new Vector2(0.5f, 0f);
-            content.sizeDelta = new Vector2(800, 1000);
+            // Left-anchored, vertically centered content: layer 0 sits at the left edge and the
+            // Gym at the right, so the map reads left to right and each layer's branches stack
+            // into a column around the middle. At RegionMapController's spacings a default
+            // seven-layer map fits the viewport end to end; the scroll axis is there for a longer
+            // map or a narrower window, and it follows the player when it's needed.
+            content.anchorMin = content.anchorMax = new Vector2(0f, 0.5f);
+            content.pivot = new Vector2(0f, 0.5f);
+            content.sizeDelta = new Vector2(860, 580);
 
             var backgroundGO = new GameObject("Background", typeof(RectTransform));
             backgroundGO.transform.SetParent(content, false);
