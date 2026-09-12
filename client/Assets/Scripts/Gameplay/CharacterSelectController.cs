@@ -35,6 +35,7 @@ namespace Pets.Gameplay
         [SerializeField] private Button sortAttackButton;
         [SerializeField] private Button sortSpeedButton;
         [SerializeField] private Button sortHealthButton;
+        [SerializeField] private GameObject typeIconPrefab;
 
         private PokemonSpeciesDefinitionAsset chosenLead;
         private PokemonSpeciesDefinitionAsset chosenSupport;
@@ -229,9 +230,8 @@ namespace Pets.Gameplay
 
             AddCardSprite(go.transform, species);
 
-            string typeLabel = species.HasSecondType ? $"{species.Type1}/{species.Type2}" : species.Type1.ToString();
             AddCardLine(go.transform, species.DisplayName, 18, FontStyle.Bold, Theme.TextDark);
-            AddCardLine(go.transform, typeLabel, 14, FontStyle.Bold, Theme.GetTypeColor(species.Type1));
+            AddCardTypeIcons(go.transform, species);
             AddCardLine(go.transform, $"ATK {species.BaseAttack}", 14, FontStyle.Normal, Theme.TextDark);
             AddCardLine(go.transform, $"HP {species.BaseHealth}", 14, FontStyle.Normal, Theme.TextDark);
             AddCardLine(go.transform, $"SPD {species.BaseSpeed}", 14, FontStyle.Normal, Theme.TextDark);
@@ -246,6 +246,35 @@ namespace Pets.Gameplay
             image.preserveAspect = true;
             var layoutElement = go.AddComponent<LayoutElement>();
             layoutElement.preferredHeight = 96;
+        }
+
+        /// <summary>One or two Pets.UI.TypeIconView instances (Type1, and Type2 if the species
+        /// has one) side by side in a row — replaces what used to be a plain "Fire" / "Fire/Flying"
+        /// text line colored via Theme.GetTypeColor, now that real per-type icon art exists
+        /// (Assets/Resources/Sprites/Types).</summary>
+        private void AddCardTypeIcons(Transform parent, PokemonSpeciesDefinitionAsset species)
+        {
+            var row = new GameObject("TypesRow", typeof(RectTransform));
+            row.transform.SetParent(parent, false);
+            var layout = row.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 6;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            var rowLayoutElement = row.AddComponent<LayoutElement>();
+            rowLayoutElement.preferredHeight = 30;
+
+            CreateTypeIcon(row.transform, species.Type1);
+            if (species.HasSecondType)
+            {
+                CreateTypeIcon(row.transform, species.Type2);
+            }
+        }
+
+        private void CreateTypeIcon(Transform parent, PokemonType type)
+        {
+            var instance = Instantiate(typeIconPrefab, parent, false);
+            instance.GetComponent<TypeIconView>().Type = type;
         }
 
         private static void AddCardLine(Transform parent, string content, int fontSize, FontStyle style, Color color)

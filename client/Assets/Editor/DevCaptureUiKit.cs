@@ -34,6 +34,45 @@ namespace Pets.EditorTools
             Capture(GetArg("-captureOutput") ?? "ui-kit.png");
         }
 
+        private static int playModeFrameCount;
+
+        /// <summary>Unlike CaptureGameScene, Character Select's species grid is populated at
+        /// runtime (CharacterSelectController.Start -&gt; RefreshGrid), not baked into the saved
+        /// scene — capturing it without opening Play mode would show an empty grid. Enters Play
+        /// mode, waits a few frames for Start() to run, captures, then exits Play mode and the
+        /// batch itself (this can't be combined with a plain -quit on the command line, since Play
+        /// mode entry is asynchronous relative to -executeMethod returning).</summary>
+        [MenuItem("Pets/Dev/Capture Character Select Scene (Playing)")]
+        public static void CaptureCharacterSelectScenePlaying()
+        {
+            EditorSceneManager.OpenScene(CharacterSelectSceneBuilder.ScenePath);
+            playModeFrameCount = 0;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            EditorApplication.isPlaying = true;
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.EnteredPlayMode)
+            {
+                EditorApplication.update += WaitThenCapture;
+            }
+        }
+
+        private static void WaitThenCapture()
+        {
+            playModeFrameCount++;
+            if (playModeFrameCount < 10)
+            {
+                return;
+            }
+            EditorApplication.update -= WaitThenCapture;
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            Capture(GetArg("-captureOutput") ?? "ui-kit.png");
+            EditorApplication.isPlaying = false;
+            EditorApplication.Exit(0);
+        }
+
         private static string GetArg(string name)
         {
             var args = System.Environment.GetCommandLineArgs();
