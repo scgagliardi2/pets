@@ -448,6 +448,17 @@ namespace Pets.Tests
             AssertNavigatesVia("BackButton", nameof(SceneNavigator.GoToIngameMenu));
         }
 
+        /// <summary>The dev way into a fight until map nodes start one.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DevBattleButton_OpensTheBattleScreen()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            AssertNavigatesVia("DevBattleButton", nameof(SceneNavigator.GoToBattle));
+        }
+
         /// <summary>Opening Team.unity directly (no run) is routine while working on the scene, so
         /// it has to explain itself rather than throw on a null RunState.</summary>
         [UnityTest]

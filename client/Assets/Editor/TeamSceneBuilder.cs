@@ -131,6 +131,9 @@ namespace Pets.EditorTools
 
             var backButton = CreateButton(bottomBar, "BackButton", "Back to Menu", Theme.ButtonStyle.Secondary, useSprite: true);
             var swapButton = CreateButton(bottomBar, "SwapButton", "Swap Lead / Support", Theme.ButtonStyle.Primary, useSprite: true);
+            // Dev entry into the Battle screen until map nodes start fights (PLAN.md §11 item 2).
+            // Left clickable with no run: the Battle screen's own no-party redirect is the answer.
+            var devBattleButton = CreateButton(bottomBar, "DevBattleButton", "Dev: Random Battle", Theme.ButtonStyle.Confirm, useSprite: true);
             CreateReleaseZone(bottomBar, teamPanel);
 
             // Last child of the canvas, so a card being dragged draws over both rows and the
@@ -154,6 +157,7 @@ namespace Pets.EditorTools
 
             UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.GoToIngameMenu);
             UnityEventTools.AddVoidPersistentListener(swapButton.onClick, screen.OnSwapLeadAndSupportClicked);
+            UnityEventTools.AddVoidPersistentListener(devBattleButton.onClick, navigator.GoToBattle);
             UnityEventTools.AddVoidPersistentListener(releaseConfirmButton.onClick, screen.OnConfirmReleaseClicked);
             UnityEventTools.AddVoidPersistentListener(releaseCancelButton.onClick, screen.OnCancelReleaseClicked);
 

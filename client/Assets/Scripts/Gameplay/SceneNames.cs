@@ -20,5 +20,9 @@ namespace Pets.Gameplay
         /// non-commercial project (PLAN.md §9), so there's no release channel to keep it out
         /// of.</summary>
         public const string DevRoster = "DevRoster";
+
+        /// <summary>The Battle screen (see BattleScreenController). Reached only from Team's dev
+        /// button until map nodes start fights.</summary>
+        public const string Battle = "Battle";
     }
 }

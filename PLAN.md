@@ -186,10 +186,11 @@ onto phase boundaries. ADR 0002 records that deviation and why. The honest summa
 *What you can actually play right now:* `Home` → `CharacterSelect` (pick Starter + Secondary) →
 `RegionMap` (walk a branching node map to the Gym), with `IngameMenu` → `Team` (drag to
 rearrange/release) / `DevRoster` (stuff mons into the run) hanging off it, plus `History` and
-`Credits` off Home. **No battle is playable in any scene.** Arriving at a node does nothing yet;
-the simulator only ever runs from tests.
+`Credits` off Home. **A battle is playable, but only as a dev tool:** Team's "Dev: Random Battle"
+button opens `Battle`, which fights the party against a randomly rolled enemy team. Arriving at a
+map node still does nothing — no node starts a fight yet.
 
-*Verified green as of this writing:* 103 EditMode and 49 PlayMode tests pass (see CLAUDE.md for
+*Verified green as of this writing:* 127 EditMode and 59 PlayMode tests pass (see CLAUDE.md for
 the CLI commands).
 
 **Built and covered by tests:**
@@ -230,6 +231,16 @@ the CLI commands).
   - `History.unity` / `Credits.unity` — Credits carries the Pokémon/PokeAPI/font attribution and
     the non-commercial scope note; History is a real screen with an honest empty state, because
     nothing records a finished run yet.
+  - `Battle.unity` — the battle screen (design doc §10, §17), via `Gameplay/BattleScreenController`
+    on the on-demand runner. The party (in Team order) fights a random enemy team of the same size,
+    rolled fresh on every load by `Meta/RandomBattle` from the whole curated roster. Shows both
+    sides' Lead and Support facing each other with HP/attack, each side's dormant queue, a battle
+    log, and Step / Autoplay / Skip controls; a knockout is drawn at 0 HP before the promotion is,
+    then Victory/Defeat/Draw with Battle Again. Arriving with no run or an empty party redirects to
+    Character Select (dropping the empty run). **Deliberately partial:** passives are stripped
+    from both sides at line-up assembly (so Speed and charge meters do nothing and aren't drawn),
+    there's no catching, and a fight has no consequence for the run — no Morale, EXP, money, or
+    damage written back. Reached only from Team's dev button until node resolution lands.
   - `DevRoster.unity` — a dev tool, not a game screen: click a card to drop that species into the
     run's party or Box, duplicates allowed. It ships in the build (per §9 there's no release
     channel to keep it out of) and is *not* the Pokémon Center.
@@ -244,7 +255,9 @@ the CLI commands).
 **The two big structural gaps** — these are the real Phase 1 work, and everything in "Next Steps"
 below flows from them:
 
-1. **No node resolution.** `RegionMapController.WalkTo` moves the token and stops. The screens
+1. **No node resolution.** `RegionMapController.WalkTo` moves the token and stops. (A PvE node's
+   fight now has a screen to land on — `Battle.unity` — which needs an encounter handed to it in
+   place of its random roll, and its passives switched back on.) The screens
    that would resolve a node — `LocationFlowController`, `PvEClashController`, `MapPanelController`,
    `CampPanelController`, `ResourceBarController`, `LocationHubController`, and the
    `Prefabs/UI/CampOverlay.prefab` — still exist in `Scripts/Gameplay` but are **attached to no
