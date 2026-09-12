@@ -383,6 +383,12 @@ Modeled on Super Auto Pets:
 
 ## 19. Suggested MVP / Build Phases
 
+> **These are the original suggestions, kept for the reasoning behind the ordering. The live
+> roadmap and — importantly — the record of what's actually built is [PLAN.md](../PLAN.md) §6,
+> whose phases track these but have diverged in practice (see
+> [ADR 0002](architecture-decisions/0002-shell-first-deviation.md)). Don't read build status out of
+> this section.**
+
 - **Phase 0 (prototype, solo, offline):** One hand-authored Location (e.g., a Forest), your first ~10–15 curated species, PvE + Camp + Shop + basic Step-based battle sim with a handful of type-flavored passives. No evolution, no backend. Catching stubbed as a simple end-of-fight "pick 1 from defeated" rather than the full drag-and-drop system. Trailblazer stubbed as an instant auto-roll.
 - **Phase 1:** Add the real Gym/Badge flow, Morale/win-loss loop, evolution, the full drag-and-drop catching system (Step-boundary throws, HP%/status-based odds), Pokémon Center adoption, type synergy bonuses, and the real Trailblazer minigame.
 - **Phase 2:** Add Events (narrative branches), multiple Location types, procedural Region generation, the rest of the curated Gen 1–3 roster.

@@ -1,7 +1,16 @@
 # SETUP.md — Local Environment Setup
 
-Steps to get your machine ready before we start scaffolding the project. See [PLAN.md](PLAN.md)
-for the project plan and [CLAUDE.md](CLAUDE.md) for working conventions.
+One-time toolchain setup for a machine that doesn't have this project running yet. The project
+itself is already scaffolded — see [README.md](README.md) for how to open and run it,
+[PLAN.md](PLAN.md) for the plan, and [CLAUDE.md](CLAUDE.md) for working conventions.
+
+Already set up on Sam's machine: Unity **6000.6.0f1** at
+`/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app`. That editor binary also runs the test
+suites and the scene builders headlessly (commands in CLAUDE.md, "Testing & running") — note it
+needs the Editor **closed**, since an open Editor holds a lock on `/client`. There is no system
+`dotnet`; the bundled SDK under the editor's
+`Contents/Resources/Scripting/DotNetSdk/dotnet` is what builds Unity's generated `client/*.csproj`
+if you want a typecheck without closing the Editor.
 
 ## 1. Install Unity (required, do this first)
 
@@ -10,8 +19,10 @@ for the project plan and [CLAUDE.md](CLAUDE.md) for working conventions.
 2. **Unity ID** — create a free account and sign into Unity Hub with it. Under license
    activation, choose the free **Personal** plan (fine for a hobby project; you'd only need
    Plus/Pro at high revenue, irrelevant here).
-3. In Unity Hub → **Installs** → **Install Editor**, pick the current **LTS** release (don't
-   pick a "Tech Stream"/beta version — LTS is the stable one). Expect ~10GB+ for the editor alone.
+3. In Unity Hub → **Installs** → **Install Editor**, install the exact version pinned in
+   `client/ProjectSettings/ProjectVersion.txt` (**6000.6.0f1**) rather than "whatever's current" —
+   opening the project on a different version will silently upgrade and re-serialize it. Expect
+   ~10GB+ for the editor alone.
 4. During that install, check these modules in the module picker:
    - iOS Build Support
    - Android Build Support (bundles the Android SDK/NDK/OpenJDK — no separate Android Studio
@@ -44,15 +55,16 @@ for the project plan and [CLAUDE.md](CLAUDE.md) for working conventions.
 2. Alternative: JetBrains Rider has best-in-class Unity support but isn't free long-term — not
    necessary to start.
 
-## 5. Decisions to have ready (quick, not installs)
+## 5. Still open
 
-1. A working title/codename for the project (used as the Unity project name).
-2. A placeholder bundle identifier in reverse-DNS form, e.g. `com.<yourname>.pets` — cosmetic
-   now, but Unity asks for it during project creation and it's annoying to rename later.
+1. **A working title/codename.** Still TBD (PLAN.md §1 floats "Astromon" as a placeholder for
+   anywhere a non-Pokémon-branded string is needed). The Unity project is just `client`.
+2. **CI's Unity license.** `.github/workflows/ci.yml` needs `UNITY_LICENSE` (plus
+   `UNITY_EMAIL`/`UNITY_PASSWORD` or `UNITY_SERIAL`) as repo secrets to activate a license in CI.
+   Until those exist the client job is `continue-on-error: true`, so **CI doesn't actually gate
+   merges** — remove that flag once the secrets are set.
 
 ## What's next
 
-Once Unity is installed and you've created a blank project (Unity Hub → New Project → **2D
-Core** template, pointed at `/client` in this repo), let's scaffold from there: a Unity-specific
-`.gitignore`, the folder structure from PLAN.md (`Scripts/Simulation`, `Scripts/Data`,
-`Scripts/Gameplay`, etc.), and starter C# files.
+Open `/client` through Unity Hub and press play on `Assets/Scenes/Home.unity`. Read PLAN.md §6
+Status before starting work — it's the account of what's actually built versus planned.

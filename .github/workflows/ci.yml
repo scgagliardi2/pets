@@ -31,7 +31,8 @@ jobs:
         with:
           projectPath: client
           # Both modes: the PlayMode suites are the only automated coverage of the actual saved
-          # scenes and their button wiring (ForestScenePlayModeTests etc.), so EditMode alone
+          # scenes and their button wiring (NavigationScenePlayModeTests, RegionMapScenePlayModeTests,
+          # CharacterSelectScenePlayModeTests, DevRosterScenePlayModeTests), so EditMode alone
           # can't catch a scene that stopped matching its controllers.
           testMode: all
 
@@ -45,8 +46,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
-      # No lockfile/deps yet (server is an empty Phase 0 scaffold) — install becomes real once
-      # Phase 3 introduces actual dependencies.
+      # server/ is structure only (empty .gitkeep dirs); `npm test` is a stub that exits 0.
+      # This becomes a real install/test once Phase 3 introduces actual dependencies.
       - run: npm install --no-audit --no-fund
         working-directory: server
       - run: npm test

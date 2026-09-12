@@ -1,6 +1,6 @@
 # ADR 0001: Pivot to Pokémon Roguelite Autobattler
 
-**Status:** Accepted
+**Status:** Accepted; point 4 superseded in practice (see Amendment below)
 **Date:** 2026-09-10
 
 ## Context
@@ -62,3 +62,15 @@ turn-based vs. 2-slot Step-based), IP (original vs. Pokémon-skinned), and even 
 - The 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre, Groudon) and the
   183-species roster generally are subject to the same non-commercial scope note as the rest of
   the project.
+
+## Amendment (2026-09-12)
+
+- **Point 4 did not hold.** The old 5-slot code was **deleted**, not kept alongside for reference:
+  `Gameplay/ShopEconomy`, the old `Simulation`, the 14-creature roster and the old fixtures are all
+  gone from the tree, on the working decision that a parallel implementation of a superseded combat
+  model was more confusing than useful. Recover from git history if anything is ever wanted back.
+  Nothing pre-pivot remains in `client/`.
+- **The "docs and code will be inconsistent for a while" consequence is resolved in that
+  direction** — the sim now matches `docs/battle-sim-spec.md` — **but reappeared in the other
+  direction:** the docs came to describe screens and pipelines that were never built. See
+  [ADR 0002](0002-shell-first-deviation.md) and the 2026-09-12 re-alignment of PLAN.md §6.

@@ -4,25 +4,41 @@ Guidance for working in this repo. See [PLAN.md](PLAN.md) for the condensed plan
 roadmap, and [`docs/pokemon-roguelite-autobattler-design-doc.md`](docs/pokemon-roguelite-autobattler-design-doc.md)
 for the full design — read both before starting non-trivial work if you haven't already.
 [`docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`](docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md)
-explains why the project looks the way it does and what's still catching up to the new design.
+explains why the project looks the way it does; [`0002-shell-first-deviation.md`](docs/architecture-decisions/0002-shell-first-deviation.md)
+explains why what's built doesn't match the plan's order, and which deviations from the design doc
+are still open questions.
 
 ## Project snapshot
 
 A single-player roguelite (Slay the Spire–style meta-layer) wrapped around a Super Auto
 Pets–style Lead/Support auto-battler, themed with Pokémon species/types/assets.
 - Client: Unity (C#), `/client`.
-- Backend: Node.js/TypeScript + PostgreSQL, `/server` — **not built yet**, introduced once the
-  solo roguelite loop is solid (see PLAN.md §6, Phase 3). Don't add backend networking code to the
-  client before then.
+- Backend: Node.js/TypeScript + PostgreSQL, `/server` — **scaffolding only** (folder structure,
+  `package.json`, `tsconfig.json`; every source dir is an empty `.gitkeep`). Introduced for real
+  once the solo roguelite loop is solid (see PLAN.md §6, Phase 3). Don't add backend networking
+  code to the client, or real routes/services to `/server`, before then.
 - Shared specs/fixtures: `/shared`, `/docs`.
 
-Current phase: check PLAN.md §6 for the active phase and its exit criteria before assuming what
-exists. **As of the pivot, the code under `client/Assets/Scripts/Simulation` and
-`Gameplay/ShopEconomy` implements the *old* design (5-slot board, turn-based rounds,
-hurt/faint triggers) and does not match `docs/battle-sim-spec.md`.** Don't extend that code as if
-it were current — reworking it to the new Lead/Support/Step model is Phase 0's actual task. If
-you're not sure whether something is pre- or post-pivot, check the file/class against
-`docs/battle-sim-spec.md` and `docs/content-schema.md` rather than assuming.
+**Current state: read PLAN.md §6's Status block first.** It is the only accurate account of what
+exists — the phase list under it describes intent, and the build has deviated from that order
+(ADR 0002). The short version, as of 2026-09-12:
+- Everything in the tree is **post-pivot**. The old 5-slot code and `Gameplay/ShopEconomy` were
+  deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
+  extend, not replace.
+- The game's **shell** is built and playable (Home → Character Select → a walkable Location map,
+  plus an in-run menu, Team, History, Credits, a dev roster screen). The **run inside it is not**:
+  arriving at a map node does nothing, and no scene runs a battle. The simulator only executes
+  from tests.
+- Six `Scripts/Gameplay` controllers (`LocationFlowController`, `PvEClashController`,
+  `MapPanelController`, `CampPanelController`, `ResourceBarController`, `LocationHubController`)
+  and `Prefabs/UI/CampOverlay.prefab` are attached to **no scene** — orphaned when the Forest hub
+  became the Ingame Menu, kept for the node-resolution work they'll be reused for. Don't assume a
+  controller is live because it exists; check whether a scene references it.
+- `RegionMap*` is misnamed: it's the **Location** node-map (design doc §5), not the Region tier
+  (§4/§5.2), which isn't built. See PLAN.md §6 "Known naming debt" before adding to it.
+- There is **no save/load layer** (so "Continue Run" only resumes a run still in memory, and
+  History has nothing to list) and **no content-import pipeline** (the 28 curated species were
+  hand-authored asset by asset). Both are still in the plan; neither is built.
 
 ## Hard rules
 
@@ -40,8 +56,12 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
 - **Content is data, not code.** Species, passives, and items are ScriptableObject instances (see
   `docs/content-schema.md`). Don't hardcode a new C# class per Pokémon or per passive — if the
   existing passive/effect vocabulary can't express something, extend the vocabulary, don't
-  special-case it. Stats for the 183-species roster come from `docs/pokemon_stats_unique.xlsx` via
-  the content-import pipeline (PLAN.md §8), not hand-typed per species.
+  special-case it. Stats come from `docs/pokemon_stats_unique.xlsx` — never invented, and never
+  hand-tuned in the asset without updating the sheet. **The content-import pipeline PLAN.md §8
+  describes doesn't exist yet**, so today that means typing sheet values into the asset by hand;
+  if you're asked to add more than a handful of species, build the importer instead (PLAN.md §8).
+  Adding or editing a content asset means re-running `ContentIntegrityTests` — an asset that isn't
+  registered in its library is invisible to the game and silent otherwise.
 - **No new tests-optional logic in the simulator.** Any change to the battle-sim code needs an
   accompanying EditMode test — this is the one part of the codebase where bugs are both easy to
   introduce and hard to notice by eye.
@@ -55,12 +75,26 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
 ## Repository layout
 
 ```
-/client    Unity project (C#)
-/server    Node/TS backend — not started; introduced once solo loop is solid
+/client    Unity project (C#, 6000.6.0f1)
+  Assets/Scripts/Simulation   pure C# per-Step battle logic (incl. both runners in BattleRunner.cs)
+  Assets/Scripts/Meta         pure C# run layer: RunState, map generation/traversal, resolvers
+  Assets/Scripts/Data         ScriptableObject authoring assets + runtime registries
+  Assets/Scripts/Gameplay     MonoBehaviour screen controllers, navigation, run bootstrap
+  Assets/Scripts/UI           shared view helpers (PokemonCardBuilder, TypeIconView, Theme)
+  Assets/Scripts/Tests        EditMode at the root, PlayMode under Tests/PlayMode
+  Assets/Content              species/passive assets + their libraries
+  Assets/Editor               scene + prefab builders, dev tooling
+  Assets/Resources            runtime-loaded Sprites/{Pokemon,Types,Nodes,UI} and Fonts
+  Assets/Scenes               GENERATED — never hand-edit (see Working conventions)
+/server    Node/TS backend — scaffolding only; introduced once solo loop is solid
 /shared    Golden battle-sim fixtures (JSON) used by both client and (later) server tests
+/tools     one-off content/asset scripts (generate_ui_sprites.py)
 /docs      pokemon-roguelite-autobattler-design-doc.md (full design), pokemon_stats_unique.xlsx
            (roster), battle-sim-spec.md, content-schema.md, architecture-decisions/
 ```
+
+There is no `Scripts/BattleRunner` or `Scripts/Minigame`, and `Assets/Art` is empty — art lives
+under `Assets/Resources/Sprites`. See PLAN.md §5 for why.
 
 ## Working conventions
 
@@ -68,9 +102,19 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
   keep it simple, but still don't commit directly to `main` for anything non-trivial so history
   stays reviewable.
 - **Commits:** small and scoped to one change; explain *why* in the body when the reason isn't
-  obvious from the diff. If a commit reworks something the old design touched, say so explicitly
-  (e.g. "Rework Simulation for Lead/Support Steps (supersedes old 5-slot model, PLAN.md Phase 0)")
-  so the history stays legible about the pivot.
+  obvious from the diff. A regenerated scene reshuffles every fileID in the file, so a commit that
+  touches a builder will carry a large unreadable `.unity` diff — that's expected; say so in the
+  body rather than trying to split the commit by scene.
+- **Scenes are generated from code — never hand-edit a `.unity` file.** Every scene has an
+  `Assets/Editor/*SceneBuilder.cs` that creates it, sharing `SceneBuilderUtils.cs` for uGUI
+  construction, with `SceneCatalog.cs` owning the Build Settings list. After changing a builder, a
+  controller's serialized fields, `Assets/Prefabs/UI`, or `Pets.UI.Theme`, re-run
+  `Pets > Build All Scenes` (or the single builder's `Build`) — a hand-patched scene will be
+  silently overwritten by the next build, and an un-rebuilt scene is how a working controller ends
+  up wired to nothing.
+- **A new scene must go in `SceneCatalog.AllScenePaths` and `Gameplay/SceneNames`**, or
+  `SceneManager.LoadScene` won't resolve it and the button that navigates there fails at runtime
+  only.
 - **C# style:** standard Unity/.NET conventions (PascalCase for public members/types, camelCase
   for private fields, no Hungarian notation). Prefer plain C# classes/structs over
   MonoBehaviours wherever scene attachment isn't actually needed (this matters most in the
@@ -84,9 +128,25 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
 
 ## Testing & running
 
-- **Client tests:** Unity Test Runner — EditMode tests for the battle-sim code (and anything else
-  that doesn't need a scene), PlayMode tests for node-map/hub/battle-screen integration. Run via
-  Unity Editor's Test Runner window or `Unity -runTests` in CI.
+- **Client tests:** Unity Test Runner — EditMode for the battle-sim and Meta code (anything that
+  doesn't need a scene), PlayMode for the saved scenes and their button wiring. Run from the
+  Editor's Test Runner window, or headlessly (the Editor must be **closed** — it holds a project
+  lock):
+
+  ```sh
+  UNITY=/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity
+  $UNITY -batchmode -runTests -testPlatform EditMode -projectPath client \
+         -testResults /tmp/edit.xml -logFile /tmp/edit.log
+  $UNITY -batchmode -runTests -testPlatform PlayMode -projectPath client \
+         -testResults /tmp/play.xml -logFile /tmp/play.log
+  ```
+
+  Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
+  2026-09-12: **99 EditMode, 46 PlayMode, all passing**. Same binary rebuilds scenes headlessly:
+  `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll`.
+- **CI is not a gate yet:** the client job in `.github/workflows/ci.yml` is `continue-on-error`
+  until `UNITY_LICENSE` secrets exist, so a red client suite won't block a merge. Run the suites
+  locally before saying work is done.
 - **Server tests (Phase 3+):** `vitest` (or the configured runner) against a disposable
   Postgres via Docker Compose — don't mock the database for anything touching real queries.
 - **Golden fixtures:** when changing battle-sim rules, update/add cases in `/shared/fixtures` and
@@ -95,8 +155,11 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
 - Before reporting simulation or gameplay-logic work as complete, run the relevant automated
   tests — don't rely on "looks right in the editor" for anything with test coverage available.
 - For UI changes, actually press play in the Unity editor and click through the affected flow
-  (node-map, catching, Trailblazer, hub tabs) before calling it done; type/compile success isn't
-  feature success.
+  (Home/menu shell, Character Select, the Location map, Team) before calling it done;
+  type/compile success isn't feature success, and neither is a passing PlayMode test — it clicks
+  the buttons it knows about, it doesn't look at the screen.
+- A PlayMode test is the minimum bar for a **new screen or a new button**: the wiring between a
+  generated scene and its controller is exactly what compiles fine and does nothing.
 
 ## Documentation to keep current
 
@@ -111,6 +174,23 @@ you're not sure whether something is pre- or post-pivot, check the file/class ag
   with the actual ScriptableObject fields and JSON export format.
 - `docs/pokemon_stats_unique.xlsx` — the roster source. If stats change during balancing, update
   the sheet, don't let hand-edited ScriptableObject values silently diverge from it.
+- `PLAN.md` §6 Status — **the one doc that goes stale fastest.** It's the account of what exists
+  versus what's merely planned, and it's the first thing anyone (human or agent) reads to orient.
+  If you finish a screen, retire one, orphan a controller, or discover something the plan claims
+  exists but doesn't, update §6 in the same change. Don't describe planned work there as though
+  it's built — that's precisely the drift the 2026-09-12 re-alignment had to undo.
 - Short ADRs in `docs/architecture-decisions/` for decisions worth remembering the reasoning
-  behind later (ADR 0001 — the pivot itself — is the template for these) — not required for
-  routine work.
+  behind later (ADR 0001 — the pivot — and ADR 0002 — the shell-first deviation — are the
+  templates) — not required for routine work, but write one when you knowingly depart from the
+  plan or the design doc, rather than leaving the next reader to infer it from the diff.
+
+## When code and the design doc disagree
+
+The design doc is the design source of truth, but it was written ahead of the build and parts of
+it have been overtaken. When you hit a conflict, don't silently pick a side:
+- If the code is **wrong**, fix the code.
+- If the code is **better**, update the design doc's section (or add to its §20 Open Questions)
+  and note the deviation in PLAN.md §6 — ADR 0002 lists the live ones (Location Hub tabs vs.
+  separate scenes, Camp vs. Pokémon Center on the map, Character Select's scope).
+- If you can't tell, leave both and write it down. An unrecorded deviation is the expensive
+  outcome; a recorded one is just a decision waiting to be made.

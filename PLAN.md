@@ -2,8 +2,10 @@
 
 > **Pivot note (2026-09-10):** This plan supersedes the earlier "generic shop-drafting
 > auto-battler" plan. See [`docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`](docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md)
-> for why, and for what happens to the Phase 0–2 code already built against the old design (short
-> version: kept for reference, not the source of truth). The full, detailed design lives in
+> for why, and for what happened to the Phase 0–2 code already built against the old design (short
+> version: it was deleted, not kept alongside — ADR 0001 said "kept for reference", the working
+> decision went the other way). [`0002-shell-first-deviation.md`](docs/architecture-decisions/0002-shell-first-deviation.md)
+> records why what's built no longer lines up with the phase order below. The full, detailed design lives in
 > [`docs/pokemon-roguelite-autobattler-design-doc.md`](docs/pokemon-roguelite-autobattler-design-doc.md)
 > — this file is the condensed plan + roadmap; go to the design doc for exhaustive mechanics
 > detail (exact node types, catch-chance formula, screen inventory, etc.).
@@ -31,7 +33,8 @@ fair-use guidelines for attribution/caching etiquette before pulling from it in 
   overriding that and staying on Unity — see ADR 0001.)
 - Backend: custom Node.js/TypeScript + PostgreSQL, introduced once the solo roguelite loop is
   solid (async PvP needs it; solo play doesn't).
-- MVP: one hand-authored Location, a small curated slice of species, no backend.
+- MVP: one hand-authored Location, a small curated slice of species, no backend. (Reality check:
+  the curated slice and the sim exist; the playable Location does not yet — see §6 Status.)
 
 ## 2. Core Game Design
 
@@ -97,7 +100,7 @@ against.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Client engine | Unity (LTS version, C#) | 2D, uGUI or UI Toolkit for hub/map/battle UI |
+| Client engine | Unity 6000.6.0f1 (C#) | 2D, uGUI (not UI Toolkit) for every screen built so far; pinned in `client/ProjectSettings/ProjectVersion.txt` |
 | Client testing | Unity Test Framework (NUnit), EditMode for sim logic, PlayMode for integration | |
 | Species/type data | PokeAPI, cached locally at build/content-import time | Filtered to the curated Gen 1–3 roster (§8 of the design doc, `docs/pokemon_stats_unique.xlsx`) |
 | Backend runtime | Node.js + TypeScript | Introduced once solo loop is solid (design doc Phase 3) |
@@ -106,39 +109,42 @@ against.
 | Backend testing | Vitest + Supertest, test DB via Docker Compose | |
 | CI | GitHub Actions | Lint + test on push/PR for both client and server |
 | Source control | Git (this repo), trunk-based on `main` with short-lived feature branches | |
-| Placeholder art | Free/CC0 packs or primitives until real Pokémon-style sprites are sourced (PokeAPI sprites are the eventual real asset source) | |
+| Art | PokeAPI official-artwork sprites, cached under `client/Assets/Resources/Sprites/Pokemon/` for all 183 roster species; type/node/UI sprites alongside them | Loaded at runtime via `Resources`, see §8 |
 
 ## 5. Repository Structure
 
-The design doc's own suggested layout (§18) is written for a React/TS frontend; this is the same
-conceptual split re-expressed for Unity:
+This is the **actual** layout as built, not an aspiration — the design doc's own suggested layout
+(§18) is written for a React/TS frontend, and this is the same conceptual split re-expressed for
+Unity. Where a folder the earlier plan named doesn't exist, that's noted inline rather than left
+to look like a missing piece.
 
 ```
 /pets
-  PLAN.md
-  CLAUDE.md
-  README.md
-  /client                 # Unity project
+  PLAN.md  CLAUDE.md  README.md  SETUP.md
+  /client                     # Unity project (6000.6.0f1, see client/ProjectSettings/ProjectVersion.txt)
     /Assets
       /Scripts
-        /Simulation        # Pure C#, no MonoBehaviour deps — per-Step battle logic (§10 of the design doc)
-        /BattleRunner      # Precomputed Step-log runner (Gym/PvP) + on-demand runner (PvE)
-        /Data              # ScriptableObject content: species, passives, items, locations, gyms
-        /Meta              # Region/Location generation, run state (roster, map position, morale, money)
-        /Minigame          # Trailblazer canvas/lane module — no dependency on Simulation
-        /Gameplay          # MonoBehaviours: hub screens, node-map, camp, shop, catching interaction
-        /UI
-        /Tests             # EditMode + PlayMode tests
-      /Content              # ScriptableObject data instances (curated species, passives, items)
-      /Art                  # Placeholder + eventual PokeAPI-sourced sprites
-  /server                  # Node/TS backend (added once solo loop is solid)
-    /src
-      /routes
-      /services
-      /db
-    /test
-  /shared                  # Language-agnostic specs & fixtures both sides test against
-    /fixtures               # Golden battle-sim Step-log test cases (JSON)
+        /Simulation           # Pure C#, no MonoBehaviour deps — per-Step battle logic (design doc §10).
+                              #   Includes BattleRunner.cs (both runners live here; there is no
+                              #   separate /BattleRunner folder — the earlier plan named one).
+        /Data                 # ScriptableObject authoring assets + runtime registries/factories
+        /Meta                 # Pure C# run layer: RunState, map generation/traversal, encounters,
+                              #   EXP, camp/catch resolvers
+        /Gameplay             # MonoBehaviours: screen controllers, scene navigation, run bootstrap
+        /UI                   # Shared view helpers (PokemonCardBuilder, TypeIconView, Theme, UiButton)
+        /Tests                # EditMode tests at the root, PlayMode tests under /Tests/PlayMode
+      /Content                # ScriptableObject data instances (species, passives, libraries)
+      /Editor                 # Scene/prefab builders + dev tooling (see the scene-builder rule below)
+      /Prefabs/UI             # Shared uGUI prefabs the scene builders instantiate
+      /Resources              # Runtime-loaded assets: Sprites/{Pokemon,Types,Nodes,UI}, Fonts
+      /Scenes                 # Generated scenes — never hand-edit (see below)
+  /server                     # Node/TS backend — folder structure + package.json only, no code
+                              #   until Phase 3
+    /src/{routes,services,db} # empty (.gitkeep)
+    /test                     # empty (.gitkeep)
+  /shared
+    /fixtures                 # Golden battle-sim cases (JSON), run by GoldenFixtureTests.cs
+  /tools                      # One-off content/asset scripts (generate_ui_sprites.py)
   /docs
     pokemon-roguelite-autobattler-design-doc.md   # full design source
     pokemon_stats_unique.xlsx                     # locked-in 183-species roster (stats are placeholders)
@@ -147,136 +153,154 @@ conceptual split re-expressed for Unity:
     architecture-decisions/
 ```
 
+Folders the earlier version of this plan listed that deliberately **don't** exist:
+- `Scripts/BattleRunner` — the two runners are `Simulation/BattleRunner.cs`; splitting them into
+  their own assembly folder bought nothing.
+- `Scripts/Minigame` — Trailblazer isn't built (Phase 1).
+- `Assets/Art` — exists but is empty; all art is runtime-loaded from `Assets/Resources/Sprites/`
+  via `Pets.Data.PokemonSprites` and the sprite-name lookups in the scene controllers, so new art
+  goes under `Resources`, not `Art`.
+
+**Scenes are generated from code.** Every scene in `Assets/Scenes` is produced by an
+`Assets/Editor/*SceneBuilder.cs`, with `Assets/Editor/SceneCatalog.cs` owning the Build Settings
+list and the `Pets > Build All Scenes` menu item. Don't hand-edit a `.unity` file: change the
+builder (or the controller's serialized fields) and re-run the builder. Regenerating a scene
+reshuffles every fileID in it, so per-scene diffs are always churn — don't try to split a commit
+by scene.
+
 ## 6. Development Phases
 
-Phases are milestones, not deadlines — move on only when the current phase is genuinely playable
-end-to-end. Numbering resets from the old plan (see ADR 0001) since the actual combat/content
-code needs reworking to match the new Lead/Support model before any of it counts as "done" here.
+Phases are milestones, not deadlines. They were numbered fresh at the pivot (ADR 0001) because the
+combat/content code had to be reworked to the Lead/Support model before any of it counted as
+"done" — that rework is finished. The list is **intent, in a sensible order**; it is not a record
+of progress, and the build has not followed it strictly (ADR 0002). The Status block immediately
+below is the record.
 
-**Status (as of 2026-09-11):** Design pivot accepted (ADR 0001). Docs (this file, CLAUDE.md,
-README.md, battle-sim-spec.md, content-schema.md) describe the new direction. **Phase 0's exit
-criteria are met and the Forest Location is playable end to end:**
-- `client/Assets/Scripts/Simulation` implements the Lead/Support/Step model (battle-sim-spec.md),
-  with EditMode unit tests (`StepSimulatorTests.cs`) and golden fixtures in `/shared/fixtures`
-  (`GoldenFixtureTests.cs`).
-- Content for 13 curated species (with hand-authored passives) lives under `client/Assets/Content`
-  and is exercised by `PokemonContentTests.cs` (a full PvE-style fight against real content, start
-  to end).
-- `client/Assets/Scripts/Meta` (plain C#, EditMode-tested via `RunMetaTests.cs`) implements
-  `RunState`, a linear Forest node sequence (`ForestLocationFactory`: PvE/PvE/Camp/PvE/PvE — no
-  branching or Gym node yet, both Phase 1), seeded wild-encounter generation, EXP/level-up, Camp's
-  EXP+buff grant, and the stubbed "pick 1 from defeated" catch.
-- `client/Assets/Scripts/Gameplay` implements the Location Hub (Team/Map/Shop/Center tabs) and the
-  PvE Clash/Camp overlay screens as MonoBehaviours over the Meta layer. **The hub scene itself
-  (`Game.unity`, `ForestSceneBuilder.cs`, `ForestScenePlayModeTests.cs`) has since been retired** —
-  see the shell bullet under Phase 1 progress: `Game.unity` became the Ingame Menu, and the Region
-  Map is the run's map now rather than the hub's Map tab. The controllers are still in `Gameplay`
-  (unused by any scene) for the Shop/Pokémon Center/PvE work they'll be reused for; the hub scene
-  is recoverable from git history if that turns out to be the wrong call.
-- Every scene in the project is generated from code by an `Assets/Editor/*SceneBuilder.cs` rather
-  than hand-edited, so re-run the relevant `Pets > Build ...` menu item (or `Pets > Build All
-  Scenes`) after changing any controller's serialized fields instead of patching the scene by hand.
-  The PlayMode tests drive the actual saved scenes (clicking real buttons via `Transform.Find` +
-  `Button.onClick.Invoke()`) to verify the wiring itself, not just the underlying logic.
-- Shop and Pokémon Center tabs are static placeholder text — their real functionality is Phase 1+
-  (design doc §13, §12.2). Trailblazer isn't a screen at all yet (stubbed as instant/skipped, per
-  Phase 0's scope) — there's exactly one Location, so there's nothing to travel between yet.
-- The old 5-slot-model code (`Simulation`, `Data`, `Gameplay`, `UI`, `Editor` content-seeding) was
-  deleted rather than kept alongside, per the working decision to rebuild rather than preserve it.
+**Status (as of 2026-09-12) — read this before trusting the phase list below.** The last few days
+of work went into the **game's shell** (Home, in-run menu, Team, a walkable Location map, Character
+Select) rather than down the Phase 0/1 roadmap as written, so "what's built" no longer maps cleanly
+onto phase boundaries. ADR 0002 records that deviation and why. The honest summary:
 
-**Phase 1 progress so far:**
-- Character Select (design doc §3) is playable: `Assets/Scenes/CharacterSelect.unity`
-  (`CharacterSelectSceneBuilder.cs`) shows every curated species in a scrollable stat grid, picked
-  once as Starter and once as Secondary (excluding the Starter from the second pass), then hands
-  the pair to `RunBootstrapper` via `PendingRunSelection` and loads `RegionMap.unity`. This is a
-  simplification of §3's actual flow (fixed/chosen starter + a narrowed 3-option secondary pick +
-  cosmetics) — full parity with §3 is still open. Covered end to end by
-  `CharacterSelectScenePlayModeTests.cs`.
-- The curated roster has grown from Phase 0's 13 species to 28 (`Assets/Content/Species`,
-  `Assets/Content/PokemonSpeciesLibrary.asset`), adding four more type-flavored passives (Fairy,
-  Ghost, Dragon, Ice — `Assets/Content/Passives`) so every curated species still resolves a real
-  passive per `PokemonContentTests.cs`; most new species reuse an existing type-flavored passive
-  rather than getting a bespoke one, per content-schema.md §3's "reusable across species" note.
-  Character Select's grid now has a Type filter (cycles through all 18 types plus "All") and
-  Attack/Speed/Health sort toggles (click to sort high-to-low, click again for low-to-high) above
-  the stat grid, applying to both the Starter and Secondary picks.
-- A branching Region/Location node-map generator exists (`Meta/RegionMapGenerator.cs`, covered by
-  `RegionMapGeneratorTests.cs`) and is walkable: the map opens on a fixed 3 options
-  (`RegionMapGenerator.StartingOptionCount`), branches through 5 choice layers
-  (`ChoiceLayerCount`), and always funnels into one mandatory Gym node — with no dead ends, no
-  unreachable nodes, and no crossing edges (`Meta/RegionMapTraversal.cs`, covered by
-  `RegionMapTraversalTests.cs`, models the walk itself: current node, visited path, and which next
-  nodes are legal). `Assets/Scenes/RegionMap.unity`
-  (`RegionMapController.cs`/`RegionMapSceneBuilder.cs`) renders it as a scrollable, bottom-anchored
-  map over a placeholder solid-color background, with a player token that slides between nodes on
-  click, only the currently-reachable nodes clickable, the walked path highlighted, and a "New
-  Map" button to re-roll — covered end to end by `RegionMapScenePlayModeTests.cs` (clicking real
-  node Buttons, walking start-to-Gym). **Still a standalone prototype** — it is not wired into the
-  Forest run loop (arriving at a node doesn't start a fight/event/camp yet), and Forest's own map
-  is still the separate, actually-playable linear PvE/PvE/Camp/PvE/PvE sequence from
-  `ForestLocationFactory`. Reconciling the two (making Forest's map an instance of this branching
-  generator, with real per-node resolution) is the next Phase 1 step in this area.
-- Every scene builder shares `Assets/Editor/SceneBuilderUtils.cs` for uGUI construction
-  (camera/EventSystem/canvas/panel/text/button/scroll-view helpers) rather than duplicating that
-  code per scene. `Assets/Editor/SceneCatalog.cs` owns the Build Settings scene list (and
-  `Pets > Build All Scenes`), so no single builder can leave it stale.
-- The game has a shell around the run: `Home.unity` (Continue Run / New Game, plus History,
-  Credits and Quit) → `CharacterSelect.unity` → `RegionMap.unity`, with the Map's "Menu" button
-  opening `IngameMenu.unity` (Back to Map / Team / Dev: Add Pokemon / Quit to Home). `Team.unity`
-  shows the run's party as a row of six slots with the Box's first six below it, each filled slot
-  drawing the mon's sprite, type icons and stats through the same `UI/PokemonCardBuilder.cs` that
-  draws Character Select's cards — slot 0 is labelled Lead, slot 1 Support, and the rest are
-  Reserve and dimmed, since only the front two are ever mechanically active (design doc §7).
-  Mons are rearranged by **dragging a card onto another slot** in either row: a drop on an
-  occupied slot trades the two, a drop on an empty one appends to that collection, and the party
-  can never be emptied (`RunState.MoveMon`, covered by `RunMetaTests.cs`; the gesture itself lives
-  in `Gameplay/TeamSlotView.cs` + `TeamPanelController`, covered by
-  `NavigationScenePlayModeTests.cs`). Dragging a card onto the bottom bar's release zone lets that
-  mon go for good (`RunState.ReleaseMon`) — irreversible, so it asks first, and it obeys the same
-  party-never-empty rule, saying so in the dialog rather than silently doing nothing. The
-  Lead/Support button stays as a one-click shortcut for the most common swap. `History.unity` and `Credits.unity` hang off Home: Credits
-  carries the Pokémon/PokeAPI/font attribution and the non-commercial scope note, History is a
-  real screen with an honest empty state (nothing records a finished run yet). The old Forest hub
-  scene was converted into the Ingame Menu rather than kept alongside. Navigation is one
-  `Gameplay/SceneNavigator.cs` component the builders wire every menu button to;
-  `Gameplay/ActiveRun.cs` holds the `RunState` across those scene loads (`RunBootstrapper` now
-  publishes to it, and adopts an existing run instead of rerolling one when the Map is re-entered).
-  Covered by `NavigationScenePlayModeTests.cs`. **Still a shell:** "Continue Run" only resumes a
-  run still in memory this session (it's hidden when `ActiveRun` is empty) and Home has no
-  Options, because "Quit to Home" doesn't save — real resuming, and anything for History to list,
-  is the local-save work in Phase 2. Box slots past the first six aren't paged either.
-- `DevRoster.unity` (`Gameplay/DevRosterController.cs`, reached from the Ingame Menu) is a dev
-  tool, not a game screen: a Character Select-style grid of the whole roster where clicking a card
-  drops that species straight into the run's party or Box, duplicates allowed, so a team state
-  worth testing against doesn't have to be played for. It ships in the build like everything else
-  — per §9 there's no release channel to keep it out of — and it is *not* the Pokémon Center
-  (real adoption with costs and rules is Phase 1, design doc §12). Covered by
-  `DevRosterScenePlayModeTests.cs`.
+*What you can actually play right now:* `Home` → `CharacterSelect` (pick Starter + Secondary) →
+`RegionMap` (walk a branching node map to the Gym), with `IngameMenu` → `Team` (drag to
+rearrange/release) / `DevRoster` (stuff mons into the run) hanging off it, plus `History` and
+`Credits` off Home. **No battle is playable in any scene.** Arriving at a node does nothing yet;
+the simulator only ever runs from tests.
 
-**Not yet built (Phase 1):** wiring the branching Region Map into an actual playable Location (node
-resolution, Gym/Badge battle, PvP/Event node behavior), Team management beyond the Lead/Support
-drag-reorder and release (paging a Box past six slots, EXP/evolution from this screen), the real drag-and-
-drop catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
-economy, narrowing Character Select to match design doc §3 exactly, and any save/load layer.
+*Verified green as of this writing:* 99 EditMode and 46 PlayMode tests pass (see CLAUDE.md for the
+CLI commands).
 
-**Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)**
-- Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step
+**Built and covered by tests:**
+- `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
+  Step loop, charge meters, statuses, both runners — with `StepSimulatorTests.cs` and golden
+  fixtures in `/shared/fixtures` (`GoldenFixtureTests.cs`).
+- 28 curated species and 17 hand-authored type-flavored passives under `client/Assets/Content`,
+  with `PokemonContentTests.cs` running a full real-content fight start to end and
+  `ContentIntegrityTests.cs` guarding that every on-disk asset is registered in its library and
+  resolves its sprite. All 183 roster sprites are cached under
+  `Assets/Resources/Sprites/Pokemon/{id}.png`, so authoring a not-yet-curated species only needs
+  its `SpriteSource` set — no fresh art fetch.
+- `Scripts/Meta` (pure C#): `RunState` (line-up/Box/Money/Morale/seed, `MoveMon`, `ReleaseMon`),
+  seeded wild-encounter generation, EXP/level-up, Camp's EXP+buff grant, the stubbed
+  "pick 1 from defeated" catch, and a branching map generator + traversal model
+  (`RegionMapGenerator`, `RegionMapTraversal`) that produces no dead ends, no unreachable nodes
+  and no crossing edges. Covered by `RunMetaTests.cs`, `RegionMapGeneratorTests.cs`,
+  `RegionMapTraversalTests.cs`.
+- Screens, all generated by `Assets/Editor/*SceneBuilder.cs` and driven end-to-end by PlayMode
+  tests that click the real `Button`s in the saved scenes:
+  - `Home.unity` — Continue Run (only when a run is live in memory) / New Game / History /
+    Credits / Quit.
+  - `CharacterSelect.unity` — the whole curated roster in a scrollable stat grid with a Type
+    filter and Attack/Speed/Health sort toggles; picks Starter then Secondary, hands the pair to
+    `RunBootstrapper` via `PendingRunSelection`. Simpler than design doc §3 (which wants a
+    fixed/chosen starter, a narrowed 3-option secondary, and cosmetics) — full §3 parity is open.
+  - `RegionMap.unity` — the branching map, flowing left to right, with a player token that slides
+    between nodes, only forward-reachable nodes clickable, the walked path highlighted, and a
+    "New Map" re-roll.
+  - `IngameMenu.unity` — Back to Map / Team / Dev: Add Pokemon / Quit to Home. (This scene is the
+    old Forest hub `Game.unity`, converted rather than kept alongside.)
+  - `Team.unity` — party and Box as six slots each, real mon cards via `UI/PokemonCardBuilder.cs`,
+    slot 0 Lead / slot 1 Support / rest Reserve and dimmed (only the front two are ever active,
+    design doc §7). Drag a card onto another slot to trade or append; drag onto the bottom bar's
+    release zone to release it for good (asks first, irreversible, party can never be emptied).
+  - `History.unity` / `Credits.unity` — Credits carries the Pokémon/PokeAPI/font attribution and
+    the non-commercial scope note; History is a real screen with an honest empty state, because
+    nothing records a finished run yet.
+  - `DevRoster.unity` — a dev tool, not a game screen: click a card to drop that species into the
+    run's party or Box, duplicates allowed. It ships in the build (per §9 there's no release
+    channel to keep it out of) and is *not* the Pokémon Center.
+- Plumbing: `Gameplay/SceneNavigator.cs` (one component every menu button is wired to),
+  `Gameplay/ActiveRun.cs` (holds `RunState` across scene loads), `Assets/Editor/SceneCatalog.cs`
+  (owns the Build Settings list + `Pets > Build All Scenes`), `Assets/Editor/SceneBuilderUtils.cs`
+  (shared uGUI construction), `Assets/Prefabs/UI` (Button/TextBox/TypeIcon prefabs the builders
+  instantiate).
+
+**The two big structural gaps** — these are the real Phase 1 work, and everything in "Next Steps"
+below flows from them:
+
+1. **No node resolution.** `RegionMapController.WalkTo` moves the token and stops. The screens
+   that would resolve a node — `LocationFlowController`, `PvEClashController`, `MapPanelController`,
+   `CampPanelController`, `ResourceBarController`, `LocationHubController`, and the
+   `Prefabs/UI/CampOverlay.prefab` — still exist in `Scripts/Gameplay` but are **attached to no
+   scene**, orphaned when the Forest hub scene became the Ingame Menu. They're kept for the
+   Shop/Center/PvE work they'll be reused for; the retired hub scene is recoverable from git
+   history if that turns out to be the wrong call.
+2. **Two unreconciled map models.** `RunState.Nodes`/`CurrentNodeIndex`/`AdvanceToNextNode` model
+   the *linear* Phase 0 Forest sequence (`ForestLocationFactory`: PvE/PvE/Camp/PvE/PvE), and
+   `RunBootstrapper` still seeds a run with it. `RegionMapTraversal` separately models the walk
+   over the *branching* generated graph the map scene actually draws. Neither knows about the
+   other. Collapsing them onto one model is prerequisite to node resolution.
+
+**Known naming debt** (noted rather than fixed, so nobody assumes the names are meaningful):
+- `RegionMap*` (`Meta/RegionMap.cs`, `RegionMapNode`, `RegionMapGenerator`, `RegionMapTraversal`,
+  `RegionMapController`, `RegionMapSceneBuilder`, `RegionMap.unity`, `SceneNames.Map`) is really
+  the **Location** node-map from design doc §5 — branching PvE/Event/PvP/Camp converging on a
+  mandatory Gym. The *Region* in the design doc (§4, §5.2) is the tier above it: the pool of
+  candidate Locations and the Region Hub that offers 3 of them. That screen doesn't exist yet, so
+  when it's built the current `RegionMap*` names should become `LocationMap*` first, or the two
+  tiers will be permanently confusing.
+- `RegionMapController` labels `NodeType.Camp` as "Pokémon Center" in its display-name table,
+  which conflates design doc §5.1's **Camp** node (EXP + a temporary pre-battle buff) with §5.2's
+  **Pokémon Center** hub tab (adoption). Pick one meaning when node resolution lands.
+- Design doc §5.2's **Location Hub** (a tabbed Team/Map/Shop/Center screen) is not what got built:
+  Team is a standalone scene reached from the Ingame Menu, and the map is its own scene. This may
+  well be the better shape for the game — but it's a live deviation from the design doc, not an
+  implementation of it. See ADR 0002.
+
+**Also not built:** the real drag-and-drop catching system, evolution, the Trailblazer minigame
+(no `Scripts/Minigame` folder — it was never started), Pokémon Center adoption, a real Shop
+economy, type synergy bonuses, Gym/Badge flow, Event and PvP node behavior, Region Hub /
+Location selection, paging the Box past six slots, and **any save/load layer** — which is why
+"Continue Run" only resumes a run still in memory this session, and why History has nothing to
+list. Save/load is Phase 2 in the list below but is arguably the thing most blocking the shell
+from feeling real.
+
+**Phase 0 — Battle-sim rework + first hand-authored Location (prototype, solo, offline)** — *sim
+and content done; the Location it was supposed to prove out is currently unplayable (see Status).*
+- ✅ Rework/replace `Simulation` to match `docs/battle-sim-spec.md`: Lead/Support formation, Step
   loop, charge-meter passive triggers, both runners (precomputed + on-demand).
-- Import the first ~10–15 species from `docs/pokemon_stats_unique.xlsx` as content (stats only —
-  abilities are blank in the source sheet; hand-author a handful of type-flavored passives per
-  §10.3/§11 of the design doc for this slice).
-- One hand-authored Location (e.g. a Forest), PvE + Camp + Shop nodes, basic Step-based battles
-  watchable step-through or autoplay. No evolution, no real backend.
-- Catching stubbed as a simple end-of-fight "pick 1 from defeated" rather than full drag-and-drop.
-  Trailblazer stubbed as an instant auto-roll.
-- **Exit criteria:** a full PvE-node fight resolves deterministically via the new Step model and
+- ✅ Import the first species from `docs/pokemon_stats_unique.xlsx` as content (stats only —
+  abilities are blank in the source sheet; type-flavored passives hand-authored per §10.3/§11 of
+  the design doc). Since grown to 28 species / 17 passives.
+- ⚠️ One hand-authored Location (a Forest), PvE + Camp + Shop nodes, basic Step-based battles
+  watchable step-through or autoplay — *was* built against the Forest hub scene, which has since
+  been retired in favor of the shell (ADR 0002). The controllers survive, orphaned; no scene runs
+  a battle today. Re-landing this on the Location map is Phase 1's first job.
+- ✅ Catching stubbed as an end-of-fight "pick 1 from defeated" (`CatchResolver`); Trailblazer
+  stubbed as skipped entirely (there's still only one Location, so there's nothing to travel
+  between).
+- ✅ **Exit criteria:** a full PvE-node fight resolves deterministically via the new Step model and
   is covered by golden fixtures in `/shared/fixtures`.
 
-**Phase 1 — Full run loop**
-- Real Gym/Badge flow, Morale/win-loss loop, evolution (via PokeAPI evolution chains, restricted
-  to the curated roster), the full drag-and-drop catching system (Step-boundary throws,
-  HP%/status-based odds), Pokémon Center adoption, type synergy bonuses, and the real Trailblazer
-  minigame (lane obstacle-dodge, Speed/Type-driven per §6 of the design doc).
+**Phase 1 — Full run loop** — *in progress, approached shell-first (ADR 0002).*
+- Done out of order: Character Select, the branching Location-map generator + walkable map scene,
+  the Home/Ingame-menu shell, Team management (drag to rearrange, release a mon).
+- Still to do: **node resolution on the map** (make arriving at a node start its fight/event/camp)
+  and collapsing the two map models — the two blockers in Status above; then the real Gym/Badge
+  flow, Morale/win-loss loop, evolution (via PokeAPI evolution chains, restricted to the curated
+  roster), the full drag-and-drop catching system (Step-boundary throws, HP%/status-based odds),
+  Pokémon Center adoption, type synergy bonuses, and the real Trailblazer minigame (lane
+  obstacle-dodge, Speed/Type-driven per §6 of the design doc).
 
 **Phase 2 — Content & breadth**
 - Events (narrative branches), the rest of the Location types (§4 of the design doc) and their
@@ -309,11 +333,22 @@ economy, narrowing Character Select to match design doc §3 exactly, and any sav
   Step log` cases in `/shared/fixtures`, run by both the Unity suite and (from Phase 3) the Node
   suite, to guarantee parity. The fixture *shape* changes from the old plan (team-of-5 → ordered
   line-up with explicit Lead/Support) — old fixtures don't carry forward as-is.
-- **Integration/PlayMode tests:** node-map traversal, catch-chance rolls, Pokémon Center
-  adoption, save/load round-trip of a run.
+- **Integration/PlayMode tests:** these drive the *saved scenes* — finding real objects by
+  `Transform.Find` and firing `Button.onClick.Invoke()` — so they catch a scene that stopped
+  matching its controller, which EditMode tests can't. Current suites:
+  `CharacterSelectScenePlayModeTests`, `RegionMapScenePlayModeTests`, `NavigationScenePlayModeTests`
+  (the Home/menu/Team shell, including the drag-to-rearrange and release gestures),
+  `DevRosterScenePlayModeTests`. Still owed, as their features land: catch-chance rolls, Pokémon
+  Center adoption, save/load round-trip of a run.
+- **Content integrity:** `ContentIntegrityTests` fails if a species/passive asset on disk isn't
+  registered in its library or can't resolve its sprite — the failure mode where an asset exists
+  but is invisible to the game is otherwise silent.
 - **Backend tests (Phase 3+):** Vitest + Supertest against routes, using a disposable Postgres
   (Docker Compose) rather than mocks.
-- **CI gate:** PRs must pass client EditMode tests and (once it exists) server tests before merge.
+- **CI gate:** PRs must pass client EditMode + PlayMode tests and (once it exists) server tests
+  before merge. Note the client job in `.github/workflows/ci.yml` is `continue-on-error: true`
+  until `UNITY_LICENSE` secrets exist, so **CI is not currently a real gate** — run the suites
+  locally (commands in CLAUDE.md).
 - No manual-only testing for simulation logic — if it's not covered by an automated test, assume
   it's broken.
 
@@ -324,9 +359,18 @@ economy, narrowing Character Select to match design doc §3 exactly, and any sav
   — treat every number as a first draft. The sheet's Ability column is empty; passives are
   hand-authored separately, following the Type-flavor seeds in design doc §11.
 - **Species/type/evolution/sprite data:** pulled from PokeAPI, filtered to the 183 curated
-  species, cached locally rather than hit at runtime. A content-import step turns the xlsx +
-  PokeAPI data into `PokemonSpeciesDefinition` ScriptableObject assets — see
-  `docs/content-schema.md` for the exact shape.
+  species, cached locally rather than hit at runtime. See `docs/content-schema.md` for the exact
+  asset shape.
+- **The content-import pipeline does not exist yet.** This section has described it as if it did:
+  there is no xlsx→ScriptableObject importer under `Assets/Editor` and no PokeAPI fetch script in
+  `/tools` (only `generate_ui_sprites.py`, which authors the 9-sliced UI chrome). The 28 curated
+  species were **hand-authored** asset by asset, with stats typed in from the sheet. That's been
+  fine at 28; it will not be fine at 183, so building the importer is the real prerequisite for the
+  Phase 2 roster expansion — write it before hand-authoring the next tranche. Until it exists,
+  `ContentIntegrityTests` is the only thing catching a malformed or unregistered asset.
+- **The curated slice is base-stage only.** All 28 species are first-stage forms and not one has
+  `EvolvesInto` set, so evolution has nothing to act on yet — authoring the evolved forms and
+  wiring the chains is part of the evolution work in Phase 1, not a separate content chore.
 - **Legendaries:** the 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre,
   Groudon) currently have no rarity flag in the source sheet; per the design doc's carried-forward
   assumption, treat them as Legendary-tier (ultra-rare, PvE-only, full-party-wipe-risk
@@ -352,9 +396,15 @@ Restating §1's scope note because it affects engineering decisions, not just le
 
 Project-level risks (mechanics-level open questions live in design doc §20 — don't duplicate them
 here, go there):
-- **Migration cost from the old code:** `Simulation`/`ShopEconomy` implement a materially
-  different combat model (5-slot turn-based vs. 2-slot Step-based). Phase 0's rework is a real
-  rewrite of the sim core, not a refactor — budget for it as such.
+- ~~**Migration cost from the old code**~~ — resolved. The old 5-slot `Simulation`/`ShopEconomy`
+  code was deleted and the sim rewritten against `docs/battle-sim-spec.md`; nothing pre-pivot
+  remains in the tree.
+- **Orphaned-controller rot (new, 2026-09-12):** six `Scripts/Gameplay` controllers and one prefab
+  are attached to no scene (see §6 Status) and therefore have no PlayMode coverage — only whatever
+  EditMode tests exercise the Meta logic behind them. The longer they sit detached, the more likely
+  they've silently drifted from the `RunState`/map shape they'd need to re-attach to. Either
+  re-land them (Next Steps 2) or delete them and rebuild from git history; don't leave them
+  indefinitely.
 - **Determinism across platforms:** same risk as before — confirm Unity's float math is
   consistent enough across target devices for battle replays to match a future server-computed
   result. The design doc's discrete-Step model (vs. continuous real-time) is actually friendlier
@@ -368,23 +418,34 @@ here, go there):
 
 ## 11. Next Steps
 
-Phase 0 is done (sim rework, curated content, golden fixtures, and the playable Forest Location).
-Character Select and a branching Region Map generator/preview are also now built (see the Phase 1
-progress note in §6). Next up:
+The shell is built; the run inside it is not (see §6 Status). The ordering below is deliberate —
+items 1 and 2 unblock everything else, and until they land there is no game loop to test any of
+the rest against.
 
-1. Reconcile the Region Map preview with Forest's actual playable map: make Forest's node sequence
-   an instance of `RegionMapGenerator`'s branching graph (rather than the current hand-authored
-   linear list) and give `LocationFlowController` real per-node-type resolution — PvE and Camp
-   already resolve; Event, PvP, and Gym don't yet.
-2. Gym/Badge node: a mandatory boss node at the end of a Location's map, Line-Up menu (scout the
-   opponent, reorder before the fight), badge-as-relic reward.
-3. Team Management reordering (drag/reorder the Lead/Support line-up and Box) — Phase 0's Team tab
-   is read-only.
-4. The real drag-and-drop catching system (Step-boundary ball throws, HP%/status-based odds,
-   design doc §12.1) in place of the "pick 1 from defeated" stub.
-5. Narrow Character Select toward design doc §3's actual flow (fixed/chosen starter + a 3-option
+1. **Collapse the two map models onto one.** Make `RunState` hold the branching graph
+   `RegionMapGenerator` produces and the traversal position `RegionMapTraversal` tracks, instead
+   of `Nodes` + `CurrentNodeIndex`; retire `ForestLocationFactory`'s linear list (or keep it only
+   as a seeded fixture for tests). `RunBootstrapper` and `RegionMapController` should be reading
+   the same map afterward. EditMode-testable, so do it before touching any screen.
+2. **Node resolution on arrival.** Hook the end of `RegionMapController.WalkTo` into a per-node-type
+   handler and re-land the orphaned screens on the map scene: PvE (`PvEClashController` — this is
+   what makes a battle playable in-game again) and Camp (`CampPanelController` +
+   `CampOverlay.prefab`) already have logic behind them; Event, PvP and Gym don't yet. Decide at
+   this point whether the Camp node is a Camp or a Pokémon Center (see §6 naming debt).
+3. **Gym/Badge node:** the mandatory boss at the end of a Location's map — Line-Up menu (scout the
+   opponent, reorder before the fight), badge-as-relic reward, and the Morale/win-loss loop that
+   makes losing mean something.
+4. **Save/load.** Listed under Phase 2 below, but it's what "Continue Run", History, and any
+   meta-progression all actually wait on — consider pulling it forward once the loop above exists
+   and there's a run state worth persisting.
+5. **The real drag-and-drop catching system** (Step-boundary ball throws, HP%/status-based odds,
+   design doc §12.1) in place of the "pick 1 from defeated" stub. Depends on 2.
+6. **Rename `RegionMap*` → `LocationMap*`** before building the actual Region Hub / Location
+   selection tier (§6 naming debt). Mechanical but touches ~8 files plus a scene regeneration, so
+   do it as its own commit, not folded into feature work.
+7. Evolution (via PokeAPI evolution chains), the Trailblazer minigame, Pokémon Center adoption,
+   and a real Shop economy.
+8. Narrow Character Select toward design doc §3's actual flow (fixed/chosen starter + a 3-option
    secondary pick + cosmetics) if that distinction ends up mattering in play.
-6. Evolution (via PokeAPI evolution chains), the real Trailblazer minigame, Pokémon Center
-   adoption, and a real Shop economy.
-7. Continue expanding curated content past the first 13 species via the content-import pipeline
-   (§8) as more Locations/roster breadth are needed.
+9. Continue expanding curated content past the current 28 species via the content-import pipeline
+   (§8) as more Locations/roster breadth are needed — the sprites for all 183 are already cached.
