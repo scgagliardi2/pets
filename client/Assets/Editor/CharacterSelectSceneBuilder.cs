@@ -42,11 +42,12 @@ namespace Pets.EditorTools
         private const int GridColumns = 5;
         private const float GridSpacing = 24f;
         private const float GridPadding = 16f;
-        // Tall enough for the card to hold a 96-unit sprite and three text lines at sizes that
-        // still resolve to real pixels on screen (see CharacterSelectController's card metrics).
-        // Capped so three full rows still fit the grid viewport at 16:9: 16 + 3*176 + 2*24 = 592
-        // against the 596 units left once the chrome is deducted.
-        private const float CardHeight = 176f;
+        // Tall enough for the card to hold a 96-unit sprite, a name line, a TypesRow of
+        // TypeIconView icons, and a stats line, at sizes that still resolve to real pixels on
+        // screen (see CharacterSelectController's card metrics). At 16:9 this leaves room for two
+        // full rows plus most of a third in the grid viewport (16 + 3*186 + 2*24 = 622 against the
+        // 596 units the chrome leaves) — the rest scrolls, same as any longer roster page would.
+        private const float CardHeight = 186f;
 
         /// <summary>Card width that divides the grid viewport into exactly GridColumns columns
         /// (200 at the current numbers). Derived rather than hand-typed so changing a margin or the
@@ -141,6 +142,7 @@ namespace Pets.EditorTools
             var confirmLabel = confirmButton.GetComponentInChildren<Text>();
 
             var library = AssetDatabase.LoadAssetAtPath<PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var typeIconPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TypeIconPrefabBuilder.PrefabPath);
 
             var controller = new GameObject("CharacterSelect").AddComponent<CharacterSelectController>();
             SetField(controller, "speciesLibrary", library);
@@ -152,6 +154,7 @@ namespace Pets.EditorTools
             SetField(controller, "sortAttackButton", sortAttackButton);
             SetField(controller, "sortSpeedButton", sortSpeedButton);
             SetField(controller, "sortHealthButton", sortHealthButton);
+            SetField(controller, "typeIconPrefab", typeIconPrefab);
 
             // Dropdown.onValueChanged is a UnityEvent<int> — UnityEventTools only exposes
             // baked-constant persistent listeners (AddIntPersistentListener requires a fixed

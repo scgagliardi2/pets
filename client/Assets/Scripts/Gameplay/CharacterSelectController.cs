@@ -33,8 +33,10 @@ namespace Pets.Gameplay
         // card used, and the three text lines sit above Theme.FontSizeSmall (13), the theme's
         // documented floor for this font, instead of at it.
         //
-        // Budget: 12 padding + 96 sprite + 23 name + 20 type + 20 stats + 3 one-unit gaps = 174,
-        // inside the 176 cell. Grow CharacterSelectSceneBuilder.CardHeight with any of these.
+        // Budget: 12 padding + 96 sprite + 23 name + 30 types row + 20 stats + 3 one-unit gaps =
+        // 184, inside the 186 cell (the types row is two 28-unit TypeIconView icons, not a text
+        // line — see AddCardTypeIcons). Grow CharacterSelectSceneBuilder.CardHeight with any of
+        // these.
         private const int CardSpriteHeight = 96;
         private const int CardNameFontSize = 17;
         private const int CardLineFontSize = 14;
@@ -52,6 +54,7 @@ namespace Pets.Gameplay
         [SerializeField] private Button sortAttackButton;
         [SerializeField] private Button sortSpeedButton;
         [SerializeField] private Button sortHealthButton;
+        [SerializeField] private GameObject typeIconPrefab;
 
         private PokemonSpeciesDefinitionAsset chosenLead;
         private PokemonSpeciesDefinitionAsset chosenSupport;
@@ -246,13 +249,12 @@ namespace Pets.Gameplay
 
             AddCardSprite(go.transform, species);
 
-            string typeLabel = species.HasSecondType ? $"{species.Type1}/{species.Type2}" : species.Type1.ToString();
             AddCardLine(go.transform, species.DisplayName, CardNameFontSize, FontStyle.Bold, Theme.TextDark);
-            AddCardLine(go.transform, typeLabel, CardLineFontSize, FontStyle.Bold, Theme.GetTypeColor(species.Type1));
+            AddCardTypeIcons(go.transform, species);
             // All three stats on one line: it buys the height that lets the sprite go back to 96
             // and every line go up a couple of sizes, which matters more for readability than
-            // giving Attack a row of its own did. Bold like the type line — Handjet's Regular
-            // weight is too thin to hold up at this size.
+            // giving Attack a row of its own did. Bold like the name — Handjet's Regular weight is
+            // too thin to hold up at this size.
             AddCardLine(go.transform, $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}",
                 CardLineFontSize, FontStyle.Bold, Theme.TextDark);
         }
@@ -266,6 +268,35 @@ namespace Pets.Gameplay
             image.preserveAspect = true;
             var layoutElement = go.AddComponent<LayoutElement>();
             layoutElement.preferredHeight = CardSpriteHeight;
+        }
+
+        /// <summary>One or two Pets.UI.TypeIconView instances (Type1, and Type2 if the species
+        /// has one) side by side in a row — replaces what used to be a plain "Fire" / "Fire/Flying"
+        /// text line colored via Theme.GetTypeColor, now that real per-type icon art exists
+        /// (Assets/Resources/Sprites/Types).</summary>
+        private void AddCardTypeIcons(Transform parent, PokemonSpeciesDefinitionAsset species)
+        {
+            var row = new GameObject("TypesRow", typeof(RectTransform));
+            row.transform.SetParent(parent, false);
+            var layout = row.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 6;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            var rowLayoutElement = row.AddComponent<LayoutElement>();
+            rowLayoutElement.preferredHeight = 30;
+
+            CreateTypeIcon(row.transform, species.Type1);
+            if (species.HasSecondType)
+            {
+                CreateTypeIcon(row.transform, species.Type2);
+            }
+        }
+
+        private void CreateTypeIcon(Transform parent, PokemonType type)
+        {
+            var instance = Instantiate(typeIconPrefab, parent, false);
+            instance.GetComponent<TypeIconView>().Type = type;
         }
 
         private static void AddCardLine(Transform parent, string content, int fontSize, FontStyle style, Color color)

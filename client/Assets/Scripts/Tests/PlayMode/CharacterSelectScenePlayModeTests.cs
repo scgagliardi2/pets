@@ -9,6 +9,8 @@ using UnityEngine.UI;
 using UnityEditor.SceneManagement;
 #endif
 using Pets.Gameplay;
+using Pets.Simulation;
+using Pets.UI;
 
 namespace Pets.Tests
 {
@@ -97,6 +99,31 @@ namespace Pets.Tests
             yield break;
         }
 
+        /// <summary>Companion to EveryCard_HasItsPokemonSpriteLoaded, for the type-badge icons
+        /// (Assets/Resources/Sprites/Types via Pets.UI.TypeIconView) that replaced the old plain
+        /// "Fire" / "Fire/Flying" text line.</summary>
+        [UnityTest]
+        public IEnumerator EveryCard_ShowsOneOrTwoLoadedTypeIcons()
+        {
+            var buttons = GridContent().GetComponentsInChildren<Button>();
+            foreach (var button in buttons)
+            {
+                var typesRow = button.transform.Find("TypesRow");
+                Assert.IsNotNull(typesRow, $"{button.gameObject.name} has no TypesRow child");
+
+                var icons = typesRow.GetComponentsInChildren<TypeIconView>();
+                Assert.IsTrue(icons.Length == 1 || icons.Length == 2,
+                    $"{button.gameObject.name} should show 1 or 2 type icons, found {icons.Length}");
+
+                foreach (var icon in icons)
+                {
+                    Assert.IsNotNull(icon.Icon.sprite,
+                        $"{button.gameObject.name}'s {icon.Type} type icon failed to load a sprite");
+                }
+            }
+            yield break;
+        }
+
         [UnityTest]
         public IEnumerator PickingAStarterThenASecondary_ThenConfirming_StartsARunWithThatExactPair()
         {
@@ -148,7 +175,7 @@ namespace Pets.Tests
             typeFilterDropdown.value = 1;
             yield return null;
 
-            string activeType = typeFilterDropdown.options[1].text;
+            var activeType = (PokemonType)System.Enum.Parse(typeof(PokemonType), typeFilterDropdown.options[1].text);
 
             var filteredButtons = GridContent().GetComponentsInChildren<Button>();
             Assert.Less(filteredButtons.Length, allCount, "filtering by a single type should narrow the grid");
@@ -156,8 +183,9 @@ namespace Pets.Tests
 
             foreach (var button in filteredButtons)
             {
-                string typeLine = button.GetComponentsInChildren<Text>()[1].text; // Name, Type, ATK, HP, SPD
-                StringAssert.Contains(activeType, typeLine);
+                var icons = button.GetComponentsInChildren<TypeIconView>();
+                Assert.IsTrue(icons.Any(icon => icon.Type == activeType),
+                    $"{button.gameObject.name} should have a type icon matching the active filter ({activeType})");
             }
 
             // Back to "All Types" should restore the full, unfiltered grid.
@@ -215,9 +243,11 @@ namespace Pets.Tests
             int previous = descending ? int.MaxValue : int.MinValue;
             foreach (var button in buttons)
             {
-                // Text[2] is the combined stat line, "ATK 49  HP 45  SPD 45" — take the first number.
-                string statLine = button.GetComponentsInChildren<Text>()[2].text;
-                StringAssert.StartsWith("ATK ", statLine);
+                // Matched by content ("ATK 49  HP 45  SPD 45") rather than a fixed child index —
+                // the exact set and order of a card's Text children has already shifted once (the
+                // type line became icons instead), so pinning to a position here is exactly what
+                // broke.
+                string statLine = button.GetComponentsInChildren<Text>().Select(t => t.text).First(t => t.StartsWith("ATK "));
                 int attack = int.Parse(statLine.Substring("ATK ".Length).Split(' ')[0]);
                 if (descending)
                 {
