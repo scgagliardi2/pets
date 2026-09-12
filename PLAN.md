@@ -167,13 +167,17 @@ criteria are met and the Forest Location is playable end to end:**
   branching or Gym node yet, both Phase 1), seeded wild-encounter generation, EXP/level-up, Camp's
   EXP+buff grant, and the stubbed "pick 1 from defeated" catch.
 - `client/Assets/Scripts/Gameplay` implements the Location Hub (Team/Map/Shop/Center tabs) and the
-  PvE Clash/Camp overlay screens as MonoBehaviours over the Meta layer. `client/Assets/Scenes/
-  Game.unity` is a real, working scene (Canvas/EventSystem + all panels and button wiring) — it's
-  generated from code by `Assets/Editor/ForestSceneBuilder.cs` (`Pets > Build Forest Scene`) rather
-  than hand-edited, so re-run that menu item after changing any Gameplay controller's serialized
-  fields instead of patching the scene by hand. `ForestScenePlayModeTests.cs` drives the actual
-  saved scene (clicking real buttons via `Transform.Find` + `Button.onClick.Invoke()`) to verify
-  the wiring itself, not just the underlying logic.
+  PvE Clash/Camp overlay screens as MonoBehaviours over the Meta layer. **The hub scene itself
+  (`Game.unity`, `ForestSceneBuilder.cs`, `ForestScenePlayModeTests.cs`) has since been retired** —
+  see the shell bullet under Phase 1 progress: `Game.unity` became the Ingame Menu, and the Region
+  Map is the run's map now rather than the hub's Map tab. The controllers are still in `Gameplay`
+  (unused by any scene) for the Shop/Pokémon Center/PvE work they'll be reused for; the hub scene
+  is recoverable from git history if that turns out to be the wrong call.
+- Every scene in the project is generated from code by an `Assets/Editor/*SceneBuilder.cs` rather
+  than hand-edited, so re-run the relevant `Pets > Build ...` menu item (or `Pets > Build All
+  Scenes`) after changing any controller's serialized fields instead of patching the scene by hand.
+  The PlayMode tests drive the actual saved scenes (clicking real buttons via `Transform.Find` +
+  `Button.onClick.Invoke()`) to verify the wiring itself, not just the underlying logic.
 - Shop and Pokémon Center tabs are static placeholder text — their real functionality is Phase 1+
   (design doc §13, §12.2). Trailblazer isn't a screen at all yet (stubbed as instant/skipped, per
   Phase 0's scope) — there's exactly one Location, so there's nothing to travel between yet.
@@ -184,7 +188,7 @@ criteria are met and the Forest Location is playable end to end:**
 - Character Select (design doc §3) is playable: `Assets/Scenes/CharacterSelect.unity`
   (`CharacterSelectSceneBuilder.cs`) shows every curated species in a scrollable stat grid, picked
   once as Starter and once as Secondary (excluding the Starter from the second pass), then hands
-  the pair to `RunBootstrapper` via `PendingRunSelection` and loads `Game.unity`. This is a
+  the pair to `RunBootstrapper` via `PendingRunSelection` and loads `RegionMap.unity`. This is a
   simplification of §3's actual flow (fixed/chosen starter + a narrowed 3-option secondary pick +
   cosmetics) — full parity with §3 is still open. Covered end to end by
   `CharacterSelectScenePlayModeTests.cs`.
@@ -212,12 +216,24 @@ criteria are met and the Forest Location is playable end to end:**
   is still the separate, actually-playable linear PvE/PvE/Camp/PvE/PvE sequence from
   `ForestLocationFactory`. Reconciling the two (making Forest's map an instance of this branching
   generator, with real per-node resolution) is the next Phase 1 step in this area.
-- Three scene builders now share `Assets/Editor/SceneBuilderUtils.cs` for uGUI construction
+- Every scene builder shares `Assets/Editor/SceneBuilderUtils.cs` for uGUI construction
   (camera/EventSystem/canvas/panel/text/button/scroll-view helpers) rather than duplicating that
-  code per scene.
+  code per scene. `Assets/Editor/SceneCatalog.cs` owns the Build Settings scene list (and
+  `Pets > Build All Scenes`), so no single builder can leave it stale.
+- The game has a shell around the run: `Home.unity` (New Game / Quit) → `CharacterSelect.unity` →
+  `RegionMap.unity`, with the Map's "Menu" button opening `IngameMenu.unity` (Back to Map / Team /
+  Quit to Home) and `Team.unity` showing the run's line-up and Box with a Lead/Support swap. The
+  old Forest hub scene was converted into the Ingame Menu rather than kept alongside. Navigation is
+  one `Gameplay/SceneNavigator.cs` component the builders wire every menu button to;
+  `Gameplay/ActiveRun.cs` holds the `RunState` across those scene loads (`RunBootstrapper` now
+  publishes to it, and adopts an existing run instead of rerolling one when the Map is re-entered).
+  Covered by `NavigationScenePlayModeTests.cs`. **Still a shell:** Home has no Continue/Options,
+  and "Quit to Home" leaves the run in memory rather than saving it — resuming across a real
+  session is the local-save work in Phase 2.
 
 **Not yet built (Phase 1):** wiring the branching Region Map into an actual playable Location (node
-resolution, Gym/Badge battle, PvP/Event node behavior), Team line-up reordering, the real drag-and-
+resolution, Gym/Badge battle, PvP/Event node behavior), Team management beyond the Lead/Support
+swap (Box promotion/release), the real drag-and-
 drop catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
 economy, narrowing Character Select to match design doc §3 exactly, and any save/load layer.
 

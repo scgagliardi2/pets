@@ -11,7 +11,7 @@ namespace Pets.EditorTools
     /// <summary>Builds the Camp overlay (design doc §5.1) as a real, reusable .prefab instead of
     /// baking it into Game.unity — the first screen migrated under the "author screens as
     /// prefabs" plan (see the Unity-architecture review this follows). Two things this buys over
-    /// ForestSceneBuilder's old inline-panel approach:
+    /// the old inline-panel approach the retired Forest hub scene used:
     ///
     ///  1. The panel's VerticalLayoutGroup is saved *alive* (root is passed as keepLive to
     ///     ForceLayoutRebuild below, purely so the panel already looks right to anyone opening it
@@ -31,7 +31,7 @@ namespace Pets.EditorTools
     ///     targets live inside the same prefab. (`flow` is the one field the scene still has to
     ///     set after instantiating, since it points at a scene-only object — LocationFlowController
     ///     isn't part of this prefab and shouldn't be: Camp doesn't own run-flow orchestration.)
-    ///     ForestSceneBuilder now just instantiates this prefab and sets that one field, instead of
+    ///     a scene builder now just instantiates this prefab and sets that one field, instead of
     ///     re-deriving the whole hierarchy + wiring inline.
     ///
     /// Re-run via Pets &gt; Build Camp Overlay Prefab any time CampPanelController's serialized

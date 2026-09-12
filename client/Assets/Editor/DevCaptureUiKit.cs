@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 namespace Pets.EditorTools
 {
-    /// <summary>Temporary dev helper that rebuilds the UI prefabs + Game scene and renders the
+    /// <summary>Temporary dev helper that rebuilds the UI prefabs + Home scene and renders the
     /// result straight to a PNG, so sprite/9-slice work can be checked without opening the Editor
     /// by hand. Same throwaway status as DevDiagnostics/DevOpenScene — safe to delete.
     ///
@@ -23,20 +23,20 @@ namespace Pets.EditorTools
         public static void RebuildAndCapture()
         {
             UiPrefabBuilder.Build();
-            ForestSceneBuilder.Build();
+            HomeSceneBuilder.Build();
             Capture(GetArg("-captureOutput") ?? "ui-kit.png");
         }
 
-        [MenuItem("Pets/Dev/Capture Game Scene")]
-        public static void CaptureGameScene()
+        [MenuItem("Pets/Dev/Capture Home Scene")]
+        public static void CaptureHomeScene()
         {
-            EditorSceneManager.OpenScene(ForestSceneBuilder.ScenePath);
+            EditorSceneManager.OpenScene(HomeSceneBuilder.ScenePath);
             Capture(GetArg("-captureOutput") ?? "ui-kit.png");
         }
 
         private static int playModeFrameCount;
 
-        /// <summary>Unlike CaptureGameScene, Character Select's species grid is populated at
+        /// <summary>Unlike CaptureHomeScene, Character Select's species grid is populated at
         /// runtime (CharacterSelectController.Start -&gt; RefreshGrid), not baked into the saved
         /// scene — capturing it without opening Play mode would show an empty grid. Enters Play
         /// mode, waits a few frames for Start() to run, captures, then exits Play mode and the

@@ -21,8 +21,6 @@ namespace Pets.Gameplay
     /// filtering for e.g. Water types likely wants that for both picks.</summary>
     public sealed class CharacterSelectController : MonoBehaviour
     {
-        private const string GameSceneName = "Game";
-
         // Card metrics for the 200x176 grid cell CharacterSelectSceneBuilder lays out (five columns
         // of a 1280-wide landscape canvas). Sizes are chosen against how many REAL pixels they end
         // up with, not just how they fit the cell: an element's on-screen size is
@@ -110,7 +108,7 @@ namespace Pets.Gameplay
         {
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
-            SceneManager.LoadScene(GameSceneName);
+            SceneManager.LoadScene(SceneNames.Map);
         }
 
         /// <summary>Wired to typeFilterDropdown.onValueChanged. Dropdown option 0 is "All Types";

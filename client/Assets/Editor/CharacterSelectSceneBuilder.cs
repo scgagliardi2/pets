@@ -15,7 +15,7 @@ namespace Pets.EditorTools
 {
     /// <summary>Builds the Character Select scene (design doc §3): a scrollable grid of every
     /// curated species with its stats, picked once as a Starter and once as a Secondary. Built
-    /// from code for the same reason as ForestSceneBuilder — re-run via
+    /// from code like every other scene in the project — re-run via
     /// Pets &gt; Build Character Select Scene after changing CharacterSelectController's fields.
     ///
     /// Laid out for a phone held horizontally: a landscape reference canvas, chrome pinned to the
@@ -178,7 +178,7 @@ namespace Pets.EditorTools
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
 
-            SetBuildScenes(ScenePath, ForestSceneBuilder.ScenePath);
+            SceneCatalog.EnsureBuildScenes();
 
             Debug.Log($"Character Select scene rebuilt at {ScenePath}");
         }
