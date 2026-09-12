@@ -25,25 +25,15 @@ namespace Pets.Meta
         /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.</summary>
         public int Morale = 3;
 
-        /// <summary>Current Location's node sequence, in order.</summary>
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —
-        /// RegionMapTraversal.ForRun binds a traversal to these.
-        ///
-        /// Note this is the *branching* map the Region Map screen draws, which is not yet the same
-        /// thing as the linear `Nodes` sequence below that ForestLocationFactory builds and the
-        /// (currently sceneless) LocationFlowController walks. Collapsing the two onto one model
-        /// is PLAN.md §11 item 1 and is a prerequisite for resolving nodes on arrival.</summary>
+        /// RegionMapTraversal.ForRun binds a traversal to these.</summary>
         public RegionMap LocationMap;
 
         /// <summary>The nodes walked so far, oldest first. The last entry is where the player
         /// stands — RegionMapTraversal derives its position from this rather than storing it
         /// twice.</summary>
         public List<string> VisitedMapNodeIds = new List<string>();
-
-        public List<LocationNodeState> Nodes = new List<LocationNodeState>();
-
-        public int CurrentNodeIndex;
 
         /// <summary>Fixed per-run seed feeding both encounter generation and battle simulation, so
         /// a run is fully reproducible end to end (design doc §10.5).</summary>
@@ -54,11 +44,6 @@ namespace Pets.Meta
         public float NextBattleAttackBonusPercent;
 
         public bool IsRunOver => Morale <= 0;
-
-        public LocationNodeState CurrentNode =>
-            CurrentNodeIndex >= 0 && CurrentNodeIndex < Nodes.Count ? Nodes[CurrentNodeIndex] : null;
-
-        public bool HasNextNode => CurrentNodeIndex + 1 < Nodes.Count;
 
         /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team
         /// screen offers so far: with exactly two active slots (design doc §7) it's unambiguous,
@@ -163,17 +148,5 @@ namespace Pets.Meta
 
         public List<PokemonInstance> CollectionFor(RosterGroup group) =>
             group == RosterGroup.Party ? LineUp : Box;
-
-        public void AdvanceToNextNode()
-        {
-            if (CurrentNode != null)
-            {
-                CurrentNode.Cleared = true;
-            }
-            if (HasNextNode)
-            {
-                CurrentNodeIndex++;
-            }
-        }
     }
 }

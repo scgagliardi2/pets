@@ -52,7 +52,7 @@ namespace Pets.UI
         /// <summary>The game's standard font (Handjet-Regular, OFL-licensed — see
         /// Assets/Resources/Fonts/Handjet/OFL.txt), lazily loaded once and shared by every piece
         /// of code-generated UI (both the Editor scene builders and runtime controllers that spawn
-        /// Text at play time, e.g. PvEClashController's catch buttons). Falls back to Unity's
+        /// Text at play time, e.g. the Battle screen's catch buttons). Falls back to Unity's
         /// built-in font only if the asset is somehow missing, so a broken import doesn't take the
         /// whole UI down with it. Bold/italic variants aren't separately imported — legacy
         /// UI.Text.fontStyle synthesizes those from this one weight, same as it did with

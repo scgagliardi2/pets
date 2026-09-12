@@ -476,6 +476,31 @@ namespace Pets.EditorTools
             titleRect.offsetMax = new Vector2(-12f, 0f);
         }
 
+        /// <summary>A modal: a dimmed backdrop filling its parent with a sprite-framed dialog centred
+        /// on it. Returns both — the backdrop is what a controller shows and hides, and it keeps its
+        /// Image because it has to take the raycast, so nothing underneath can be clicked while the
+        /// dialog is up; the dialog is what the caller fills.
+        ///
+        /// Nothing inside is laid out by a LayoutGroup on purpose: these dialogs have their text
+        /// written at runtime, and a baked-then-destroyed group can't reflow it (see
+        /// ForceLayoutRebuild). Anchor the contents by hand instead. Team's release confirmation is
+        /// the same shape, built inline before this existed.</summary>
+        public static (RectTransform backdrop, RectTransform dialog) CreateModal(Transform parent, string name, Vector2 dialogSize)
+        {
+            var backdrop = CreatePanel(parent, name, new Color(0f, 0f, 0f, 0.6f), Vector2.zero, Vector2.one);
+
+            var go = new GameObject("Dialog", typeof(RectTransform));
+            go.transform.SetParent(backdrop, false);
+            var image = go.AddComponent<Image>();
+            image.sprite = Theme.TextBoxSprite;
+            image.type = Image.Type.Sliced;
+
+            var dialog = go.GetComponent<RectTransform>();
+            dialog.anchorMin = dialog.anchorMax = dialog.pivot = new Vector2(0.5f, 0.5f);
+            dialog.sizeDelta = dialogSize;
+            return (backdrop, dialog);
+        }
+
         /// <summary>A dark chrome strip of label/value readouts (guide section 8's "Run Resource
         /// Icons" row — Money, Morale, Badge, etc.) using text labels in place of the guide's
         /// icon set. Returns each item's value Text in the same order as <paramref name="labels"/>

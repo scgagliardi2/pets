@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,9 +17,9 @@ namespace Pets.Gameplay
     /// are clickable; clicking one slides the player token along the edge and opens up that node's
     /// own options.
     ///
-    /// What a node *does* on arrival is deliberately not handled here (PLAN.md Phase 1) — stepping
-    /// onto a node doesn't start its fight/event/center visit yet. This is the map and the movement
-    /// on it; node resolution hooks onto the end of a step, in WalkTo, once it exists.</summary>
+    /// What a node *does* on arrival isn't this class's job either: it raises
+    /// <see cref="NodeArrived"/> once the token settles and NodeResolutionController turns that into
+    /// a fight, a Camp visit or an Event. This stays the map and the movement on it.</summary>
     public sealed class RegionMapController : MonoBehaviour
     {
         /// <summary>Gap between one layer and the next, along the map's left-to-right flow.</summary>
@@ -113,6 +114,17 @@ namespace Pets.Gameplay
         private Coroutine initialScrollRoutine;
         private RunState standaloneRun;
 
+        /// <summary>Raised once the player token has settled on a node the player just walked onto
+        /// — what NodeResolutionController hangs a fight/camp/event off of. Deliberately not raised
+        /// for the node the player is *already* standing on when the screen builds (entering the
+        /// scene, or re-rolling with New Map): re-entering the Map from a resolved node would
+        /// otherwise resolve it a second time.
+        ///
+        /// The walk is forward-only (RegionMapTraversal), so a node is reached exactly once per
+        /// run and "visited" already means "resolved" — there's no separate cleared flag to
+        /// keep.</summary>
+        public event Action<RegionMapNode> NodeArrived;
+
         /// <summary>The walk state over the currently displayed map — a view over the run's own
         /// map and walked path (see <see cref="Show"/>), not state this screen owns.</summary>
         public RegionMapTraversal Traversal { get; private set; }
@@ -152,7 +164,8 @@ namespace Pets.Gameplay
             Build(RegionMapTraversal.RegenerateForRun(Run, SeedForNewMap(), layerCount));
         }
 
-        private int SeedForNewMap() => seed != 0 ? seed : Random.Range(1, int.MaxValue);
+        // Qualified: this file has `using System`, for the NodeArrived event's Action.
+        private int SeedForNewMap() => seed != 0 ? seed : UnityEngine.Random.Range(1, int.MaxValue);
 
         private void StopWalking()
         {
@@ -165,8 +178,12 @@ namespace Pets.Gameplay
 
         /// <summary>The run whose map this screen shows. When the scene is opened on its own there
         /// is no ActiveRun, so a throwaway RunState stands in — it keeps the map/walk in one place
-        /// either way, rather than giving this class a second code path that owns its own state.</summary>
-        private RunState Run =>
+        /// either way, rather than giving this class a second code path that owns its own state.
+        ///
+        /// Public so NodeResolutionController resolves nodes against the same run this screen is
+        /// walking, including the standalone fallback — two components each deriving their own
+        /// would silently disagree about where the player is.</summary>
+        public RunState Run =>
             standaloneRun ?? (ActiveRun.HasRun ? ActiveRun.State : standaloneRun = new RunState());
 
         private void Build(RegionMapTraversal traversal)
@@ -488,6 +505,10 @@ namespace Pets.Gameplay
 
             moveRoutine = null;
             Refresh();
+
+            // After Refresh, so a handler that opens an overlay or leaves for the Battle scene does
+            // it over a map already repainted for the new position.
+            NodeArrived?.Invoke(Traversal.CurrentNode);
         }
 
         /// <summary>Repaints every node and edge for the player's current position: where they've

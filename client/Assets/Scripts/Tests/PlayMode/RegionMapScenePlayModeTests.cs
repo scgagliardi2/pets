@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
@@ -8,16 +9,23 @@ using UnityEngine.UI;
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
 #endif
+using Pets.Data;
 using Pets.Gameplay;
 using Pets.Meta;
+using Pets.Simulation;
 
 namespace Pets.Tests
 {
-    /// <summary>Drives the real Region Map scene (PLAN.md Phase 1) the way a player does — clicking
-    /// actual node Buttons — to verify the scene's own wiring, not just the graph logic underneath
-    /// it (that's RegionMapGeneratorTests / RegionMapTraversalTests). The map is randomly seeded per
-    /// run, so these assert on structure and reachability rather than any particular layout; the
-    /// seed under test is reported on failure so a bad map can be reproduced.</summary>
+    /// <summary>Drives the real Region Map scene the way a player does — clicking actual node
+    /// Buttons — to verify the scene's own wiring, not just the graph logic underneath it (that's
+    /// RegionMapGeneratorTests / RegionMapTraversalTests).
+    ///
+    /// Two fixtures, because arriving at a node now resolves it (NodeResolutionController):
+    /// - **Movement** tests run with no species library behind the run, which is the case a Map
+    ///   opened on its own is in and which switches resolution off, so a click is just a walk.
+    /// - **Resolution** tests run a real run on a *seeded* map, so the node type under test is
+    ///   reachable on purpose rather than by luck, with a party nothing in the roster can beat so a
+    ///   fight's outcome is never in question. The map seed is reported on failure either way.</summary>
     public class RegionMapScenePlayModeTests
     {
         private const string ScenePath = "Assets/Scenes/RegionMap.unity";
@@ -28,25 +36,32 @@ namespace Pets.Tests
         // coroutine still fails well within a test's own timeout.
         private const int MoveTimeoutFrames = 20000;
 
+        /// <summary>Stats no curated species comes close to, so every fight these tests walk into is
+        /// won in a Step or two and Morale never enters the picture.</summary>
+        private const int UnbeatableStat = 9999;
+
+        private const int MapSeedSearchLimit = 500;
+
         private RegionMapController controller;
         private Transform nodeRoot;
 
         [UnitySetUp]
         public IEnumerator SetUp()
         {
-            // Each test needs a map at its start node. The screen now shows the *run's* map and
-            // walked path rather than generating its own (RegionMapTraversal.ForRun), which is the
-            // point — re-entering the scene resumes the walk instead of rerolling it. That also
-            // means a run left in the static ActiveRun by an earlier fixture, or by the previous
-            // test in this one, would carry its half-walked map into the next test. Clearing it
-            // makes the controller fall back to a fresh standalone run per scene load.
+            // Each test needs a map at its start node. The screen shows the *run's* map and walked
+            // path rather than generating its own (RegionMapTraversal.ForRun), which is the point —
+            // re-entering the scene resumes the walk instead of rerolling it. That also means a run
+            // left in the static ActiveRun by an earlier fixture, or by the previous test in this
+            // one, would carry its half-walked map into the next test.
             ActiveRun.End();
+            PendingBattle.Clear();
 
             yield return ReloadScene();
         }
 
         /// <summary>Loads the Map scene and re-resolves the fixture's handles onto it — the same
-        /// thing returning to the Map from the Ingame Menu or Team does at runtime.</summary>
+        /// thing returning to the Map from the Ingame Menu, Team or a finished fight does at
+        /// runtime.</summary>
         private IEnumerator ReloadScene()
         {
 #if UNITY_EDITOR
@@ -57,6 +72,11 @@ namespace Pets.Tests
             yield return null;
             yield return null;
 
+            ResolveHandles();
+        }
+
+        private void ResolveHandles()
+        {
             controller = Object.FindFirstObjectByType<RegionMapController>();
             Assert.IsNotNull(controller, "scene has no RegionMapController");
             Assert.IsNotNull(controller.Traversal, "controller should have generated a map by its first frame");
@@ -66,7 +86,11 @@ namespace Pets.Tests
         }
 
         [TearDown]
-        public void TearDown() => ActiveRun.End();
+        public void TearDown()
+        {
+            ActiveRun.End();
+            PendingBattle.Clear();
+        }
 
         [UnityTest]
         public IEnumerator GeneratedMap_RendersOneNodeVisualPerGeneratedNode_AndExactlyOneGym()
@@ -84,7 +108,7 @@ namespace Pets.Tests
             // Real art is dropped into Resources/Sprites/Nodes by name (see that folder's README);
             // until it exists for a given type, the node still renders — as a flat color swatch —
             // and every node always gets a caption naming what it is.
-            var expectedNames = new System.Collections.Generic.Dictionary<NodeType, string>
+            var expectedNames = new Dictionary<NodeType, string>
             {
                 { NodeType.PvE, "Battle" },
                 { NodeType.Event, "Encounter" },
@@ -123,9 +147,20 @@ namespace Pets.Tests
             yield break;
         }
 
+        /// <summary>The run's life total belongs on the screen where the player picks which fight to
+        /// take, so the Map's title bar carries it.</summary>
+        [UnityTest]
+        public IEnumerator TitleBar_ShowsTheRunsMorale()
+        {
+            Assert.AreEqual($"Morale {ActiveRun.State.Morale}", GameObject.Find("MoraleValue").GetComponent<Text>().text);
+            Assert.AreEqual($"Money {ActiveRun.State.Money}", GameObject.Find("MoneyValue").GetComponent<Text>().text);
+            yield break;
+        }
+
         [UnityTest]
         public IEnumerator ClickingAnOfferedNode_MovesThePlayerTokenOntoIt()
         {
+            yield return ReloadWithoutResolution();
             var token = GameObject.Find("PlayerToken").GetComponent<RectTransform>();
             Assert.IsNotNull(token, "scene has no PlayerToken");
 
@@ -147,11 +182,7 @@ namespace Pets.Tests
         [UnityTest]
         public IEnumerator ReEnteringTheScene_ResumesTheRunsMapAndPosition()
         {
-            var run = new RunState();
-            ActiveRun.Begin(run, null);
-
-            // Rebuild the screen against the run, rather than the standalone map SetUp made.
-            yield return ReloadScene();
+            yield return ReloadWithoutResolution();
 
             int seedBefore = controller.Traversal.Map.Seed;
             var target = controller.Traversal.AvailableNextNodes[0];
@@ -168,14 +199,28 @@ namespace Pets.Tests
             AssertTokenIsStandingOn(GameObject.Find("PlayerToken").GetComponent<RectTransform>(), target.Id);
         }
 
+        /// <summary>Re-entering a node the player already walked onto must not re-run it: the node
+        /// was resolved when they arrived, and the walk is forward-only.</summary>
+        [UnityTest]
+        public IEnumerator ReEnteringTheScene_DoesNotResolveTheNodeThePlayerIsStandingOn()
+        {
+            yield return ReloadWithSeededRun(SeedWithOpeningNode(NodeType.Event));
+            yield return WalkOnto(OpeningNodeOfType(NodeType.Event).Id);
+
+            yield return ReloadScene();
+            yield return null;
+
+            Assert.IsFalse(Resolution().IsResolvingInPlace, $"the node resolved itself a second time. {Seed()}");
+            Assert.IsFalse(PendingBattle.HasPending, Seed());
+        }
+
         /// <summary>Clicking New Map replaces the run's map, so the run and the screen can't
         /// disagree about which map is being walked.</summary>
         [UnityTest]
         public IEnumerator NewMapButton_ReplacesTheRunsMap()
         {
-            var run = new RunState();
-            ActiveRun.Begin(run, null);
-            yield return ReloadScene();
+            yield return ReloadWithoutResolution();
+            var run = ActiveRun.State;
 
             var firstMap = run.LocationMap;
             Assert.IsNotNull(firstMap, "arriving at the Map should have given the run one");
@@ -191,6 +236,8 @@ namespace Pets.Tests
         [UnityTest]
         public IEnumerator ClickingAnUnreachableNode_DoesNothing()
         {
+            yield return ReloadWithoutResolution();
+
             // A node two layers ahead is reachable eventually but never in one step, and its
             // button is disabled — invoking it directly proves the controller guards the move
             // itself rather than relying on the Button's interactable flag alone.
@@ -206,37 +253,10 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator WalkingTheOfferedNodes_ReachesTheGym_AndEndsTheWalk()
-        {
-            var token = GameObject.Find("PlayerToken").GetComponent<RectTransform>();
-            int layerCount = controller.Traversal.Map.LayerCount;
-
-            for (int step = 0; step < layerCount; step++)
-            {
-                if (controller.Traversal.IsComplete)
-                {
-                    break;
-                }
-
-                var options = controller.Traversal.AvailableNextNodes;
-                Assert.IsNotEmpty(options, $"dead end at {controller.Traversal.CurrentNodeId}. {Seed()}");
-
-                ButtonFor(options[options.Count - 1].Id).onClick.Invoke();
-                yield return WaitForMoveToFinish();
-            }
-
-            Assert.IsTrue(controller.Traversal.IsComplete, $"never reached the Gym. {Seed()}");
-            Assert.AreEqual(controller.Traversal.Map.GymNodeId, controller.Traversal.CurrentNodeId, Seed());
-            Assert.AreEqual(layerCount, controller.Traversal.VisitedNodeIds.Count, Seed());
-            AssertTokenIsStandingOn(token, controller.Traversal.Map.GymNodeId);
-
-            // Every path terminates at the Gym, so nothing is left to click once you're on it.
-            Assert.IsFalse(nodeRoot.Cast<Transform>().Any(t => t.GetComponent<Button>() != null && t.GetComponent<Button>().interactable), Seed());
-        }
-
-        [UnityTest]
         public IEnumerator NewMapButton_GeneratesAFreshMap_AndPutsThePlayerBackAtTheStart()
         {
+            yield return ReloadWithoutResolution();
+
             ButtonFor(controller.Traversal.AvailableNextNodes[0].Id).onClick.Invoke();
             yield return WaitForMoveToFinish();
             Assert.AreNotEqual(controller.Traversal.Map.StartNodeId, controller.Traversal.CurrentNodeId);
@@ -252,6 +272,291 @@ namespace Pets.Tests
             var nodes = nodeRoot.Cast<Transform>().Where(t => t.name.StartsWith("Node_")).ToList();
             Assert.AreEqual(controller.LastGeneratedNodes.Count, nodes.Count, $"old map's nodes were not cleared. {Seed()}");
             Assert.AreEqual(1, GameObject.FindObjectsByType<RectTransform>(FindObjectsSortMode.None).Count(r => r.name == "PlayerToken"), "the player token was duplicated");
+        }
+
+        /// <summary>The premise the movement tests above rest on: with no content behind the screen
+        /// there's no encounter to roll, so arriving at a node does nothing at all.</summary>
+        [UnityTest]
+        public IEnumerator WithNoSpeciesLibrary_ArrivingAtANodeResolvesNothing()
+        {
+            yield return ReloadWithoutResolution();
+
+            ButtonFor(controller.Traversal.AvailableNextNodes[0].Id).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+
+            Assert.IsFalse(Resolution().IsResolvingInPlace, Seed());
+            Assert.IsFalse(PendingBattle.HasPending, Seed());
+            Assert.AreEqual(SceneNames.Map, SceneManager.GetActiveScene().name, Seed());
+        }
+
+        [UnityTest]
+        public IEnumerator ArrivingAtAnEncounterNode_ShowsItsOverlay_UntilContinueIsPressed()
+        {
+            yield return ReloadWithSeededRun(SeedWithOpeningNode(NodeType.Event));
+            var target = OpeningNodeOfType(NodeType.Event);
+
+            ButtonFor(target.Id).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+
+            Assert.IsTrue(Resolution().IsResolvingInPlace, $"the Encounter node resolved into nothing. {Seed()}");
+            var overlay = GameObject.Find("NodeEventOverlay");
+            Assert.IsNotNull(overlay, "the event overlay should be showing");
+            Assert.AreEqual("Encounter", overlay.transform.Find("Dialog/TitleText").GetComponent<Text>().text);
+
+            OverlayContinueButton().onClick.Invoke();
+            yield return null;
+
+            Assert.IsFalse(Resolution().IsResolvingInPlace, "Continue should dismiss the overlay");
+            Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, "the player stays where they walked to");
+        }
+
+        /// <summary>The Pokémon Center only ever lands mid-run (RegionMapGenerator keeps it to one
+        /// fixed layer or the one before the Gym), so this walks to it, fighting whatever is in the
+        /// way — which is also the closest thing here to playing a stretch of a real run.</summary>
+        [UnityTest]
+        public IEnumerator ArrivingAtThePokemonCenter_RestsTheTeam()
+        {
+            var (mapSeed, center) = SeedWithNode(NodeType.Camp);
+            yield return ReloadWithSeededRun(mapSeed);
+            var run = ActiveRun.State;
+
+            // Everything before the Center is resolved and dismissed on the way; the last step is
+            // walked without resolving it, so its overlay is still up to assert on.
+            var path = PathTo(controller.Traversal.Map, center.Id);
+            for (int i = 0; i < path.Count - 1; i++)
+            {
+                yield return WalkOnto(path[i]);
+            }
+            ButtonFor(center.Id).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+
+            Assert.AreEqual(center.Id, controller.Traversal.CurrentNodeId, Seed());
+            Assert.IsNotNull(GameObject.Find("CampOverlay"), $"the Pokémon Center overlay should be showing. {Seed()}");
+            Assert.Greater(run.NextBattleAttackBonusPercent, 0f, "resting should buff the next fight");
+            Assert.Greater(run.LineUp[0].Exp, 0, "resting should grant EXP");
+
+            OverlayContinueButton().onClick.Invoke();
+            yield return null;
+            Assert.IsFalse(Resolution().IsResolvingInPlace);
+        }
+
+        [UnityTest]
+        public IEnumerator ArrivingAtABattleNode_FightsTheEncounter_AndReturnsToTheMap()
+        {
+            yield return ReloadWithSeededRun(SeedWithOpeningNode(NodeType.PvE));
+            var run = ActiveRun.State;
+            var target = OpeningNodeOfType(NodeType.PvE);
+
+            ButtonFor(target.Id).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Battle);
+
+            var battle = Object.FindFirstObjectByType<BattleScreenController>();
+            Assert.IsNotNull(battle, "the Battle scene should be running the node's fight");
+            Assert.AreEqual(2, battle.State.LineUpB.Count, "a wild encounter is a pair (EncounterGenerator)");
+
+            yield return FinishFightAndReturnToMap();
+
+            Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, "the fight left the player where it found them");
+            Assert.AreEqual(3, run.Morale, "a won fight costs no Morale");
+            Assert.Greater(run.LineUp[0].Exp, 0, "a won fight pays EXP");
+        }
+
+        [UnityTest]
+        public IEnumerator WalkingTheOfferedNodes_ReachesTheGym_AndStartsTheGymFight()
+        {
+            yield return ReloadWithSeededRun(SeedWithOpeningNode(NodeType.PvE));
+            int layerCount = controller.Traversal.Map.LayerCount;
+
+            for (int step = 0; step < layerCount && !controller.Traversal.IsComplete; step++)
+            {
+                var options = controller.Traversal.AvailableNextNodes;
+                Assert.IsNotEmpty(options, $"dead end at {controller.Traversal.CurrentNodeId}. {Seed()}");
+
+                var next = options[options.Count - 1];
+                if (next.Type == NodeType.Gym)
+                {
+                    // Stop at the Gym's own fight rather than resolving it — what beating it does is
+                    // BattleScenePlayModeTests' business.
+                    ButtonFor(next.Id).onClick.Invoke();
+                    yield return WaitForMoveToFinish();
+                    break;
+                }
+                yield return WalkOnto(next.Id);
+            }
+
+            Assert.IsTrue(controller.Traversal.IsComplete, $"never reached the Gym. {Seed()}");
+            Assert.AreEqual(controller.Traversal.Map.GymNodeId, controller.Traversal.CurrentNodeId, Seed());
+            Assert.AreEqual(layerCount, controller.Traversal.VisitedNodeIds.Count, Seed());
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Battle);
+            var battle = Object.FindFirstObjectByType<BattleScreenController>();
+            StringAssert.StartsWith(GymTeamGenerator.InstanceIdPrefix, battle.State.LineUpB[0].InstanceId,
+                "the Gym node should fight a Gym team, not a wild encounter");
+        }
+
+        // ---- fixtures -------------------------------------------------------------------------
+
+        /// <summary>Rebuilds the screen over a run with no species library, which is what a Map
+        /// opened on its own has: NodeResolutionController then leaves every arrival alone, so these
+        /// tests are about walking and nothing else.</summary>
+        private IEnumerator ReloadWithoutResolution()
+        {
+            ActiveRun.End();
+            ActiveRun.Begin(new RunState(), null);
+            yield return ReloadScene();
+        }
+
+        /// <summary>Rebuilds the screen over a real run on a known map, with a one-mon party nothing
+        /// in the roster can beat — so a test can walk onto a node type it chose, and any fight on
+        /// the way is won. The library is the curated one the scene's own RunBootstrapper published
+        /// on the previous load.</summary>
+        private IEnumerator ReloadWithSeededRun(int mapSeed)
+        {
+            var library = ActiveRun.Library;
+            Assert.IsNotNull(library, "the Map scene's RunBootstrapper should have published the curated library");
+
+            var run = new RunState { RunSeed = 4242, LocationMap = RegionMapGenerator.Generate(mapSeed) };
+            var mon = PokemonInstanceFactory.Create(library.AllSpecies[0], "test-lead");
+            mon.CurrentStats = new Stats { Attack = UnbeatableStat, Health = UnbeatableStat, Speed = 10 };
+            mon.CurrentHP = UnbeatableStat;
+            run.LineUp.Add(mon);
+
+            ActiveRun.End();
+            ActiveRun.Begin(run, library);
+            yield return ReloadScene();
+        }
+
+        /// <summary>Walks one step and resolves whatever the node turns out to be: dismissing an
+        /// overlay, or fighting the battle it left the scene for and coming back.</summary>
+        private IEnumerator WalkOnto(string nodeId)
+        {
+            ButtonFor(nodeId).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+
+            if (Resolution().IsResolvingInPlace)
+            {
+                OverlayContinueButton().onClick.Invoke();
+                yield return null;
+                yield break;
+            }
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Battle);
+            yield return FinishFightAndReturnToMap();
+        }
+
+        private IEnumerator FinishFightAndReturnToMap()
+        {
+            var battle = Object.FindFirstObjectByType<BattleScreenController>();
+            Assert.IsNotNull(battle, "expected the Battle scene to be running a fight");
+
+            FindActiveButton("SkipButton").onClick.Invoke();
+            yield return null;
+            Assert.AreEqual(BattleOutcome.SideAWins, battle.Outcome,
+                "the test party is built to win every fight — check UnbeatableStat");
+
+            FindActiveButton("ResultActionButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+            yield return null;
+            ResolveHandles();
+        }
+
+        // ---- map/seed helpers -----------------------------------------------------------------
+
+        /// <summary>The first map seed whose opening layer offers this node type, so a test can
+        /// reach it in one click instead of hoping a random map obliges.</summary>
+        private static int SeedWithOpeningNode(NodeType type)
+        {
+            for (int seed = 1; seed < MapSeedSearchLimit; seed++)
+            {
+                if (RegionMapGenerator.Generate(seed).NodesInLayer(1).Any(n => n.Type == type))
+                {
+                    return seed;
+                }
+            }
+            Assert.Fail($"no map seed under {MapSeedSearchLimit} opens onto a {type} node");
+            return 0;
+        }
+
+        /// <summary>The first map seed containing this node type anywhere, with the node itself —
+        /// for a type the generator never puts in the opening layer (the Pokémon Center).</summary>
+        private static (int seed, RegionMapNode node) SeedWithNode(NodeType type)
+        {
+            for (int seed = 1; seed < MapSeedSearchLimit; seed++)
+            {
+                var match = RegionMapGenerator.Generate(seed).Nodes.FirstOrDefault(n => n.Type == type);
+                if (match != null)
+                {
+                    return (seed, match);
+                }
+            }
+            Assert.Fail($"no map seed under {MapSeedSearchLimit} contains a {type} node");
+            return (0, null);
+        }
+
+        private RegionMapNode OpeningNodeOfType(NodeType type)
+        {
+            var node = controller.Traversal.AvailableNextNodes.FirstOrDefault(n => n.Type == type);
+            Assert.IsNotNull(node, $"the seeded map should offer a {type} node from the start. {Seed()}");
+            return node;
+        }
+
+        /// <summary>The node ids to click, in order, to get from where the player stands to
+        /// <paramref name="targetId"/> — a breadth-first walk of the map's forward edges, excluding
+        /// the node they're already on.</summary>
+        private static List<string> PathTo(RegionMap map, string targetId)
+        {
+            var cameFrom = new Dictionary<string, string>();
+            var queue = new Queue<string>();
+            queue.Enqueue(map.StartNodeId);
+
+            while (queue.Count > 0)
+            {
+                string current = queue.Dequeue();
+                if (current == targetId)
+                {
+                    var path = new List<string>();
+                    for (string step = targetId; step != map.StartNodeId; step = cameFrom[step])
+                    {
+                        path.Add(step);
+                    }
+                    path.Reverse();
+                    return path;
+                }
+
+                foreach (string next in map.GetById(current).NextIds)
+                {
+                    if (!cameFrom.ContainsKey(next))
+                    {
+                        cameFrom[next] = current;
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+
+            Assert.Fail($"'{targetId}' is not reachable from the map's start node");
+            return null;
+        }
+
+        // ---- scene lookups --------------------------------------------------------------------
+
+        private static NodeResolutionController Resolution()
+        {
+            var resolution = Object.FindFirstObjectByType<NodeResolutionController>();
+            Assert.IsNotNull(resolution, "scene has no NodeResolutionController");
+            return resolution;
+        }
+
+        /// <summary>The Continue button of whichever node overlay is up — only one is ever active,
+        /// and an inactive overlay's button is skipped.</summary>
+        private static Button OverlayContinueButton() => FindActiveButton("ContinueButton");
+
+        private static Button FindActiveButton(string name)
+        {
+            var button = Object.FindObjectsByType<Button>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
+                .FirstOrDefault(b => b.name == name);
+            Assert.IsNotNull(button, $"expected an active Button named '{name}'");
+            return button;
         }
 
         private IEnumerator WaitForMoveToFinish()

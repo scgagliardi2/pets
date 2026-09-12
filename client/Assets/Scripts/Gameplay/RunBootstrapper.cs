@@ -65,7 +65,6 @@ namespace Pets.Gameplay
             var state = new RunState
             {
                 RunSeed = System.Environment.TickCount,
-                Nodes = ForestLocationFactory.BuildNodes(),
                 LineUp =
                 {
                     PokemonInstanceFactory.Create(lead, "player-lead"),

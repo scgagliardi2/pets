@@ -31,6 +31,15 @@ namespace Pets.Tests
         private const int TestAttack = 10;
         private const int TestHealth = 200;
 
+        // A node fight's foe, tuned so the fight is over in one Step and which way it went is never
+        // in question: the weak one dies to a single hit without landing a meaningful one, the
+        // strong one one-shots a party mon and shrugs off everything it takes.
+        private const string WildName = "Wild";
+        private const int WeakFoeAttack = 1;
+        private const int WeakFoeHealth = 1;
+        private const int StrongFoeAttack = TestHealth;
+        private const int StrongFoeHealth = TestHealth * 10;
+
         private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta" };
 
         private bool hadAutoplaySetting;
@@ -63,6 +72,8 @@ namespace Pets.Tests
         {
             ActiveRun.End();
             PendingRunSelection.Clear();
+            // Static, so a node fight one test queued would otherwise be fought by the next one.
+            PendingBattle.Clear();
         }
 
         private static IEnumerator LoadScene(string path)
@@ -237,12 +248,144 @@ namespace Pets.Tests
             yield return LoadScene(BattleScenePath);
 
             AssertWired<SceneNavigator>("BackButton", nameof(SceneNavigator.GoToTeam));
+            // The two result buttons go through the controller, not straight to the navigator:
+            // where they lead depends on how the fight ended and whether it was a node fight.
             AssertWired<SceneNavigator>("ResultBackButton", nameof(SceneNavigator.GoToTeam));
             AssertWired<SceneNavigator>("BattleAgainButton", nameof(SceneNavigator.GoToBattle));
+            // The one button whose destination isn't fixed — it depends on how the node fight ended.
+            AssertWired<BattleScreenController>("ResultActionButton", nameof(BattleScreenController.OnResultActionClicked));
             AssertWired<BattleScreenController>("PauseButton", nameof(BattleScreenController.OnPauseClicked));
             AssertWired<BattleScreenController>("StepButton", nameof(BattleScreenController.OnStepClicked));
             AssertWired<BattleScreenController>("PlayButton", nameof(BattleScreenController.OnPlayClicked));
             AssertWired<BattleScreenController>("SkipButton", nameof(BattleScreenController.OnSkipClicked));
+        }
+
+        /// <summary>A fight a map node started, rather than the dev random battle: the encounter is
+        /// the one handed over, passives are left on (the dev battle strips them), and winning pays
+        /// the run in EXP and offers the defeated wild mons to catch.</summary>
+        [UnityTest]
+        public IEnumerator NodeFight_FightsTheHandedOverTeam_WithPassivesLeftOn()
+        {
+            BeginNodeFight(WeakFoeAttack, WeakFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+            var controller = Controller();
+
+            Assert.AreEqual(1, controller.State.LineUpB.Count, "the foe team is the one the node handed over");
+            Assert.AreEqual(WildName, Stats("EnemyLeadStats").NameText.text);
+            Assert.IsNotNull(controller.State.LineUpB[0].ResolvedPassive, "a node fight keeps its passives");
+            Assert.IsFalse(PendingBattle.HasPending, "the pending fight is consumed once it starts");
+            Assert.IsFalse(FindButton("BackButton", includeInactive: true).gameObject.activeInHierarchy,
+                "a node fight is committed — there's no leaving it half-fought");
+        }
+
+        [UnityTest]
+        public IEnumerator NodeFight_Won_GrantsExp_OffersACatch_AndContinuesToTheMap()
+        {
+            var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(BattleOutcome.SideAWins, Controller().Outcome);
+            Assert.AreEqual("Victory!", GameObject.Find("ResultText").GetComponent<Text>().text);
+            Assert.AreEqual(3, run.Morale, "winning costs no Morale");
+            Assert.AreEqual(BattleRewardResolver.PvEWinExp, run.LineUp[0].Exp, "the survivor is paid in EXP");
+
+            var catchButton = FindButton($"Catch_{WildName}");
+            Assert.AreEqual("Continue", FindButton("ResultActionButton").GetComponentInChildren<Text>().text);
+            foreach (string devOnly in new[] { "BattleAgainButton", "ResultBackButton" })
+            {
+                Assert.IsFalse(FindButton(devOnly, includeInactive: true).gameObject.activeInHierarchy,
+                    $"{devOnly} belongs to the dev battle, not to a node fight");
+            }
+
+            catchButton.onClick.Invoke();
+            Assert.AreEqual(1, run.Box.Count, "the caught mon joins the Box");
+
+            FindButton("ResultActionButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+            Assert.IsTrue(ActiveRun.HasRun, "the run carries on");
+        }
+
+        [UnityTest]
+        public IEnumerator NodeFight_Lost_CostsMorale_AndLeavesTheRunGoing()
+        {
+            var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(BattleOutcome.SideBWins, Controller().Outcome);
+            Assert.AreEqual(2, run.Morale, "a lost fight costs one Morale");
+            Assert.IsFalse(run.IsRunOver);
+            Assert.AreEqual(0, run.LineUp[0].Exp, "losing pays nothing");
+            Assert.IsNull(FindCatchButton(), "nothing to catch out of a fight you lost");
+
+            FindButton("ResultActionButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+        }
+
+        /// <summary>Morale is the run's life total (design doc §4): the loss that takes the last of
+        /// it ends the run, and the way out is Home rather than back onto the map.</summary>
+        [UnityTest]
+        public IEnumerator NodeFight_LostWithNoMoraleLeft_EndsTheRunAtHome()
+        {
+            var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth);
+            run.Morale = 1;
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            Assert.IsTrue(run.IsRunOver);
+            StringAssert.Contains("run ends here", GameObject.Find("ResultText").GetComponent<Text>().text);
+
+            FindButton("ResultActionButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
+            Assert.IsFalse(ActiveRun.HasRun, "a broken run is over, not resumable");
+        }
+
+        [UnityTest]
+        public IEnumerator GymFight_Won_CompletesTheLocation_AndEndsTheRunAtHome()
+        {
+            var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth, isGym: true);
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            StringAssert.Contains("Badge earned", GameObject.Find("ResultText").GetComponent<Text>().text);
+            Assert.AreEqual(BattleRewardResolver.GymWinExp, run.LineUp[0].Exp, "a Gym pays out like several nodes");
+            Assert.IsNull(FindCatchButton(), "a Gym Leader's team isn't wildlife to catch");
+
+            FindButton("ResultActionButton").onClick.Invoke();
+            // No Region Hub to pick the next Location from yet — see ADR 0003.
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
+            Assert.IsFalse(ActiveRun.HasRun);
+        }
+
+        /// <summary>The Gym is every path's terminus, so a loss there can't send the player back to a
+        /// map with nowhere left to walk — it offers the fight again instead.</summary>
+        [UnityTest]
+        public IEnumerator GymFight_Lost_OffersTheFightAgain()
+        {
+            var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth, isGym: true);
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            Assert.AreEqual(2, run.Morale);
+            var retry = FindButton("ResultActionButton");
+            Assert.AreEqual("Try Again", retry.GetComponentInChildren<Text>().text,
+                "back to the map would be a dead end, so the Gym offers itself again");
+
+            retry.onClick.Invoke();
+            Assert.IsTrue(PendingBattle.HasPending, "the retry queues another Gym fight");
+            Assert.IsTrue(PendingBattle.IsGym);
         }
 
         private static BattleScreenController Controller()
@@ -295,7 +438,7 @@ namespace Pets.Tests
             return species;
         }
 
-        private static PokemonSpeciesLibrary MakeLibrary()
+        private static PokemonSpeciesLibrary MakeLibrary(params PokemonSpeciesDefinitionAsset[] extra)
         {
             var library = ScriptableObject.CreateInstance<PokemonSpeciesLibrary>();
             library.AllSpecies = new List<PokemonSpeciesDefinitionAsset>();
@@ -303,8 +446,45 @@ namespace Pets.Tests
             {
                 library.AllSpecies.Add(MakeSpecies(i + 1, MonNames[i]));
             }
+            library.AllSpecies.AddRange(extra);
             return library;
         }
+
+        /// <summary>Queues the fight a map node would have queued: a single wild mon of the given
+        /// stats, with a passive on it (a node fight keeps passives — the dev battle strips them),
+        /// and a library that can name it so the screen and the Box both recognise it. The wild
+        /// species is only ever added for these tests, so a random dev battle can't roll it.</summary>
+        private static RunState BeginNodeFight(int foeAttack, int foeHealth, bool isGym = false)
+        {
+            var run = MakeRun(1);
+            var wild = MakeSpecies(MonNames.Length + 1, WildName);
+            wild.BaseAttack = foeAttack;
+            wild.BaseHealth = foeHealth;
+            wild.Passive = MakePassive();
+
+            ActiveRun.Begin(run, MakeLibrary(wild));
+            PendingBattle.Set(
+                new List<PokemonInstance> { PokemonInstanceFactory.Create(wild, "wild-0") },
+                isGym ? "L6-0" : "L1-0",
+                isGym,
+                seed: 1234);
+            return run;
+        }
+
+        /// <summary>Effect-free on purpose: it proves the passive survived line-up assembly without
+        /// changing how the fight goes.</summary>
+        private static PassiveDefinitionAsset MakePassive()
+        {
+            var passive = ScriptableObject.CreateInstance<PassiveDefinitionAsset>();
+            passive.Id = "test-passive";
+            passive.DisplayName = "Test Passive";
+            return passive;
+        }
+
+        /// <summary>The catch offer for the test's wild mon, or null when none was made.</summary>
+        private static Button FindCatchButton() =>
+            Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(b => b.name == $"Catch_{WildName}");
 
         private static RunState MakeRun(int partyCount)
         {

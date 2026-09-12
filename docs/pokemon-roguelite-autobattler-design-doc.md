@@ -403,7 +403,9 @@ Modeled on Super Auto Pets:
 - Should players be able to retreat from a Location before beating its Gym (abandoning progress), and if so, at what cost?
 - Exact passive magnitudes for the curated roster — the mechanism (charge meter fills → ability fires, type-flavored) is now fixed, but values are yours to tune.
 - Exact type-synergy bonus values and whether synergy counts the full roster or just the active line-up.
-- Does *any* lost battle cost Morale, or only certain node types?
+- Does *any* lost battle cost Morale, or only certain node types? (As built: every lost fight costs one Morale, and that is the *only* consequence — see the two questions below.)
+- **Does damage carry between fights?** As built it does not: every fight starts the line-up at full HP, because nothing heals yet (the Pokémon Center rests but doesn't heal, §5.2) and there's no rule for a fainted mon between nodes. If HP should persist, healing and fainting need designing together with it.
+- **What does losing a node's fight actually cost, beyond Morale?** On the branching map (§5) the player has already stepped onto a node by the time its fight happens, and forward edges are the only way out, so as built a loss costs Morale and the run walks on — there is no "retry this node until you win it". The Gym is the exception: it has no forward edges, so losing it offers the fight again. Worth confirming that a lost fight shouldn't also cost something else (money, a mon, a forced detour).
 - Resolution order when multiple mons' meters fill within the same Step — proposed default is attacking Leads before waiting Supports, ties broken by Speed; confirm or change.
 - Does a promoted Support (now the new Lead) keep its partially-filled charge meter, or reset to 0?
 - Can multiple balls be thrown at the same target across one fight (retry after a failed catch), or is it one attempt per encounter?

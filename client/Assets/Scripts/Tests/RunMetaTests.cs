@@ -237,29 +237,6 @@ namespace Pets.Tests
         }
 
         [Test]
-        public void RunState_AdvanceToNextNode_MarksClearedAndMovesForwardUntilTheEnd()
-        {
-            var state = new RunState { Nodes = ForestLocationFactory.BuildNodes() };
-
-            Assert.AreEqual("forest-1", state.CurrentNode.Id);
-            Assert.IsFalse(state.CurrentNode.Cleared);
-
-            for (int i = 0; i < state.Nodes.Count - 1; i++)
-            {
-                Assert.IsTrue(state.HasNextNode);
-                state.AdvanceToNextNode();
-            }
-
-            Assert.AreEqual("forest-5", state.CurrentNode.Id);
-            Assert.IsFalse(state.HasNextNode);
-
-            // Advancing past the last node clears it but doesn't move the index out of range.
-            state.AdvanceToNextNode();
-            Assert.AreEqual("forest-5", state.CurrentNode.Id);
-            Assert.IsTrue(state.CurrentNode.Cleared);
-        }
-
-        [Test]
         public void EncounterGenerator_OnlyPicksFromTheBiasedTypes_WhenAnyExist()
         {
             var grass = MakeSpecies(1, "Grassy", PokemonType.Grass);
@@ -386,6 +363,91 @@ namespace Pets.Tests
             Assert.AreEqual(species.BaseHealth, a[0].CurrentHP, "the roster mon took damage");
             Assert.AreEqual(species.BaseHealth, b[0].CurrentHP, "the roster mon took damage");
             Assert.AreEqual(species.BaseAttack, a[0].CurrentStats.Attack, "the roster mon's stats changed");
+        }
+
+        /// <summary>The Battle screen accumulates a fight's events Step by Step rather than holding a
+        /// StepLog, so the same question — what fell on the wild side — has to be answerable from a
+        /// plain event list.</summary>
+        [Test]
+        public void CatchResolver_ReadsDefeatedMonsFromABareEventList_Too()
+        {
+            var species = MakeSpecies(1, "Catchable", PokemonType.Bug);
+            var wildLineUp = new List<PokemonInstance> { PokemonInstanceFactory.Create(species, "wild-0") };
+            var events = new List<StepEvent>
+            {
+                new StepEvent { Step = 1, Kind = StepEventKind.Damage, SourceSide = Side.A, TargetInstanceId = "wild-0" },
+                new StepEvent { Step = 1, Kind = StepEventKind.Faint, SourceSide = Side.B, SourceInstanceId = "wild-0" }
+            };
+
+            var defeated = CatchResolver.GetDefeated(wildLineUp, events, Side.B);
+
+            Assert.AreEqual(1, defeated.Count);
+            Assert.AreEqual("wild-0", defeated[0].InstanceId);
+        }
+
+        /// <summary>A Gym Leader's team is drawn from the whole roster rather than the Location's
+        /// type bias, and hits harder to take down than the wildlife on the way to it.</summary>
+        [Test]
+        public void GymTeamGenerator_DrawsFromTheWholeRoster_AndBuffsEveryMembersHealth()
+        {
+            var grass = MakeSpecies(1, "Leafy", PokemonType.Grass, health: 100);
+            var rock = MakeSpecies(2, "Rocky", PokemonType.Rock, health: 100);
+            var library = MakeLibrary(grass, rock);
+
+            var team = GymTeamGenerator.Generate(library, count: 2, seed: 7);
+
+            Assert.AreEqual(2, team.Count);
+            foreach (var mon in team)
+            {
+                int authored = mon.SpeciesId == grass.Id ? grass.BaseHealth : rock.BaseHealth;
+                int expected = authored + (int)(authored * GymTeamGenerator.HealthBonusPercent);
+                Assert.AreEqual(expected, mon.CurrentStats.Health);
+                Assert.AreEqual(expected, mon.CurrentHP, "a Gym member starts its fight at full health");
+                StringAssert.StartsWith(GymTeamGenerator.InstanceIdPrefix, mon.InstanceId);
+            }
+        }
+
+        [Test]
+        public void GymTeamGenerator_IsDeterministic_ForTheSameSeed()
+        {
+            var library = MakeLibrary(
+                MakeSpecies(1, "A", PokemonType.Grass),
+                MakeSpecies(2, "B", PokemonType.Rock),
+                MakeSpecies(3, "C", PokemonType.Water));
+
+            var a = GymTeamGenerator.Generate(library, count: 3, seed: 123);
+            var b = GymTeamGenerator.Generate(library, count: 3, seed: 123);
+
+            Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));
+        }
+
+        /// <summary>Only the mons still standing are paid, and the EXP lands on the run's own mons
+        /// (a combatant's Source) rather than on the battle's copies, which are thrown away.</summary>
+        [Test]
+        public void BattleRewardResolver_PaysTheSurvivors_OnTheRunsOwnMons()
+        {
+            var species = MakeSpecies(1, "Winner", PokemonType.Normal);
+            var survivor = PokemonInstanceFactory.Create(species, "survivor");
+            var fallen = PokemonInstanceFactory.Create(species, "fallen");
+
+            BattleRewardResolver.GrantWinRewards(
+                new List<BattleCombatant> { BattleCombatant.FromInstance(survivor) }, isGym: false);
+
+            Assert.AreEqual(BattleRewardResolver.PvEWinExp, survivor.Exp);
+            Assert.AreEqual(0, fallen.Exp, "a mon that wasn't left standing isn't paid");
+        }
+
+        [Test]
+        public void BattleRewardResolver_PaysMoreForAGym()
+        {
+            var species = MakeSpecies(1, "Champion", PokemonType.Normal);
+            var mon = PokemonInstanceFactory.Create(species, "mon");
+
+            BattleRewardResolver.GrantWinRewards(
+                new List<BattleCombatant> { BattleCombatant.FromInstance(mon) }, isGym: true);
+
+            Assert.AreEqual(BattleRewardResolver.GymWinExp, mon.Exp);
+            Assert.Greater(BattleRewardResolver.GymWinExp, BattleRewardResolver.PvEWinExp);
         }
 
         [Test]

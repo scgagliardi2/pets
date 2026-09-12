@@ -12,8 +12,10 @@ namespace Pets.EditorTools
     /// <summary>Builds the Battle screen after the battle mockup: a full-screen battlefield backdrop;
     /// the foe's Lead and Support on the far clearing with their stat boxes top-left; the player's pair
     /// in the foreground with their boxes on the right; a pause / step / play / skip pill at the top;
-    /// and the party strip with the (disabled) Throw button along the bottom. A result panel with
-    /// Battle Again / Back to Team appears over it all when the fight ends.
+    /// and the party strip with the (disabled) Throw button along the bottom. A result panel appears
+    /// over it all when the fight ends — two buttons whose labels and destinations the controller
+    /// sets from the kind of fight it was, plus a row above it where a won PvE node's catch offers
+    /// are added at runtime.
     ///
     /// Positions are written in units from the top-left of the 1280x720 reference canvas, the numbers
     /// you'd read off the mockup. Everything in the lower half — the player's mons and boxes, the
@@ -36,8 +38,8 @@ namespace Pets.EditorTools
         // pair's feet stay above y 322, where the player's stat boxes start, so neither is hidden.
         private static readonly Rect EnemyLeadSpriteRect = new Rect(750f, 130f, 190f, 190f);
         private static readonly Rect EnemySupportSpriteRect = new Rect(985f, 150f, 150f, 150f);
-        private static readonly Rect PlayerLeadSpriteRect = new Rect(170f, 330f, 240f, 240f);
-        private static readonly Rect PlayerSupportSpriteRect = new Rect(470f, 380f, 200f, 200f);
+        private static readonly Rect PlayerLeadSpriteRect = new Rect(470f, 330f, 240f, 240f);
+        private static readonly Rect PlayerSupportSpriteRect = new Rect(170f, 380f, 200f, 200f);
 
         private static readonly Vector2 EnemyLeadStatsPos = new Vector2(56f, 24f);
         private static readonly Vector2 EnemySupportStatsPos = new Vector2(56f, 136f);
@@ -57,6 +59,10 @@ namespace Pets.EditorTools
         private static readonly Vector2 ThrowSize = new Vector2(150f, 150f);
 
         private static readonly Vector2 ResultPanelSize = new Vector2(460f, 220f);
+        private static readonly Vector2 ResultButtonSize = new Vector2(200f, 64f);
+        private const float ResultButtonInset = 20f;
+        private const float CatchRowHeight = 64f;
+        private const float CatchRowGap = 12f;
 
         [MenuItem("Pets/Build Battle Scene")]
         public static void Build()
@@ -120,7 +126,7 @@ namespace Pets.EditorTools
             var throwButton = CreateThrowButton(strip,
                 new Rect(rowLeft + PartySlotCount * (slotSize.x + SlotGap) - SlotGap + ThrowGap, rowTop, ThrowSize.x, ThrowSize.y));
 
-            var (resultPanel, resultText, battleAgainButton, resultBackButton) = CreateResultPanel(board);
+            var (resultPanel, resultText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
             var controller = new GameObject("BattleScreen").AddComponent<BattleScreenController>();
@@ -145,18 +151,29 @@ namespace Pets.EditorTools
             SetField(controller, "playButton", playButton);
             SetField(controller, "skipButton", skipButton);
             SetField(controller, "throwButton", throwButton);
+            SetField(controller, "backButton", backButton);
             SetField(controller, "resultPanel", resultPanel.gameObject);
             SetField(controller, "resultText", resultText);
+            SetField(controller, "battleAgainButton", battleAgainButton.GetComponent<UiButton>());
+            SetField(controller, "resultBackButton", resultBackButton.GetComponent<UiButton>());
+            SetField(controller, "resultActionButton", resultActionButton.GetComponent<UiButton>());
+            SetField(controller, "catchButtonsContainer", catchRow);
+            SetField(controller, "catchButtonPrefab",
+                AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.ButtonPrefabPath).GetComponent<UiButton>());
 
             UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.GoToTeam);
             UnityEventTools.AddVoidPersistentListener(resultBackButton.onClick, navigator.GoToTeam);
             UnityEventTools.AddVoidPersistentListener(battleAgainButton.onClick, navigator.GoToBattle);
+            // The node fight's one button is the only one whose destination isn't fixed: it depends
+            // on how the fight ended and on the run's Morale, so it asks the controller.
+            UnityEventTools.AddVoidPersistentListener(resultActionButton.onClick, controller.OnResultActionClicked);
             UnityEventTools.AddVoidPersistentListener(pauseButton.onClick, controller.OnPauseClicked);
             UnityEventTools.AddVoidPersistentListener(stepButton.onClick, controller.OnStepClicked);
             UnityEventTools.AddVoidPersistentListener(playButton.onClick, controller.OnPlayClicked);
             UnityEventTools.AddVoidPersistentListener(skipButton.onClick, controller.OnSkipClicked);
 
-            ForceLayoutRebuild(canvasRect);
+            // The catch row is filled at runtime, so its layout group has to survive the bake.
+            ForceLayoutRebuild(canvasRect, catchRow);
             resultPanel.gameObject.SetActive(false);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -338,7 +355,7 @@ namespace Pets.EditorTools
             return button;
         }
 
-        private static (RectTransform panel, Text result, Button battleAgain, Button back) CreateResultPanel(RectTransform board)
+        private static (RectTransform panel, Text result, Button battleAgain, Button back, Button action, RectTransform catchRow) CreateResultPanel(RectTransform board)
         {
             var panel = CreateFrame(board, "ResultPanel", Theme.TextBoxSprite);
             panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
@@ -354,11 +371,36 @@ namespace Pets.EditorTools
             resultRect.offsetMin = new Vector2(20f, -120f);
             resultRect.offsetMax = new Vector2(-20f, -20f);
 
+            // The dev battle's pair, side by side. A node fight hides both and shows the single
+            // centred action below instead — see BattleScreenController.UpdateResultButtons.
             var battleAgain = CreateButton(panel, "BattleAgainButton", "Battle Again", Theme.ButtonStyle.Confirm, useSprite: true);
             PlaceResultButton((RectTransform)battleAgain.transform, alignRight: false);
             var back = CreateButton(panel, "ResultBackButton", "Back to Team", Theme.ButtonStyle.Secondary, useSprite: true);
             PlaceResultButton((RectTransform)back.transform, alignRight: true);
-            return (panel, result, battleAgain, back);
+
+            var action = CreateButton(panel, "ResultActionButton", "Continue", Theme.ButtonStyle.Primary, useSprite: true);
+            var actionRect = (RectTransform)action.transform;
+            actionRect.anchorMin = actionRect.anchorMax = actionRect.pivot = new Vector2(0.5f, 0f);
+            actionRect.sizeDelta = ResultButtonSize;
+            actionRect.anchoredPosition = new Vector2(0f, ResultButtonInset);
+
+            return (panel, result, battleAgain, back, action, CreateCatchRow(panel));
+        }
+
+        /// <summary>The row a won PvE node's catch offers appear in (BattleScreenController fills it
+        /// from the shared Button prefab, one per defeated wild mon — the "pick 1 from defeated" stub
+        /// standing in for design doc §12.1). Sits above the panel rather than inside it: the panel
+        /// is already full, and the catches read as an extra thing on offer rather than part of the
+        /// result. A child of the panel all the same, so it shows and hides with it.</summary>
+        private static RectTransform CreateCatchRow(RectTransform panel)
+        {
+            var row = CreatePanel(panel, "CatchRow", Color.clear, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            row.pivot = new Vector2(0.5f, 0f);
+            row.sizeDelta = new Vector2(ResultPanelSize.x, CatchRowHeight);
+            row.anchoredPosition = new Vector2(0f, CatchRowGap);
+            AddHorizontalLayout(row, expandHeight: true);
+            row.GetComponent<HorizontalLayoutGroup>().childAlignment = TextAnchor.MiddleCenter;
+            return row;
         }
 
         private static void PlaceResultButton(RectTransform rect, bool alignRight)
@@ -366,8 +408,8 @@ namespace Pets.EditorTools
             float x = alignRight ? 1f : 0f;
             rect.anchorMin = rect.anchorMax = new Vector2(x, 0f);
             rect.pivot = new Vector2(x, 0f);
-            rect.sizeDelta = new Vector2(200f, 64f);
-            rect.anchoredPosition = new Vector2(alignRight ? -20f : 20f, 20f);
+            rect.sizeDelta = ResultButtonSize;
+            rect.anchoredPosition = new Vector2(alignRight ? -ResultButtonInset : ResultButtonInset, ResultButtonInset);
         }
     }
 }

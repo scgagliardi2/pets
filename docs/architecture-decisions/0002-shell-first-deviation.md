@@ -1,6 +1,9 @@
 # ADR 0002: Shell-First Build Order, and the Retirement of the Location Hub
 
-**Status:** Accepted (describes what happened; the open items it lists are still decisions)
+**Status:** Accepted (describes what happened). Its decisions 2 and 3 — the milestone and the
+orphaned controllers' clock — were carried out the same day by
+[ADR 0003](0003-node-resolution-on-the-battle-scene.md), which also settles the Camp-vs-Pokémon
+Center question raised below. Everything else here still stands.
 **Date:** 2026-09-12
 
 ## Context

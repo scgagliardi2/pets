@@ -5,8 +5,10 @@ roadmap, and [`docs/pokemon-roguelite-autobattler-design-doc.md`](docs/pokemon-r
 for the full design — read both before starting non-trivial work if you haven't already.
 [`docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`](docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md)
 explains why the project looks the way it does; [`0002-shell-first-deviation.md`](docs/architecture-decisions/0002-shell-first-deviation.md)
-explains why what's built doesn't match the plan's order, and which deviations from the design doc
-are still open questions.
+explains why what's built doesn't match the plan's order; and
+[`0003-node-resolution-on-the-battle-scene.md`](docs/architecture-decisions/0003-node-resolution-on-the-battle-scene.md)
+covers how a map node turns into a fight, and which simplifications the run loop deliberately
+carries. Between them they list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
 
@@ -26,15 +28,16 @@ exists — the phase list under it describes intent, and the build has deviated 
   deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
   extend, not replace.
 - The game's **shell** is built and playable (Home → Character Select → a walkable Location map,
-  plus an in-run menu, Team, History, Credits, Settings, a dev roster screen). The **run inside it is not**:
-  arriving at a map node does nothing. `Battle.unity` runs a real fight, but only reached from
-  Team's dev button, against a random enemy team, with **passives stripped from both sides** and
-  no effect on the run (see PLAN.md §6).
-- Six `Scripts/Gameplay` controllers (`LocationFlowController`, `PvEClashController`,
-  `MapPanelController`, `CampPanelController`, `ResourceBarController`, `LocationHubController`)
-  and `Prefabs/UI/CampOverlay.prefab` are attached to **no scene** — orphaned when the Forest hub
-  became the Ingame Menu, kept for the node-resolution work they'll be reused for. Don't assume a
-  controller is live because it exists; check whether a scene references it.
+  plus an in-run menu, Team, History, Credits, Settings, a dev roster screen), and the **core run
+  loop inside it now works**: arriving at a map node resolves it (ADR 0003). Battle/Gym nodes hand
+  an encounter to `Battle.unity` through `PendingBattle` and it writes the result back to the run
+  (Morale, EXP, the stubbed catch, Location complete); the Pokémon Center and the Event/PvP stubs
+  resolve as modals on the map. Team's dev button still opens the old throwaway random battle,
+  which strips passives and costs the run nothing — don't mistake one for the other.
+- The systems hanging off that loop are **not** built: evolution, the real drag-and-drop catching,
+  Pokémon Center adoption/healing, a Shop, type synergy, the badge reward, real Event/PvP nodes,
+  the Trailblazer minigame, and the Region Hub. See PLAN.md §6 for the deliberate simplifications
+  that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
 - `RegionMap*` is misnamed: it's the **Location** node-map (design doc §5), not the Region tier
   (§4/§5.2), which isn't built. See PLAN.md §6 "Known naming debt" before adding to it.
 - There is **no save/load layer** (so "Continue Run" only resumes a run still in memory, and
@@ -155,7 +158,8 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the battle UI pass and Settings): **139 EditMode, 64 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-12 (after node resolution and the Gym/Morale loop): **143 EditMode, 76 PlayMode, all
+  passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

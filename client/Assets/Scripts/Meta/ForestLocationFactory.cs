@@ -1,25 +1,15 @@
-using System.Collections.Generic;
 using Pets.Simulation;
 
 namespace Pets.Meta
 {
-    /// <summary>Builds Phase 0's one hand-authored Location (PLAN.md §6, Phase 0): a Forest, biased
-    /// toward Grass/Bug/Flying wild encounters (design doc §4 table), as a linear node sequence.
-    /// Branching paths and the mandatory Gym node are Phase 1 (design doc §5, §14).</summary>
+    /// <summary>The one hand-authored Location (PLAN.md §6, Phase 0): a Forest, biased toward
+    /// Grass/Bug/Flying wild encounters (design doc §4 table). Its node-map is now the generated
+    /// branching graph (RegionMapGenerator/RegionMapTraversal) rather than a bespoke sequence —
+    /// this factory only supplies the type bias PvE nodes draw wild encounters from
+    /// (EncounterGenerator). The Gym node draws from the whole roster instead (GymTeamGenerator),
+    /// since a Gym Leader's team isn't meant to read as "more Forest wildlife."</summary>
     public static class ForestLocationFactory
     {
         public static readonly PokemonType[] TypeBias = { PokemonType.Grass, PokemonType.Bug, PokemonType.Flying };
-
-        public static List<LocationNodeState> BuildNodes()
-        {
-            return new List<LocationNodeState>
-            {
-                new LocationNodeState { Id = "forest-1", Type = NodeType.PvE },
-                new LocationNodeState { Id = "forest-2", Type = NodeType.PvE },
-                new LocationNodeState { Id = "forest-3", Type = NodeType.Camp },
-                new LocationNodeState { Id = "forest-4", Type = NodeType.PvE },
-                new LocationNodeState { Id = "forest-5", Type = NodeType.PvE }
-            };
-        }
     }
 }

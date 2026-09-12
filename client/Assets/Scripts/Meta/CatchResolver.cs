@@ -15,10 +15,17 @@ namespace Pets.Meta
         /// come back undamaged and "which of these is dead" is no longer a question the roster can
         /// answer. The events are the record of what happened, which is the right thing to ask.</summary>
         public static List<PokemonInstance> GetDefeated(
-            IReadOnlyList<PokemonInstance> wildLineUp, StepLog log, Side wildSide)
+            IReadOnlyList<PokemonInstance> wildLineUp, StepLog log, Side wildSide) =>
+            GetDefeated(wildLineUp, log.Events, wildSide);
+
+        /// <summary>Same as the StepLog overload, against a raw event list — for a caller (the
+        /// Battle screen) that accumulates a fight's events Step by Step rather than holding a
+        /// full StepLog.</summary>
+        public static List<PokemonInstance> GetDefeated(
+            IReadOnlyList<PokemonInstance> wildLineUp, IEnumerable<StepEvent> events, Side wildSide)
         {
             var faintedIds = new HashSet<string>();
-            foreach (var evt in log.Events)
+            foreach (var evt in events)
             {
                 if (evt.Kind == StepEventKind.Faint && evt.SourceSide == wildSide)
                 {

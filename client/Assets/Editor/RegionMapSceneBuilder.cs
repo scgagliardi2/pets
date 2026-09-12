@@ -17,9 +17,14 @@ namespace Pets.EditorTools
     /// loaded from Assets/Resources/Sprites/Nodes (see that folder's README) — falling back to a
     /// flat color swatch for any type whose icon file isn't there yet.
     ///
-    /// Nodes are walkable but not yet resolvable — arriving at one doesn't start a fight or an
-    /// event (PLAN.md Phase 1), and this scene isn't wired into the Forest run loop. Re-run via
-    /// Pets &gt; Build Region Map Scene after changing RegionMapController's serialized fields.</summary>
+    /// Arriving at a node resolves it (NodeResolutionController): a PvE or Gym node leaves for the
+    /// Battle scene, while the Pokémon Center and the Event/PvP stubs are handled here, by the two
+    /// overlay prefabs this builder instantiates over the map. The title bar carries the run's
+    /// Morale/Money alongside the Menu button, since the map is the screen a run is spent on.
+    ///
+    /// Re-run via Pets &gt; Build Region Map Scene after changing RegionMapController's or
+    /// NodeResolutionController's serialized fields — or Pets &gt; Build All Scenes after changing
+    /// either overlay prefab, which is what rebuilds those first.</summary>
     public static class RegionMapSceneBuilder
     {
         /// <summary>Matches every other scene builder. Leaving this to CreateCanvas's own default
@@ -40,6 +45,7 @@ namespace Pets.EditorTools
         private const float ButtonHeight = 64f;
         private const float MenuButtonWidth = 150f;
         private const float NewMapButtonWidth = 200f;
+        private const float ResourceBarWidth = 280f;
 
         [MenuItem("Pets/Build Region Map Scene")]
         public static void Build()
@@ -83,6 +89,18 @@ namespace Pets.EditorTools
             // of the footer's map controls so "leave the run" can't be mistaken for "re-roll it".
             var menuButton = CreateButton(titleBar, "MenuButton", "Menu", Theme.ButtonStyle.Secondary, useSprite: true);
             AnchorInBar(menuButton, MenuButtonWidth, toRight: false);
+
+            // Morale is what a lost fight costs (design doc §4), so it belongs on the screen where
+            // the player decides which fight to take. Right corner of the title bar, opposite the
+            // Menu button and clear of the centered title.
+            var (resourceBar, resourceValues) = CreateResourceBar(
+                titleBar, "ResourceBar", new Vector2(1f, 0f), new Vector2(1f, 1f), new[] { "Morale", "Money" });
+            resourceBar.pivot = new Vector2(1f, 0.5f);
+            resourceBar.sizeDelta = new Vector2(ResourceBarWidth, 0f);
+            resourceBar.anchoredPosition = new Vector2(-SideMargin, 0f);
+            var resourceBarController = resourceBar.gameObject.AddComponent<ResourceBarController>();
+            SetField(resourceBarController, "moraleValue", resourceValues[0]);
+            SetField(resourceBarController, "moneyValue", resourceValues[1]);
 
             // Vertical scrolling as well as horizontal: the taller chrome these sprite buttons
             // need leaves the map area 560 units high, and the widest map the generator can
@@ -129,6 +147,18 @@ namespace Pets.EditorTools
             SetField(controller, "statusText", statusText);
             SetField(controller, "newMapButton", newMapButton);
 
+            // Last children of the canvas, so they draw over the map and its chrome; each covers
+            // the screen and takes the raycast, which is what makes them modal. Left inactive —
+            // NodeResolutionController shows the one the node it arrives at calls for.
+            var campOverlay = InstantiateOverlay<CampPanelController>(canvasRect, CampOverlayPrefabBuilder.PrefabPath, "CampOverlay");
+            var eventOverlay = InstantiateOverlay<NodeEventOverlayController>(canvasRect, NodeEventOverlayPrefabBuilder.PrefabPath, "NodeEventOverlay");
+
+            var resolution = new GameObject("NodeResolution").AddComponent<NodeResolutionController>();
+            SetField(resolution, "map", controller);
+            SetField(resolution, "resourceBar", resourceBarController);
+            SetField(resolution, "campOverlay", campOverlay);
+            SetField(resolution, "eventOverlay", eventOverlay);
+
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
             UnityEventTools.AddVoidPersistentListener(menuButton.onClick, navigator.GoToIngameMenu);
 
@@ -144,6 +174,24 @@ namespace Pets.EditorTools
             SceneCatalog.EnsureBuildScenes();
 
             Debug.Log($"Region Map scene rebuilt at {ScenePath}");
+        }
+
+        /// <summary>Instantiates a node-resolution overlay prefab stretched over the whole canvas
+        /// and switched off, ready for the controller to show.</summary>
+        private static T InstantiateOverlay<T>(RectTransform canvasRect, string prefabPath, string name) where T : Component
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null)
+            {
+                throw new System.InvalidOperationException(
+                    $"Region Map scene build failed: no prefab at {prefabPath}. Run Pets > Build All Scenes, which builds the overlay prefabs first.");
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, canvasRect);
+            instance.name = name;
+            StretchTo(instance.GetComponent<RectTransform>(), Vector2.zero, Vector2.one);
+            instance.SetActive(false);
+            return instance.GetComponent<T>();
         }
 
         /// <summary>Starting Lead/Support for a run begun without going through Character Select

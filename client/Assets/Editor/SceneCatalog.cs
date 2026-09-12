@@ -38,13 +38,17 @@ namespace Pets.EditorTools
         }
 
         /// <summary>Rebuilds the shared UI prefabs and then every scene, in one go. The scenes
-        /// instantiate those prefabs (CreateSpriteButton / CreateTextBox), so prefab changes only
-        /// reach a saved scene after that scene is rebuilt — run this rather than a single scene
-        /// builder after touching Assets/Prefabs/UI or Pets.UI.Theme.</summary>
+        /// instantiate those prefabs (CreateSpriteButton / CreateTextBox, and the Map's two node
+        /// overlays), so prefab changes only reach a saved scene after that scene is rebuilt — run
+        /// this rather than a single scene builder after touching Assets/Prefabs/UI or
+        /// Pets.UI.Theme. Every prefab a scene instantiates is built first, so this works on a
+        /// checkout with no prefabs at all.</summary>
         [MenuItem("Pets/Build All Scenes")]
         public static void BuildAll()
         {
             UiPrefabBuilder.Build();
+            CampOverlayPrefabBuilder.Build();
+            NodeEventOverlayPrefabBuilder.Build();
             HomeSceneBuilder.Build();
             CharacterSelectSceneBuilder.Build();
             RegionMapSceneBuilder.Build();
