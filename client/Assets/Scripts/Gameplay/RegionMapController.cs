@@ -110,6 +110,7 @@ namespace Pets.Gameplay
         private RectTransform nodeRoot;
         private RectTransform playerToken;
         private Coroutine moveRoutine;
+        private Coroutine initialScrollRoutine;
 
         /// <summary>The walk state over the currently displayed map. Rebuilt by <see cref="Regenerate"/>.</summary>
         public RegionMapTraversal Traversal { get; private set; }
@@ -174,8 +175,24 @@ namespace Pets.Gameplay
             playerToken.anchoredPosition = PlayerPositionFor(Traversal.CurrentNodeId);
 
             Refresh();
-            Canvas.ForceUpdateCanvases();
+
+            // Next frame rather than Canvas.ForceUpdateCanvases() here: the ScrollRect needs its
+            // viewport and content rects resolved before horizontalNormalizedPosition means
+            // anything, and forcing it synchronously updates *every* canvas in the scene, on every
+            // map build — including one per click of New Map. Waiting a frame costs a single frame
+            // of the map sitting at scroll 0, which the fade-in covers on scene entry.
+            if (initialScrollRoutine != null)
+            {
+                StopCoroutine(initialScrollRoutine);
+            }
+            initialScrollRoutine = StartCoroutine(SetScrollAfterLayout());
+        }
+
+        private IEnumerator SetScrollAfterLayout()
+        {
+            yield return null;
             SetScroll(ScrollPositionFor(playerToken.anchoredPosition.x));
+            initialScrollRoutine = null;
         }
 
         /// <summary>Places layer 0 at the left and the Gym at the right, so the map reads as a
@@ -363,6 +380,14 @@ namespace Pets.Gameplay
 
             var go = new GameObject("PlayerToken", typeof(RectTransform));
             go.transform.SetParent(content, false);
+
+            // Its own nested Canvas: the token is the one thing here that moves every frame (see
+            // WalkTo), and a canvas rebuilds its batched geometry as a unit, so without this the
+            // token's slide re-batches every node, edge and caption alongside it. Costs one extra
+            // draw call for the token. overrideSorting stays off, so it keeps its hierarchy draw
+            // order and the scroll viewport's RectMask2D still clips it.
+            go.AddComponent<Canvas>();
+
             var image = go.AddComponent<Image>();
             image.color = Theme.TabSelectedBg;
             image.raycastTarget = false;

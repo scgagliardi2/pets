@@ -156,10 +156,13 @@ namespace Pets.Tests
             string summaryBeforeConfirm = canvas.Find("PromptText").GetComponent<Text>().text;
 
             confirmButton.onClick.Invoke();
-            yield return null;
-            yield return null;
 
-            Assert.IsNotNull(RunBootstrapper.Instance, "confirming should have loaded the Game scene and its RunBootstrapper");
+            // Confirming fades out and loads asynchronously (ScreenFade), so the next scene is not
+            // up on the following frame the way a synchronous LoadScene left it. Polling for the
+            // arriving scene's bootstrapper rather than waiting a fixed number of frames, so this
+            // doesn't quietly become a race if the fade duration changes.
+            yield return SceneTransitionWait.UntilExists<RunBootstrapper>(
+                "confirming should have loaded the Map scene and its RunBootstrapper");
             var state = RunBootstrapper.Instance.State;
             var library = RunBootstrapper.Instance.SpeciesLibrary;
             string leadName = library.GetById(state.LineUp[0].SpeciesId).DisplayName;

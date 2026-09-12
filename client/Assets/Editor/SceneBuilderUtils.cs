@@ -38,17 +38,28 @@ namespace Pets.EditorTools
             new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
         }
 
-        public static RectTransform CreateCanvas(Vector2? referenceResolution = null)
+        /// <param name="pixelPerfect">Snap every UI graphic to whole device pixels. Without it, a
+        /// canvas scale factor that isn't a round number (it rarely is — it's
+        /// screenWidth/referenceWidth, e.g. 1.875 on a 2400-wide phone) lands glyph and sprite
+        /// edges on fractional pixels, and they get filtered across two pixels instead of landing
+        /// on one. It's the cheapest sharpness win available for a *static* screen, which is what
+        /// every screen was when it was turned on globally.
+        ///
+        /// Pass false for a screen that animates. Snapping to whole pixels quantizes continuous
+        /// motion, so anything lerping a position steps instead of gliding — the Region Map's
+        /// player token and its scroll are the reason this is a parameter rather than always
+        /// on.</param>
+        public static RectTransform CreateCanvas(Vector2? referenceResolution = null, bool pixelPerfect = true)
         {
             var go = new GameObject("Canvas", typeof(RectTransform));
             var canvas = go.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            // Snap every UI graphic to whole device pixels. Without this, a canvas scale factor
-            // that isn't a round number (it rarely is — it's screenWidth/referenceWidth, e.g.
-            // 1.875 on a 2400-wide phone) lands glyph and sprite edges on fractional pixels, and
-            // they get filtered across two pixels instead of landing on one. Costs nothing for a
-            // static UI like this one and is the single cheapest sharpness win available.
-            canvas.pixelPerfect = true;
+            canvas.pixelPerfect = pixelPerfect;
+
+            // Position and TexCoord0 are all uGUI's Image/Text shaders read. A canvas defaults to
+            // also generating TexCoord1/Normal/Tangent per vertex, which nothing here samples —
+            // dropping them shrinks every UI vertex for free.
+            canvas.additionalShaderChannels = AdditionalCanvasShaderChannels.None;
             var scaler = go.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = referenceResolution ?? new Vector2(960, 720);

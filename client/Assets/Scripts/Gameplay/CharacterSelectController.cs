@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Pets.Data;
 using Pets.Simulation;
@@ -110,7 +109,7 @@ namespace Pets.Gameplay
         {
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
-            SceneManager.LoadScene(SceneNames.Map);
+            ScreenFade.TransitionTo(SceneNames.Map);
         }
 
         /// <summary>Wired to typeFilterDropdown.onValueChanged. Dropdown option 0 is "All Types";

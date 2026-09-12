@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Pets.Gameplay
 {
@@ -10,7 +9,11 @@ namespace Pets.Gameplay
     /// that would otherwise hold nothing but LoadScene calls.
     ///
     /// Screens that also have state to show (Team) keep their own controller for that and still
-    /// use this for their Back button.</summary>
+    /// use this for their Back button.
+    ///
+    /// Every method here goes through ScreenFade.TransitionTo rather than loading a scene
+    /// directly: a synchronous load freezes the main thread for the whole of the next screen's
+    /// Start, which on Character Select and the Map is a lot of work. See ScreenFade.</summary>
     public sealed class SceneNavigator : MonoBehaviour
     {
         /// <summary>Home's "New Game": drops whatever run was in progress before sending the
@@ -21,24 +24,24 @@ namespace Pets.Gameplay
         {
             ActiveRun.End();
             PendingRunSelection.Clear();
-            SceneManager.LoadScene(SceneNames.CharacterSelect);
+            ScreenFade.TransitionTo(SceneNames.CharacterSelect);
         }
 
-        public void GoToCharacterSelect() => SceneManager.LoadScene(SceneNames.CharacterSelect);
+        public void GoToCharacterSelect() => ScreenFade.TransitionTo(SceneNames.CharacterSelect);
 
-        public void GoToMap() => SceneManager.LoadScene(SceneNames.Map);
+        public void GoToMap() => ScreenFade.TransitionTo(SceneNames.Map);
 
-        public void GoToIngameMenu() => SceneManager.LoadScene(SceneNames.IngameMenu);
+        public void GoToIngameMenu() => ScreenFade.TransitionTo(SceneNames.IngameMenu);
 
-        public void GoToTeam() => SceneManager.LoadScene(SceneNames.Team);
+        public void GoToTeam() => ScreenFade.TransitionTo(SceneNames.Team);
 
-        public void GoHome() => SceneManager.LoadScene(SceneNames.Home);
+        public void GoHome() => ScreenFade.TransitionTo(SceneNames.Home);
 
-        public void GoToHistory() => SceneManager.LoadScene(SceneNames.History);
+        public void GoToHistory() => ScreenFade.TransitionTo(SceneNames.History);
 
-        public void GoToCredits() => SceneManager.LoadScene(SceneNames.Credits);
+        public void GoToCredits() => ScreenFade.TransitionTo(SceneNames.Credits);
 
-        public void GoToDevRoster() => SceneManager.LoadScene(SceneNames.DevRoster);
+        public void GoToDevRoster() => ScreenFade.TransitionTo(SceneNames.DevRoster);
 
         /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
         /// the Ingame Menu rather than straight on the Map so the player sees where they are
@@ -51,7 +54,7 @@ namespace Pets.Gameplay
             {
                 return;
             }
-            SceneManager.LoadScene(SceneNames.IngameMenu);
+            ScreenFade.TransitionTo(SceneNames.IngameMenu);
         }
 
         /// <summary>Application.Quit is a no-op in the Editor (it only ends a real player

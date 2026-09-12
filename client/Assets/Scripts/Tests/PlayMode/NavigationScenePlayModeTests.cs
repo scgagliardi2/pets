@@ -161,10 +161,12 @@ namespace Pets.Tests
             Assert.IsTrue(ActiveRun.HasRun);
 
             Object.FindFirstObjectByType<SceneNavigator>().StartNewGame();
-            yield return null;
 
+            // Cleared synchronously, before the transition starts — that's the part that matters
+            // here, since the Map's RunBootstrapper adopts whatever ActiveRun holds.
             Assert.IsFalse(ActiveRun.HasRun, "StartNewGame should clear the run in progress");
-            Assert.AreEqual(SceneNames.CharacterSelect, SceneManager.GetActiveScene().name);
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.CharacterSelect);
         }
 
         [UnityTest]

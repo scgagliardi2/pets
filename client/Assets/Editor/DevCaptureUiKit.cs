@@ -43,9 +43,19 @@ namespace Pets.EditorTools
         /// batch itself (this can't be combined with a plain -quit on the command line, since Play
         /// mode entry is asynchronous relative to -executeMethod returning).</summary>
         [MenuItem("Pets/Dev/Capture Character Select Scene (Playing)")]
-        public static void CaptureCharacterSelectScenePlaying()
+        public static void CaptureCharacterSelectScenePlaying() =>
+            CapturePlaying(CharacterSelectSceneBuilder.ScenePath);
+
+        /// <summary>The Region Map's nodes, edges, captions and player token are all built in
+        /// RegionMapController.Build at runtime, so like Character Select it only shows anything
+        /// worth looking at in Play mode.</summary>
+        [MenuItem("Pets/Dev/Capture Region Map Scene (Playing)")]
+        public static void CaptureRegionMapScenePlaying() =>
+            CapturePlaying(RegionMapSceneBuilder.ScenePath);
+
+        private static void CapturePlaying(string scenePath)
         {
-            EditorSceneManager.OpenScene(CharacterSelectSceneBuilder.ScenePath);
+            EditorSceneManager.OpenScene(scenePath);
             playModeFrameCount = 0;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             EditorApplication.isPlaying = true;
@@ -88,24 +98,25 @@ namespace Pets.EditorTools
 
         private static void Capture(string outputPath)
         {
-            var canvas = Object.FindFirstObjectByType<Canvas>();
+            // By CanvasScaler rather than FindFirstObjectByType<Canvas>: in Play mode
+            // Pets.Gameplay.ScreenFade adds a full-screen overlay canvas of its own, which has no
+            // scaler and would otherwise be a coin-flip to capture instead of the screen — as a
+            // black frame, since that's what it draws.
+            var scaler = Object.FindFirstObjectByType<CanvasScaler>();
+            var canvas = scaler != null ? scaler.GetComponent<Canvas>() : null;
             if (canvas == null)
             {
-                Debug.LogError("[Capture] No Canvas in the open scene.");
+                Debug.LogError("[Capture] No Canvas with a CanvasScaler in the open scene.");
                 EditorApplication.Exit(1);
                 return;
             }
 
-            var scaler = canvas.GetComponent<CanvasScaler>();
-            var reference = scaler != null ? scaler.referenceResolution : new Vector2(960f, 720f);
+            var reference = scaler.referenceResolution;
             int width = Mathf.RoundToInt(reference.x) * Supersample;
             int height = Mathf.RoundToInt(reference.y) * Supersample;
 
-            if (scaler != null)
-            {
-                scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-                scaler.scaleFactor = Supersample;
-            }
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            scaler.scaleFactor = Supersample;
 
             var cameraGO = new GameObject("CaptureCamera");
             var camera = cameraGO.AddComponent<Camera>();
