@@ -31,8 +31,14 @@ namespace Pets.Data
         public PokemonSpeciesDefinitionAsset EvolvesInto;
         public int EvolutionExpThreshold;
 
+        /// <summary>Direct reference to the species' artwork under Assets/Art/Pokemon (see
+        /// content-schema.md §2). A reference rather than a Resources path string so that only the
+        /// sprites curated species actually point at are pulled into a build, and so a typo is a
+        /// compile-visible missing reference instead of a silent null at runtime. Read through
+        /// Pets.Data.PokemonSprites.Load rather than directly.</summary>
         [Header("Presentation")]
-        public string SpriteSource;
+        public Sprite Sprite;
+
         public bool IsLegendary;
     }
 }

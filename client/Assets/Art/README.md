@@ -1,7 +1,19 @@
-# Art (placeholder phase)
+# Art
 
-Everything in this folder is temporary. Per PLAN.md §8: solid-color placeholder sprites or a
-free CC0 icon pack, one visually distinct shape/color per creature so playtesting isn't
-confusing. None of this is meant to survive to Phase 5 (real art pass).
+Build-referenced art: assets that reach the game through a direct reference from a
+ScriptableObject, prefab or scene, and therefore only ship if something actually points at them.
 
-If you add a CC0/free asset pack here, note its source and license in this file.
+- `Pokemon/` — PokeAPI official-artwork sprites for the 183-species roster, 256px, one PNG per
+  species id. Referenced by each `PokemonSpeciesDefinitionAsset.Sprite`
+  (`Assets/Content/Species/*.asset`), so only curated species' sprites are included in a build —
+  the rest sit here waiting to be wired up as species are authored. Import settings are applied
+  from code by `Assets/Editor/PokemonSpriteImportProcessor.cs`; don't hand-tune them per file.
+
+**This is not where runtime-loaded art goes.** Sprites resolved by string path at runtime live
+under `Assets/Resources/Sprites/` instead (UI chrome, type badges, node icons) — see
+`Pets.UI.Theme`. Everything in `Resources` ships whether or not it's referenced, which is exactly
+why the species sprites are here and not there.
+
+Licensing: Pokémon sprite artwork is Nintendo/Game Freak/Creatures IP, used here under the
+non-commercial personal-project scope in PLAN.md §9 and sourced via
+[PokeAPI](https://pokeapi.co/). Not redistributable as art assets.

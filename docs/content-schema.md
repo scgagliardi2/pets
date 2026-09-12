@@ -42,7 +42,7 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `passive` | `PassiveDefinition` reference | Empty/none for most of the 183 species today — the source sheet's Ability column is blank. Fill in as passives are hand-authored (PLAN.md §8). |
 | `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). |
 | `evolutionExpThreshold` | `int` | Only meaningful if `evolvesInto` is set. |
-| `spriteSource` | `string` (PokeAPI sprite URL or local cache path) | Resolved by the content-import pipeline (PLAN.md §8), not hand-entered per species. |
+| `sprite` | `Sprite` reference | Direct reference to the PNG under `client/Assets/Art/Pokemon/{id}.png`, **not** a path string: only the sprites curated species point at are pulled into a build, and a wrong reference is visibly missing in the Inspector rather than a silent runtime null. Assigned by the content-import pipeline (PLAN.md §8) once it exists; `Pets > Migrations > Assign Species Sprites From Art Folder` fills them in by Id in the meantime. |
 | `isLegendary` | `bool` | Manually flagged for the 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre, Groudon) per PLAN.md §8 — the source sheet carries no rarity flag, so this is set by hand at import time, not derived. |
 
 ## 3. `PassiveDefinition` (ScriptableObject)
@@ -203,7 +203,7 @@ Analogous to the old schema's export, adapted to the new fields. A `PokemonSpeci
   "baseSpeed": 7,
   "passiveId": "ember-burst",
   "evolvesInto": { "speciesId": 5, "expThreshold": 120 },
-  "spriteSource": "cached/sprites/4.png",
+  "spriteId": 4,
   "isLegendary": false
 }
 ```

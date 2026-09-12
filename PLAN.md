@@ -136,7 +136,8 @@ to look like a missing piece.
       /Content                # ScriptableObject data instances (species, passives, libraries)
       /Editor                 # Scene/prefab builders + dev tooling (see the scene-builder rule below)
       /Prefabs/UI             # Shared uGUI prefabs the scene builders instantiate
-      /Resources              # Runtime-loaded assets: Sprites/{Pokemon,Types,Nodes,UI}, Fonts
+      /Art/Pokemon            # Species artwork, referenced directly by the species assets
+      /Resources              # Runtime-loaded-by-path assets only: Sprites/{Types,Nodes,UI}, Fonts
       /Scenes                 # Generated scenes — never hand-edit (see below)
   /server                     # Node/TS backend — folder structure + package.json only, no code
                               #   until Phase 3
@@ -157,9 +158,8 @@ Folders the earlier version of this plan listed that deliberately **don't** exis
 - `Scripts/BattleRunner` — the two runners are `Simulation/BattleRunner.cs`; splitting them into
   their own assembly folder bought nothing.
 - `Scripts/Minigame` — Trailblazer isn't built (Phase 1).
-- `Assets/Art` — exists but is empty; all art is runtime-loaded from `Assets/Resources/Sprites/`
-  via `Pets.Data.PokemonSprites` and the sprite-name lookups in the scene controllers, so new art
-  goes under `Resources`, not `Art`.
+- (`Assets/Art` was empty at the 2026-09-12 re-alignment; it now holds the species sprites — see
+  §8 and `client/Assets/Art/README.md` for which art belongs there versus in `Resources`.)
 
 **Scenes are generated from code.** Every scene in `Assets/Scenes` is produced by an
 `Assets/Editor/*SceneBuilder.cs`, with `Assets/Editor/SceneCatalog.cs` owning the Build Settings
@@ -197,9 +197,9 @@ CLI commands).
 - 28 curated species and 17 hand-authored type-flavored passives under `client/Assets/Content`,
   with `PokemonContentTests.cs` running a full real-content fight start to end and
   `ContentIntegrityTests.cs` guarding that every on-disk asset is registered in its library and
-  resolves its sprite. All 183 roster sprites are cached under
-  `Assets/Resources/Sprites/Pokemon/{id}.png`, so authoring a not-yet-curated species only needs
-  its `SpriteSource` set — no fresh art fetch.
+  resolves its sprite. All 183 roster sprites are cached under `Assets/Art/Pokemon/{id}.png`, so
+  authoring a not-yet-curated species only needs its `Sprite` reference pointed at the matching
+  file — no fresh art fetch.
 - `Scripts/Meta` (pure C#): `RunState` (line-up/Box/Money/Morale/seed, `MoveMon`, `ReleaseMon`),
   seeded wild-encounter generation, EXP/level-up, Camp's EXP+buff grant, the stubbed
   "pick 1 from defeated" catch, and a branching map generator + traversal model
@@ -375,12 +375,20 @@ and content done; the Location it was supposed to prove out is currently unplaya
   Groudon) currently have no rarity flag in the source sheet; per the design doc's carried-forward
   assumption, treat them as Legendary-tier (ultra-rare, PvE-only, full-party-wipe-risk
   encounters) unless a future decision says otherwise.
-- **Art:** PokeAPI official-artwork sprites are cached locally at `client/Assets/Resources/Sprites/Pokemon/{id}.png`
+- **Art:** PokeAPI official-artwork sprites are cached locally at `client/Assets/Art/Pokemon/{id}.png`
   for all 183 roster species (fetched by name from PokeAPI, resized to 256px) and wired up via each
-  curated species' `SpriteSource` field + the `Pets.Data.PokemonSprites.Load(...)` runtime helper —
-  see Character Select for the first usage. Species not yet curated already have a cached sprite
-  waiting, so authoring their `PokemonSpeciesDefinition` asset only needs its `SpriteSource` set to
-  `Sprites/Pokemon/{id}`, not a fresh art fetch.
+  curated species' `Sprite` reference + the `Pets.Data.PokemonSprites.Load(...)` accessor — see
+  Character Select for the first usage. Species not yet curated already have a cached sprite
+  waiting, so authoring their `PokemonSpeciesDefinition` asset only needs that reference set, not a
+  fresh art fetch.
+
+  These live under `Art`, not `Resources`, deliberately: everything in a `Resources` folder ships
+  whether or not anything references it, so the 155 not-yet-curated species were adding ~13 MB to
+  every build. A direct reference means only curated species' art is included. Import settings
+  (mipmaps off, block compression on) are applied from code by
+  `Assets/Editor/PokemonSpriteImportProcessor.cs` — see `client/Assets/Art/README.md`. Sprites that
+  *are* resolved by string path at runtime (UI chrome, type badges, node icons) still live under
+  `Assets/Resources/Sprites/`.
 
 ## 9. Scope, IP & Distribution
 

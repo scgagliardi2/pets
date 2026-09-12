@@ -84,7 +84,8 @@ exists — the phase list under it describes intent, and the build has deviated 
   Assets/Scripts/Tests        EditMode at the root, PlayMode under Tests/PlayMode
   Assets/Content              species/passive assets + their libraries
   Assets/Editor               scene + prefab builders, dev tooling
-  Assets/Resources            runtime-loaded Sprites/{Pokemon,Types,Nodes,UI} and Fonts
+  Assets/Art/Pokemon          species artwork, referenced directly by the species assets
+  Assets/Resources            loaded-by-path only: Sprites/{Types,Nodes,UI} and Fonts
   Assets/Scenes               GENERATED — never hand-edit (see Working conventions)
 /server    Node/TS backend — scaffolding only; introduced once solo loop is solid
 /shared    Golden battle-sim fixtures (JSON) used by both client and (later) server tests
@@ -93,8 +94,10 @@ exists — the phase list under it describes intent, and the build has deviated 
            (roster), battle-sim-spec.md, content-schema.md, architecture-decisions/
 ```
 
-There is no `Scripts/BattleRunner` or `Scripts/Minigame`, and `Assets/Art` is empty — art lives
-under `Assets/Resources/Sprites`. See PLAN.md §5 for why.
+There is no `Scripts/BattleRunner` or `Scripts/Minigame` — see PLAN.md §5 for why. Art splits two
+ways: anything resolved by string path at runtime goes in `Resources` (and therefore ships whether
+referenced or not), everything else goes in `Art` behind a direct reference. See
+`client/Assets/Art/README.md`.
 
 ## Working conventions
 
