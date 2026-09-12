@@ -34,6 +34,21 @@ namespace Pets.Tests
         [UnitySetUp]
         public IEnumerator SetUp()
         {
+            // Each test needs a map at its start node. The screen now shows the *run's* map and
+            // walked path rather than generating its own (RegionMapTraversal.ForRun), which is the
+            // point — re-entering the scene resumes the walk instead of rerolling it. That also
+            // means a run left in the static ActiveRun by an earlier fixture, or by the previous
+            // test in this one, would carry its half-walked map into the next test. Clearing it
+            // makes the controller fall back to a fresh standalone run per scene load.
+            ActiveRun.End();
+
+            yield return ReloadScene();
+        }
+
+        /// <summary>Loads the Map scene and re-resolves the fixture's handles onto it — the same
+        /// thing returning to the Map from the Ingame Menu or Team does at runtime.</summary>
+        private IEnumerator ReloadScene()
+        {
 #if UNITY_EDITOR
             EditorSceneManager.LoadSceneInPlayMode(ScenePath, new LoadSceneParameters(LoadSceneMode.Single));
 #else
@@ -49,6 +64,9 @@ namespace Pets.Tests
             nodeRoot = GameObject.Find("Canvas").transform.Find(NodesPath);
             Assert.IsNotNull(nodeRoot, $"expected the map's node container at {NodesPath}");
         }
+
+        [TearDown]
+        public void TearDown() => ActiveRun.End();
 
         [UnityTest]
         public IEnumerator GeneratedMap_RendersOneNodeVisualPerGeneratedNode_AndExactlyOneGym()
@@ -120,6 +138,54 @@ namespace Pets.Tests
             Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, Seed());
             Assert.AreNotEqual(before, token.anchoredPosition, $"the token did not move. {Seed()}");
             AssertTokenIsStandingOn(token, target.Id);
+        }
+
+        /// <summary>Against the actual scene: walking a step, then reloading the Map the way
+        /// returning from the Ingame Menu or Team does, resumes the same map at the same node. The
+        /// map and walked path live on RunState (RegionMapTraversal.ForRun); before that, the
+        /// controller owned them and re-entry silently rerolled the map.</summary>
+        [UnityTest]
+        public IEnumerator ReEnteringTheScene_ResumesTheRunsMapAndPosition()
+        {
+            var run = new RunState();
+            ActiveRun.Begin(run, null);
+
+            // Rebuild the screen against the run, rather than the standalone map SetUp made.
+            yield return ReloadScene();
+
+            int seedBefore = controller.Traversal.Map.Seed;
+            var target = controller.Traversal.AvailableNextNodes[0];
+            ButtonFor(target.Id).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+            Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId);
+
+            yield return ReloadScene();
+
+            Assert.AreEqual(seedBefore, controller.Traversal.Map.Seed,
+                "re-entering the Map regenerated it instead of resuming the run's map");
+            Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId,
+                "re-entering the Map put the player back at the start");
+            AssertTokenIsStandingOn(GameObject.Find("PlayerToken").GetComponent<RectTransform>(), target.Id);
+        }
+
+        /// <summary>Clicking New Map replaces the run's map, so the run and the screen can't
+        /// disagree about which map is being walked.</summary>
+        [UnityTest]
+        public IEnumerator NewMapButton_ReplacesTheRunsMap()
+        {
+            var run = new RunState();
+            ActiveRun.Begin(run, null);
+            yield return ReloadScene();
+
+            var firstMap = run.LocationMap;
+            Assert.IsNotNull(firstMap, "arriving at the Map should have given the run one");
+
+            GameObject.Find("NewMapButton").GetComponent<Button>().onClick.Invoke();
+            yield return null;
+
+            Assert.AreSame(run.LocationMap, controller.Traversal.Map);
+            Assert.AreNotSame(firstMap, run.LocationMap, "New Map should have replaced the run's map");
+            Assert.AreEqual(run.LocationMap.StartNodeId, controller.Traversal.CurrentNodeId);
         }
 
         [UnityTest]

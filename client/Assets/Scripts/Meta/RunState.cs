@@ -26,6 +26,21 @@ namespace Pets.Meta
         public int Morale = 3;
 
         /// <summary>Current Location's node sequence, in order.</summary>
+        /// <summary>The Location's generated node-map, and where the player stands on it. Held
+        /// here rather than by the map screen so it survives navigating away and back —
+        /// RegionMapTraversal.ForRun binds a traversal to these.
+        ///
+        /// Note this is the *branching* map the Region Map screen draws, which is not yet the same
+        /// thing as the linear `Nodes` sequence below that ForestLocationFactory builds and the
+        /// (currently sceneless) LocationFlowController walks. Collapsing the two onto one model
+        /// is PLAN.md §11 item 1 and is a prerequisite for resolving nodes on arrival.</summary>
+        public RegionMap LocationMap;
+
+        /// <summary>The nodes walked so far, oldest first. The last entry is where the player
+        /// stands — RegionMapTraversal derives its position from this rather than storing it
+        /// twice.</summary>
+        public List<string> VisitedMapNodeIds = new List<string>();
+
         public List<LocationNodeState> Nodes = new List<LocationNodeState>();
 
         public int CurrentNodeIndex;

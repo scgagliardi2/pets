@@ -111,8 +111,10 @@ namespace Pets.Gameplay
         private RectTransform playerToken;
         private Coroutine moveRoutine;
         private Coroutine initialScrollRoutine;
+        private RunState standaloneRun;
 
-        /// <summary>The walk state over the currently displayed map. Rebuilt by <see cref="Regenerate"/>.</summary>
+        /// <summary>The walk state over the currently displayed map — a view over the run's own
+        /// map and walked path (see <see cref="Show"/>), not state this screen owns.</summary>
         public RegionMapTraversal Traversal { get; private set; }
 
         public IReadOnlyList<RegionMapNode> LastGeneratedNodes => Traversal?.Map.Nodes;
@@ -127,27 +129,50 @@ namespace Pets.Gameplay
             {
                 newMapButton.onClick.AddListener(Regenerate);
             }
-            Regenerate();
+            Show();
         }
 
-        /// <summary>Throws away the current map and walks a brand new one. Uses the serialized seed
-        /// when it's set (so a specific map can be pinned while iterating on layout) and a fresh
-        /// random one otherwise.</summary>
+        /// <summary>Shows the run's map, generating one on first arrival. Re-entering this scene
+        /// (from the Ingame Menu, Team, and later from a resolved node) therefore lands the player
+        /// back on the same map at the same node — the map and the walked path live on RunState,
+        /// not here. Falls back to a standalone map when there's no run, so the scene still works
+        /// opened directly in the Editor and from the PlayMode tests.</summary>
+        private void Show()
+        {
+            StopWalking();
+            Build(RegionMapTraversal.ForRun(Run, SeedForNewMap(), layerCount));
+        }
+
+        /// <summary>Throws the run's map away and walks a brand new one — the "New Map" button.
+        /// Uses the serialized seed when it's set (so a specific map can be pinned while iterating
+        /// on layout) and a fresh random one otherwise.</summary>
         public void Regenerate()
+        {
+            StopWalking();
+            Build(RegionMapTraversal.RegenerateForRun(Run, SeedForNewMap(), layerCount));
+        }
+
+        private int SeedForNewMap() => seed != 0 ? seed : Random.Range(1, int.MaxValue);
+
+        private void StopWalking()
         {
             if (moveRoutine != null)
             {
                 StopCoroutine(moveRoutine);
                 moveRoutine = null;
             }
-
-            int usedSeed = seed != 0 ? seed : Random.Range(1, int.MaxValue);
-            Build(RegionMapGenerator.Generate(usedSeed, layerCount));
         }
 
-        private void Build(RegionMap map)
+        /// <summary>The run whose map this screen shows. When the scene is opened on its own there
+        /// is no ActiveRun, so a throwaway RunState stands in — it keeps the map/walk in one place
+        /// either way, rather than giving this class a second code path that owns its own state.</summary>
+        private RunState Run =>
+            standaloneRun ?? (ActiveRun.HasRun ? ActiveRun.State : standaloneRun = new RunState());
+
+        private void Build(RegionMapTraversal traversal)
         {
-            Traversal = new RegionMapTraversal(map);
+            Traversal = traversal;
+            var map = traversal.Map;
 
             EnsureContainers();
             ClearContainer(edgeRoot);

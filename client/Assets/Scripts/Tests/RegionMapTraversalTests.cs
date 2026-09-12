@@ -118,6 +118,56 @@ namespace Pets.Tests
             }
         }
 
+        /// <summary>The defect this ownership move fixes: the walk used to be a field on
+        /// RegionMapController, so opening the Team screen and coming back re-ran Start, generated
+        /// a brand new random map, and put the player back at the beginning of it.</summary>
+        [Test]
+        public void ForRun_ResumesTheSameMapAndPosition_WhenTheScreenIsReEntered()
+        {
+            var run = new RunState();
+
+            var first = RegionMapTraversal.ForRun(run, seed: 31, layerCount: RegionMapGenerator.DefaultLayerCount);
+            var stepped = first.AvailableNextNodes.First().Id;
+            first.MoveTo(stepped);
+            Assert.AreEqual(stepped, first.CurrentNodeId);
+
+            // Standing in for the screen being rebuilt from scratch on scene re-entry.
+            var resumed = RegionMapTraversal.ForRun(run, seed: 999, layerCount: RegionMapGenerator.DefaultLayerCount);
+
+            Assert.AreSame(first.Map, resumed.Map, "re-entering should not regenerate the map");
+            Assert.AreEqual(31, resumed.Map.Seed, "a different seed must not be honoured for a map already in progress");
+            Assert.AreEqual(stepped, resumed.CurrentNodeId, "re-entering should not reset the player's position");
+            CollectionAssert.AreEqual(first.VisitedNodeIds, resumed.VisitedNodeIds);
+        }
+
+        [Test]
+        public void ForRun_WritesTheWalkThroughToTheRun()
+        {
+            var run = new RunState();
+            var traversal = RegionMapTraversal.ForRun(run, seed: 7, layerCount: RegionMapGenerator.DefaultLayerCount);
+
+            traversal.MoveTo(traversal.AvailableNextNodes.First().Id);
+
+            CollectionAssert.AreEqual(traversal.VisitedNodeIds, run.VisitedMapNodeIds,
+                "the run owns the path; the traversal writes through to it");
+            Assert.AreEqual(traversal.CurrentNodeId, run.VisitedMapNodeIds.Last());
+        }
+
+        [Test]
+        public void RegenerateForRun_ReplacesTheMapAndRestartsTheWalk()
+        {
+            var run = new RunState();
+            var first = RegionMapTraversal.ForRun(run, seed: 5, layerCount: RegionMapGenerator.DefaultLayerCount);
+            first.MoveTo(first.AvailableNextNodes.First().Id);
+
+            var fresh = RegionMapTraversal.RegenerateForRun(run, seed: 6, layerCount: RegionMapGenerator.DefaultLayerCount);
+
+            Assert.AreEqual(6, fresh.Map.Seed);
+            Assert.AreEqual(fresh.Map.StartNodeId, fresh.CurrentNodeId);
+            Assert.AreEqual(1, run.VisitedMapNodeIds.Count);
+            Assert.AreSame(run.LocationMap, fresh.Map);
+        }
+
         [Test]
         public void ReachingTheGym_EndsTheWalk()
         {
