@@ -96,6 +96,7 @@ namespace Pets.Tests
             AssertNavigatesVia("ContinueButton", nameof(SceneNavigator.ContinueRun));
             AssertNavigatesVia("HistoryButton", nameof(SceneNavigator.GoToHistory));
             AssertNavigatesVia("CreditsButton", nameof(SceneNavigator.GoToCredits));
+            AssertNavigatesVia("SettingsButton", nameof(SceneNavigator.GoToSettings));
             AssertNavigatesVia("QuitButton", nameof(SceneNavigator.QuitGame));
         }
 
@@ -177,6 +178,7 @@ namespace Pets.Tests
             AssertNavigatesVia("MapButton", nameof(SceneNavigator.GoToMap));
             AssertNavigatesVia("TeamButton", nameof(SceneNavigator.GoToTeam));
             AssertNavigatesVia("DevRosterButton", nameof(SceneNavigator.GoToDevRoster));
+            AssertNavigatesVia("SettingsButton", nameof(SceneNavigator.GoToSettings));
             AssertNavigatesVia("HomeButton", nameof(SceneNavigator.GoHome));
         }
 

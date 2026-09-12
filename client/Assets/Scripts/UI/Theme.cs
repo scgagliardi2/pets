@@ -124,6 +124,30 @@ namespace Pets.UI
         public static Sprite HealthRedSprite =>
             healthRedSprite != null ? healthRedSprite : healthRedSprite = Resources.Load<Sprite>("Sprites/UI/HpRed");
 
+        private static readonly Dictionary<string, Sprite> BattleUiSprites = new Dictionary<string, Sprite>();
+
+        private static Sprite LoadUiSprite(string name)
+        {
+            if (!BattleUiSprites.TryGetValue(name, out var sprite) || sprite == null)
+            {
+                sprite = Resources.Load<Sprite>($"Sprites/UI/{name}");
+                BattleUiSprites[name] = sprite;
+            }
+            return sprite;
+        }
+
+        // Battle screen art, from the same generator and import settings as the rest of Sprites/UI.
+        // The Slot frames are 9-sliced; the icons are 12x12 pixel art drawn as Image.Type.Simple at a
+        // whole multiple of 12.
+        public static Sprite SlotDarkSprite => LoadUiSprite("SlotDark");
+        public static Sprite SlotGoldSprite => LoadUiSprite("SlotGold");
+        public static Sprite SlotBlueSprite => LoadUiSprite("SlotBlue");
+        public static Sprite PauseIconSprite => LoadUiSprite("IconPause");
+        public static Sprite StepIconSprite => LoadUiSprite("IconStep");
+        public static Sprite PlayIconSprite => LoadUiSprite("IconPlay");
+        public static Sprite FastForwardIconSprite => LoadUiSprite("IconFastForward");
+        public static Sprite PokeballSprite => LoadUiSprite("Pokeball");
+
         /// <summary>Health-bar fill bands, as in the mainline games: green above half, yellow down
         /// to a fifth, red below that.</summary>
         public const float HealthYellowBelow = 0.5f;

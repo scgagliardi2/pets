@@ -26,7 +26,7 @@ exists — the phase list under it describes intent, and the build has deviated 
   deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
   extend, not replace.
 - The game's **shell** is built and playable (Home → Character Select → a walkable Location map,
-  plus an in-run menu, Team, History, Credits, a dev roster screen). The **run inside it is not**:
+  plus an in-run menu, Team, History, Credits, Settings, a dev roster screen). The **run inside it is not**:
   arriving at a map node does nothing. `Battle.unity` runs a real fight, but only reached from
   Team's dev button, against a random enemy team, with **passives stripped from both sides** and
   no effect on the run (see PLAN.md §6).
@@ -155,7 +155,7 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the Battle screen): **127 EditMode, 59 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-12 (after the battle UI pass and Settings): **139 EditMode, 64 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

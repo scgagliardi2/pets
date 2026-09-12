@@ -43,7 +43,7 @@ namespace Pets.EditorTools
 
             var menu = CreatePanel(canvasRect, "MenuButtons", Color.clear,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            const int buttonCount = 4;
+            const int buttonCount = 5;
             menu.sizeDelta = new Vector2(
                 MenuButtonWidth,
                 buttonCount * MenuButtonHeight + (buttonCount - 1) * MenuSpacing);
@@ -57,9 +57,11 @@ namespace Pets.EditorTools
             // Labelled as the dev tool it is, and parked below the real destinations rather than
             // among them, so it reads as a workshop door rather than part of the run.
             var devRosterButton = CreateButton(menu, "DevRosterButton", "Dev: Add Pokemon", Theme.ButtonStyle.Secondary, useSprite: true);
+            var settingsButton = CreateButton(menu, "SettingsButton", "Settings", Theme.ButtonStyle.Secondary, useSprite: true);
             var homeButton = CreateButton(menu, "HomeButton", "Quit to Home", Theme.ButtonStyle.Danger, useSprite: true);
 
             UnityEventTools.AddVoidPersistentListener(mapButton.onClick, navigator.GoToMap);
+            UnityEventTools.AddVoidPersistentListener(settingsButton.onClick, navigator.GoToSettings);
             UnityEventTools.AddVoidPersistentListener(teamButton.onClick, navigator.GoToTeam);
             UnityEventTools.AddVoidPersistentListener(devRosterButton.onClick, navigator.GoToDevRoster);
             UnityEventTools.AddVoidPersistentListener(homeButton.onClick, navigator.GoHome);

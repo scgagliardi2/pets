@@ -73,6 +73,7 @@ namespace Pets.EditorTools
             var footer = CreateFooterRow(canvasRect);
             var historyButton = CreateFooterButton(footer, "HistoryButton", "History", Theme.ButtonStyle.Secondary);
             var creditsButton = CreateFooterButton(footer, "CreditsButton", "Credits", Theme.ButtonStyle.Secondary);
+            var settingsButton = CreateFooterButton(footer, "SettingsButton", "Settings", Theme.ButtonStyle.Secondary);
             var quitButton = CreateFooterButton(footer, "QuitButton", "Quit", Theme.ButtonStyle.Danger);
 
             var home = new GameObject("HomeScreen").AddComponent<HomeScreenController>();
@@ -82,6 +83,7 @@ namespace Pets.EditorTools
             UnityEventTools.AddVoidPersistentListener(newGameButton.onClick, navigator.StartNewGame);
             UnityEventTools.AddVoidPersistentListener(historyButton.onClick, navigator.GoToHistory);
             UnityEventTools.AddVoidPersistentListener(creditsButton.onClick, navigator.GoToCredits);
+            UnityEventTools.AddVoidPersistentListener(settingsButton.onClick, navigator.GoToSettings);
             UnityEventTools.AddVoidPersistentListener(quitButton.onClick, navigator.QuitGame);
 
             // The menu column stays live: HomeScreenController hides Continue Run when there's no

@@ -24,5 +24,7 @@ namespace Pets.Gameplay
         /// <summary>The Battle screen (see BattleScreenController). Reached only from Team's dev
         /// button until map nodes start fights.</summary>
         public const string Battle = "Battle";
+
+        public const string Settings = "Settings";
     }
 }
