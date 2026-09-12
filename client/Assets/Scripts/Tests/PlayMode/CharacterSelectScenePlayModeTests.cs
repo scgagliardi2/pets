@@ -23,6 +23,16 @@ namespace Pets.Tests
     {
         private const string ScenePath = "Assets/Scenes/CharacterSelect.unity";
 
+        /// <summary>Confirming a pair in this screen starts a real run, and ActiveRun is a static
+        /// that outlives the scene — without this it leaks into whatever fixture runs next, where
+        /// it looks like a run the player left in progress.</summary>
+        [TearDown]
+        public void TearDown()
+        {
+            ActiveRun.End();
+            PendingRunSelection.Clear();
+        }
+
         [UnitySetUp]
         public IEnumerator SetUp()
         {

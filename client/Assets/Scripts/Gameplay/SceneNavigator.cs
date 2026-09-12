@@ -34,6 +34,26 @@ namespace Pets.Gameplay
 
         public void GoHome() => SceneManager.LoadScene(SceneNames.Home);
 
+        public void GoToHistory() => SceneManager.LoadScene(SceneNames.History);
+
+        public void GoToCredits() => SceneManager.LoadScene(SceneNames.Credits);
+
+        public void GoToDevRoster() => SceneManager.LoadScene(SceneNames.DevRoster);
+
+        /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
+        /// the Ingame Menu rather than straight on the Map so the player sees where they are
+        /// before moving. Guarded because a run only survives "Quit to Home" in memory (there's no
+        /// save layer yet — PLAN.md Phase 2), so anything that clears ActiveRun makes this a
+        /// no-op; HomeScreenController hides the button in that case.</summary>
+        public void ContinueRun()
+        {
+            if (!ActiveRun.HasRun)
+            {
+                return;
+            }
+            SceneManager.LoadScene(SceneNames.IngameMenu);
+        }
+
         /// <summary>Application.Quit is a no-op in the Editor (it only ends a real player
         /// process), so the Quit button would look broken every time it's tested in Play mode
         /// without the Editor branch.</summary>

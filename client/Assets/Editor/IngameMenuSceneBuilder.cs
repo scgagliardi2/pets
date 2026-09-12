@@ -9,7 +9,8 @@ using static Pets.EditorTools.SceneBuilderUtils;
 namespace Pets.EditorTools
 {
     /// <summary>Builds the Ingame Menu — the screen the Map's Menu button opens mid-run, and the
-    /// junction between the run's scenes: back to the Map, across to Team, or out to Home.
+    /// junction between the run's scenes: back to the Map, across to Team, into the dev roster
+    /// screen, or out to Home.
     /// Replaces the old Forest Location Hub that used to occupy Game.unity (its tabbed
     /// Team/Map/Shop/Center screen predates the Region Map being the run's actual map; the hub's
     /// controllers are still in Gameplay for the Shop/Center work they'll be reused for).
@@ -36,25 +37,13 @@ namespace Pets.EditorTools
 
             CreatePanel(canvasRect, "Background", Theme.ScreenBg, Vector2.zero, Vector2.one);
 
-            var titleBar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
-            titleBar.pivot = new Vector2(0.5f, 1f);
-            titleBar.offsetMin = new Vector2(0f, -TitleHeight);
-            titleBar.offsetMax = Vector2.zero;
-
-            var titleText = CreatePlainText(canvasRect, "TitleText", "Menu", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
-            titleText.fontStyle = FontStyle.Bold;
-            var titleTextRect = titleText.GetComponent<RectTransform>();
-            titleTextRect.anchorMin = new Vector2(0f, 1f);
-            titleTextRect.anchorMax = Vector2.one;
-            titleTextRect.pivot = new Vector2(0.5f, 1f);
-            titleTextRect.offsetMin = new Vector2(0f, -TitleHeight);
-            titleTextRect.offsetMax = Vector2.zero;
+            CreateScreenTitleBar(canvasRect, "Menu", TitleHeight);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
 
             var menu = CreatePanel(canvasRect, "MenuButtons", Color.clear,
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            const int buttonCount = 3;
+            const int buttonCount = 4;
             menu.sizeDelta = new Vector2(
                 MenuButtonWidth,
                 buttonCount * MenuButtonHeight + (buttonCount - 1) * MenuSpacing);
@@ -65,10 +54,14 @@ namespace Pets.EditorTools
             // (Avoid parentheses in labels — Handjet draws them as square brackets.)
             var mapButton = CreateButton(menu, "MapButton", "Back to Map", Theme.ButtonStyle.Confirm, useSprite: true);
             var teamButton = CreateButton(menu, "TeamButton", "Team", Theme.ButtonStyle.Primary, useSprite: true);
+            // Labelled as the dev tool it is, and parked below the real destinations rather than
+            // among them, so it reads as a workshop door rather than part of the run.
+            var devRosterButton = CreateButton(menu, "DevRosterButton", "Dev: Add Pokemon", Theme.ButtonStyle.Secondary, useSprite: true);
             var homeButton = CreateButton(menu, "HomeButton", "Quit to Home", Theme.ButtonStyle.Danger, useSprite: true);
 
             UnityEventTools.AddVoidPersistentListener(mapButton.onClick, navigator.GoToMap);
             UnityEventTools.AddVoidPersistentListener(teamButton.onClick, navigator.GoToTeam);
+            UnityEventTools.AddVoidPersistentListener(devRosterButton.onClick, navigator.GoToDevRoster);
             UnityEventTools.AddVoidPersistentListener(homeButton.onClick, navigator.GoHome);
 
             ForceLayoutRebuild(canvasRect);

@@ -387,6 +387,60 @@ namespace Pets.EditorTools
             return dropdown;
         }
 
+        /// <summary>The dark top strip with the screen's name in it, shared by the menu screens
+        /// (Ingame Menu, Team, History, Credits) — the bar and its label are separate
+        /// canvas-level siblings, both pinned to the top edge with the same fixed pixel height,
+        /// rather than the label being nested in the bar, so a screen can find or restyle either
+        /// on its own. Height is in pixels, not a fraction of canvas height, for the reason
+        /// CharacterSelectSceneBuilder.PinToTop spells out: the CanvasScaler matches width, so a
+        /// fractional band shrinks with the device aspect and takes its contents with it.</summary>
+        public static Text CreateScreenTitleBar(RectTransform canvasRect, string title, float height)
+        {
+            var bar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
+            PinToTopEdge(bar, height);
+
+            var titleText = CreatePlainText(canvasRect, "TitleText", title, Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
+            titleText.fontStyle = FontStyle.Bold;
+            // A label spanning the whole bar is in front of anything a screen parks in a corner of
+            // it, so keep it out of the raycast entirely rather than relying on sibling order.
+            titleText.raycastTarget = false;
+            PinToTopEdge(titleText.GetComponent<RectTransform>(), height);
+            return titleText;
+        }
+
+        /// <summary>A bottom chrome band holding one anchored sprite button, for the screens whose
+        /// only footer control is a way back. Anchored rather than laid out by a group: with a
+        /// single button there's nothing to arrange, and it keeps these screens clear of
+        /// ForceLayoutRebuild's bake-and-destroy behaviour entirely.</summary>
+        public static Button CreateBottomBarButton(RectTransform canvasRect, string name, string label,
+            Theme.ButtonStyle style, float barHeight, float sideMargin, float buttonWidth = 220f)
+        {
+            var bar = CreatePanel(canvasRect, "BottomBar", Color.clear, Vector2.zero, new Vector2(1f, 0f));
+            bar.pivot = new Vector2(0.5f, 0f);
+            bar.offsetMin = Vector2.zero;
+            bar.offsetMax = new Vector2(0f, barHeight);
+
+            var button = CreateButton(bar, name, label, style, useSprite: true);
+            var rect = button.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.sizeDelta = new Vector2(buttonWidth, 64f);
+            rect.anchoredPosition = new Vector2(sideMargin, 0f);
+            return button;
+        }
+
+        /// <summary>Stretches a rect across the canvas width and pins it to the top edge with a
+        /// fixed pixel height.</summary>
+        private static void PinToTopEdge(RectTransform rect, float height)
+        {
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.offsetMin = new Vector2(0f, -height);
+            rect.offsetMax = Vector2.zero;
+        }
+
         /// <summary>Inserts a dark title-bar strip as the first child of a panel that already has
         /// AddVerticalLayout applied, approximating the style guide's "Large Panel (9-slice) with
         /// Panel Title" component (section 1) with a flat color block in place of a real 9-slice

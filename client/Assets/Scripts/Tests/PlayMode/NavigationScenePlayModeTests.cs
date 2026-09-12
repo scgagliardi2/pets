@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -15,8 +16,9 @@ using Pets.Simulation;
 
 namespace Pets.Tests
 {
-    /// <summary>Covers the screens a player moves between outside a fight — Home, the Map's way
-    /// into the Ingame Menu, the menu itself, and Team — against the actual saved scenes.
+    /// <summary>Covers the screens a player moves between outside a fight — Home, History,
+    /// Credits, the Map's way into the Ingame Menu, the menu itself, and Team — against the actual
+    /// saved scenes.
     ///
     /// Navigation is wired as persistent onClick listeners by the scene builders, so most of these
     /// assert on the wiring (target component + method name) rather than clicking through: a click
@@ -29,12 +31,22 @@ namespace Pets.Tests
         private const string IngameMenuScenePath = "Assets/Scenes/IngameMenu.unity";
         private const string RegionMapScenePath = "Assets/Scenes/RegionMap.unity";
         private const string TeamScenePath = "Assets/Scenes/Team.unity";
+        private const string HistoryScenePath = "Assets/Scenes/History.unity";
+        private const string CreditsScenePath = "Assets/Scenes/Credits.unity";
+
+        // ActiveRun is static and outlives both the scene and the fixture, so a run seeded
+        // anywhere earlier in the PlayMode session would otherwise decide what this fixture's Home
+        // and Team screens show. Cleared before each test as well as after, since the tests that
+        // assert on *not* having a run can't rely on whichever fixture ran before this one having
+        // tidied up after itself.
+        [SetUp]
+        public void SetUp() => ResetRunState();
 
         [TearDown]
-        public void TearDown()
+        public void TearDown() => ResetRunState();
+
+        private static void ResetRunState()
         {
-            // ActiveRun is static and outlives the scene, so a run seeded by one test would
-            // otherwise decide what the next one's Team screen shows.
             ActiveRun.End();
             PendingRunSelection.Clear();
         }
@@ -50,10 +62,12 @@ namespace Pets.Tests
             yield return null;
         }
 
-        private static Button FindButton(string name)
+        private static Button FindButton(string name, bool includeInactive = false)
         {
-            var button = Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
-                .FirstOrDefault(b => b.name == name);
+            var buttons = includeInactive
+                ? Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                : Object.FindObjectsByType<Button>(FindObjectsSortMode.None);
+            var button = buttons.FirstOrDefault(b => b.name == name);
             Assert.IsNotNull(button, $"Expected a Button named '{name}' in the loaded scene");
             return button;
         }
@@ -63,7 +77,7 @@ namespace Pets.Tests
         /// the listener at all, and pointing it at a method that no longer exists.</summary>
         private static void AssertNavigatesVia(string buttonName, string methodName)
         {
-            var button = FindButton(buttonName);
+            var button = FindButton(buttonName, includeInactive: true);
             Assert.AreEqual(1, button.onClick.GetPersistentEventCount(),
                 $"{buttonName} should have exactly one persistent onClick listener");
             Assert.IsInstanceOf<SceneNavigator>(button.onClick.GetPersistentTarget(0),
@@ -74,12 +88,66 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator HomeScene_NewGameAndQuitButtons_AreWiredToTheNavigator()
+        public IEnumerator HomeScene_EveryMenuButton_IsWiredToTheNavigator()
         {
             yield return LoadScene(HomeScenePath);
 
             AssertNavigatesVia("NewGameButton", nameof(SceneNavigator.StartNewGame));
+            AssertNavigatesVia("ContinueButton", nameof(SceneNavigator.ContinueRun));
+            AssertNavigatesVia("HistoryButton", nameof(SceneNavigator.GoToHistory));
+            AssertNavigatesVia("CreditsButton", nameof(SceneNavigator.GoToCredits));
             AssertNavigatesVia("QuitButton", nameof(SceneNavigator.QuitGame));
+        }
+
+        /// <summary>Continue is the one thing on Home that depends on state, and it's hidden
+        /// rather than disabled — on a first launch there's nothing to continue into, and a
+        /// greyed-out button would only raise a question the player can't act on.</summary>
+        [UnityTest]
+        public IEnumerator HomeScene_WithNoRunInProgress_HidesContinue()
+        {
+            yield return LoadScene(HomeScenePath);
+
+            Assert.IsFalse(FindButton("ContinueButton", includeInactive: true).gameObject.activeInHierarchy);
+        }
+
+        [UnityTest]
+        public IEnumerator HomeScene_WithARunInProgress_ShowsContinue()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+
+            yield return LoadScene(HomeScenePath);
+
+            Assert.IsTrue(FindButton("ContinueButton").gameObject.activeInHierarchy);
+        }
+
+        /// <summary>Guarded in the navigator as well as hidden on screen: the button is the only
+        /// caller today, but a run that has since been cleared must not load the Ingame Menu onto
+        /// a null RunState.</summary>
+        [UnityTest]
+        public IEnumerator ContinueRun_WithNoRunInProgress_StaysOnHome()
+        {
+            yield return LoadScene(HomeScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().ContinueRun();
+            yield return null;
+
+            Assert.AreEqual(SceneNames.Home, SceneManager.GetActiveScene().name);
+        }
+
+        [UnityTest]
+        public IEnumerator HistoryScene_BackButton_ReturnsHome()
+        {
+            yield return LoadScene(HistoryScenePath);
+
+            AssertNavigatesVia("BackButton", nameof(SceneNavigator.GoHome));
+        }
+
+        [UnityTest]
+        public IEnumerator CreditsScene_BackButton_ReturnsHome()
+        {
+            yield return LoadScene(CreditsScenePath);
+
+            AssertNavigatesVia("BackButton", nameof(SceneNavigator.GoHome));
         }
 
         /// <summary>"New Game" has to mean a new game: a run left in ActiveRun by a previous
@@ -106,6 +174,7 @@ namespace Pets.Tests
 
             AssertNavigatesVia("MapButton", nameof(SceneNavigator.GoToMap));
             AssertNavigatesVia("TeamButton", nameof(SceneNavigator.GoToTeam));
+            AssertNavigatesVia("DevRosterButton", nameof(SceneNavigator.GoToDevRoster));
             AssertNavigatesVia("HomeButton", nameof(SceneNavigator.GoHome));
         }
 
@@ -132,24 +201,146 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator TeamScene_ShowsTheActiveRunsLineUp_AndSwapReordersIt()
+        public IEnumerator TeamScene_ShowsTheActiveRunsPartyInSlots_AndSwapReordersIt()
         {
-            var library = MakeLibrary();
-            ActiveRun.Begin(MakeRun(), library);
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
 
             yield return LoadScene(TeamScenePath);
 
-            var lineUpText = GameObject.Find("LineUpText").GetComponent<Text>();
-            StringAssert.Contains("Lead: Alpha", lineUpText.text);
-            StringAssert.Contains("Support: Beta", lineUpText.text);
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameText"));
+            StringAssert.StartsWith("Lead", SlotText("PartySlot0", "RoleText"));
+            StringAssert.StartsWith("Support", SlotText("PartySlot1", "RoleText"));
+            StringAssert.Contains("ATK 10", SlotText("PartySlot0", "StatsText"));
 
             var swapButton = FindButton("SwapButton");
             Assert.IsTrue(swapButton.interactable, "Swap should be available with two mons in the line-up");
             swapButton.onClick.Invoke();
             yield return null;
 
-            StringAssert.Contains("Lead: Beta", lineUpText.text);
-            StringAssert.Contains("Support: Alpha", lineUpText.text);
+            Assert.AreEqual("Beta", SlotText("PartySlot0", "NameText"));
+            Assert.AreEqual("Alpha", SlotText("PartySlot1", "NameText"));
+        }
+
+        /// <summary>Six party slots and six Box slots are always drawn, filled or not: the point
+        /// of showing the whole row is that a player can see the room they have, and the empty
+        /// ones still say what they'd be.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DrawsSixPartyAndSixBoxSlots_WithTheUnfilledOnesEmpty()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            for (int i = 0; i < TeamPanelController.SlotsPerRow; i++)
+            {
+                Assert.IsNotNull(GameObject.Find($"PartySlot{i}"), $"PartySlot{i} should be drawn");
+                Assert.IsNotNull(GameObject.Find($"BoxSlot{i}"), $"BoxSlot{i} should be drawn");
+            }
+
+            // The run's two mons fill Lead and Support; everything behind them is a labelled
+            // reserve slot with no mon in it, and the Box is empty in a fresh run.
+            Assert.IsNull(GameObject.Find("PartySlot2").transform.Find("Card/NameText"),
+                "an unfilled party slot should hold no mon");
+            StringAssert.StartsWith("Reserve", SlotText("PartySlot2", "RoleText"));
+            Assert.AreEqual("Empty", SlotText("BoxSlot0", "RoleText"));
+
+            // A filled slot shows its mon the way a Character Select card does — same builder, so
+            // this is really checking the slot asked for the type row at all.
+            var typesRow = GameObject.Find("PartySlot0").transform.Find("Card/TypesRow");
+            Assert.IsNotNull(typesRow, "a filled party slot should show its type icons");
+            Assert.AreEqual(1, typesRow.childCount, "the test species is single-typed");
+        }
+
+        /// <summary>Dragging a card onto another slot is how the line-up is reordered, so this
+        /// drives the real drag handlers on the real slots rather than calling RunState.MoveMon
+        /// (RunMetaTests covers the rules themselves). Three mons so the party has both a filled
+        /// slot to trade with and empty ones to drop onto.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingAPartyCardOntoAnotherSlot_ReordersTheLineUp()
+        {
+            ActiveRun.Begin(MakeRun(3), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return Drag("PartySlot0", "PartySlot2");
+
+            Assert.AreEqual("Gamma", SlotText("PartySlot0", "NameText"), "the third mon should now lead");
+            Assert.AreEqual("Alpha", SlotText("PartySlot2", "NameText"));
+            Assert.AreEqual(3, ActiveRun.State.LineUp.Count, "a trade shouldn't change the party size");
+        }
+
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingAPartyCardIntoTheBox_MovesItOutOfTheLineUp()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return Drag("PartySlot1", "BoxSlot0");
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+            Assert.AreEqual(1, ActiveRun.State.Box.Count);
+            Assert.AreEqual("Beta", SlotText("BoxSlot0", "NameText"));
+            Assert.IsNull(GameObject.Find("PartySlot1").transform.Find("Card/NameText"),
+                "the slot the mon left should be drawn empty again");
+            Assert.IsFalse(FindButton("SwapButton").interactable,
+                "a one-mon line-up has nothing to swap");
+        }
+
+        /// <summary>The one hard rule on the screen: a run always keeps someone to send out, so
+        /// the drag is refused and the card goes back where it was.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingTheLastPartyMonIntoTheBox_IsRefused()
+        {
+            ActiveRun.Begin(MakeRun(1), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            yield return Drag("PartySlot0", "BoxSlot0");
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the party must never be emptied");
+            Assert.IsEmpty(ActiveRun.State.Box);
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"),
+                "the refused card should be back in its own slot");
+        }
+
+        /// <summary>A card let go over nothing has to land back in its slot rather than stay
+        /// stranded on the drag layer.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DroppingACardOnNothing_LeavesEverythingWhereItWas()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            var source = SlotView("PartySlot0");
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+            source.OnBeginDrag(eventData);
+            source.OnDrag(eventData);
+            source.OnEndDrag(eventData);
+            yield return null;
+
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameText"));
+            Assert.AreEqual(0, GameObject.Find("DragLayer").transform.childCount,
+                "no card should be left on the drag layer");
+        }
+
+        /// <summary>An empty slot can be dropped onto but not picked up.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_AnEmptySlot_CannotBeDragged()
+        {
+            ActiveRun.Begin(MakeRun(1), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            Assert.IsFalse(SlotView("PartySlot3").IsFilled);
+
+            yield return Drag("PartySlot3", "PartySlot0");
+
+            Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
         }
 
         [UnityTest]
@@ -171,9 +362,46 @@ namespace Pets.Tests
 
             var emptyState = GameObject.Find("EmptyStateText");
             Assert.IsNotNull(emptyState, "EmptyStateText should be active when there's no run");
-            Assert.IsNull(GameObject.Find("LineUpText"),
-                "The team readout should be hidden when there's no run to read out");
+            Assert.IsNull(GameObject.Find("PartySlot0"),
+                "The party slots should be hidden when there's no run to show in them");
             Assert.IsFalse(FindButton("SwapButton").interactable);
+        }
+
+        private static TeamSlotView SlotView(string slotName)
+        {
+            var slot = GameObject.Find(slotName);
+            Assert.IsNotNull(slot, $"Expected a slot named '{slotName}' in the Team scene");
+            var view = slot.GetComponent<TeamSlotView>();
+            Assert.IsNotNull(view, $"{slotName} has no TeamSlotView");
+            return view;
+        }
+
+        /// <summary>Runs a whole drag gesture the way uGUI does: begin and move on the source
+        /// slot, drop on the target, then end on the source. pointerDrag is what OnDrop reads to
+        /// find out which slot the card came from, exactly as the input module sets it.</summary>
+        private static IEnumerator Drag(string fromSlot, string toSlot)
+        {
+            var source = SlotView(fromSlot);
+            var target = SlotView(toSlot);
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+
+            source.OnBeginDrag(eventData);
+            source.OnDrag(eventData);
+            target.OnDrop(eventData);
+            source.OnEndDrag(eventData);
+            yield return null;
+        }
+
+        /// <summary>The text of one line inside a Team screen slot's card — the slots are built
+        /// at runtime by TeamPanelController, so this is how a test reads what a slot ended up
+        /// showing.</summary>
+        private static string SlotText(string slotName, string lineName)
+        {
+            var slot = GameObject.Find(slotName);
+            Assert.IsNotNull(slot, $"Expected a slot named '{slotName}' in the Team scene");
+            var line = slot.transform.Find($"Card/{lineName}");
+            Assert.IsNotNull(line, $"{slotName} has no {lineName}");
+            return line.GetComponent<Text>().text;
         }
 
         private static PokemonSpeciesDefinitionAsset MakeSpecies(int id, string name)
@@ -191,19 +419,23 @@ namespace Pets.Tests
         private static PokemonSpeciesLibrary MakeLibrary()
         {
             var library = ScriptableObject.CreateInstance<PokemonSpeciesLibrary>();
-            library.AllSpecies = new System.Collections.Generic.List<PokemonSpeciesDefinitionAsset>
+            library.AllSpecies = new System.Collections.Generic.List<PokemonSpeciesDefinitionAsset>();
+            for (int i = 0; i < MonNames.Length; i++)
             {
-                MakeSpecies(1, "Alpha"),
-                MakeSpecies(2, "Beta")
-            };
+                library.AllSpecies.Add(MakeSpecies(i + 1, MonNames[i]));
+            }
             return library;
         }
 
-        private static RunState MakeRun()
+        private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta" };
+
+        private static RunState MakeRun(int partyCount = 2)
         {
             var state = new RunState();
-            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(1, "Alpha"), "lead"));
-            state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(2, "Beta"), "support"));
+            for (int i = 0; i < partyCount; i++)
+            {
+                state.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(i + 1, MonNames[i]), $"mon-{i}"));
+            }
             return state;
         }
     }
