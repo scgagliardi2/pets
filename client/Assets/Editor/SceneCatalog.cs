@@ -21,6 +21,7 @@ namespace Pets.EditorTools
             TeamSceneBuilder.ScenePath,
             HistorySceneBuilder.ScenePath,
             CreditsSceneBuilder.ScenePath,
+            PokedexSceneBuilder.ScenePath,
             DevRosterSceneBuilder.ScenePath,
             BattleSceneBuilder.ScenePath,
             SettingsSceneBuilder.ScenePath,
@@ -56,6 +57,7 @@ namespace Pets.EditorTools
             TeamSceneBuilder.Build();
             HistorySceneBuilder.Build();
             CreditsSceneBuilder.Build();
+            PokedexSceneBuilder.Build();
             DevRosterSceneBuilder.Build();
             BattleSceneBuilder.Build();
             SettingsSceneBuilder.Build();

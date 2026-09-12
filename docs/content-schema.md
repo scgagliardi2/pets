@@ -4,7 +4,8 @@ Status: **Partially implemented (2026-09-11) — Phase 0's slice built, Phase 1 
 `docs/architecture-decisions/0001-pivot-to-pokemon-roguelite.md`. Documents the data shape for
 species/passives/items/team-synergy/locations (PLAN.md §8), kept in sync with the actual Unity
 ScriptableObject fields (`client/Assets/Scripts/Data`) and their JSON export format. §2-§3 and §8
-are built and content-authored for 28 curated species (`client/Assets/Content`); §6 (team synergy)
+are built and content-authored for all 183 roster species (`client/Assets/Content`, imported by
+`Assets/Editor/SpeciesRosterImporter.cs` — see ADR 0004); §6 (team synergy)
 and §7 (items) are Phase 1+ and not yet implemented; §9 (Location/Gym content) is Phase 1+/2 and
 not yet implemented. The old `Data/` code (`CreatureDefinition`, `AbilityDefinition`,
 `BotTeamDefinition` etc.) implemented a different game (see ADR 0001) and has been removed — this
@@ -39,10 +40,10 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `displayName` | `string` | Real Pokémon name (this project uses actual Pokémon names/species — see PLAN.md §9 scope note). |
 | `types` | `PokemonType` + optional second `PokemonType` | One or two of the 18 types (design doc §9's `PokemonType` union). |
 | `baseAttack` / `baseHealth` / `baseSpeed` | `int` | Per-evolution-stage stats, sourced directly from `docs/pokemon_stats_unique.xlsx` — **explicit placeholders**, not derived from a formula (design doc §8). `baseSpeed` is capped at `PokemonSpeciesDefinitionAsset.MaxBaseSpeed` (200): speed bars are drawn as a fraction of it, and `ContentIntegrityTests` fails a species above it. |
-| `passive` | `PassiveDefinition` reference | Empty/none for most of the 183 species today — the source sheet's Ability column is blank. Fill in as passives are hand-authored (PLAN.md §8). |
+| `passive` | `PassiveDefinition` reference | Always set — `ContentIntegrityTests` requires it. The source sheet's Ability column is blank, so only the original 28 curated species have a bespoke passive; the roster importer gives every other species one shared placeholder per primary type (`SpeciesRosterImporter.DefaultPassiveIdByType`). Hand-authoring one later simply overrides it (PLAN.md §8, ADR 0004). |
 | `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). |
 | `evolutionExpThreshold` | `int` | Only meaningful if `evolvesInto` is set. |
-| `sprite` | `Sprite` reference | Direct reference to the PNG under `client/Assets/Art/Pokemon/{id}.png`, **not** a path string: only the sprites curated species point at are pulled into a build, and a wrong reference is visibly missing in the Inspector rather than a silent runtime null. Assigned by the content-import pipeline (PLAN.md §8) once it exists; `Pets > Migrations > Assign Species Sprites From Art Folder` fills them in by Id in the meantime. |
+| `sprite` | `Sprite` reference | Direct reference to the PNG under `client/Assets/Art/Pokemon/{id}.png`, **not** a path string: only the sprites curated species point at are pulled into a build, and a wrong reference is visibly missing in the Inspector rather than a silent runtime null. Assigned by Id by the content-import pipeline (PLAN.md §8); `Pets > Migrations > Assign Species Sprites From Art Folder` does the same for an asset authored outside it. |
 | `isLegendary` | `bool` | Manually flagged for the 7 folded-in Legendaries (Mew, Mewtwo, Rayquaza, Ho-Oh, Lugia, Kyogre, Groudon) per PLAN.md §8 — the source sheet carries no rarity flag, so this is set by hand at import time, not derived. |
 
 ## 3. `PassiveDefinition` (ScriptableObject)

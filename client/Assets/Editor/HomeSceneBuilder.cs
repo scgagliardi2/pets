@@ -12,8 +12,10 @@ namespace Pets.EditorTools
     /// <summary>Builds the Home screen — the game's first scene (Build Settings index 0) and the
     /// only one reachable without a run in progress. The two ways into a run sit in a centered
     /// column (New Game, plus Continue Run when ActiveRun holds one — HomeScreenController decides
-    /// that at runtime); History, Credits and Quit sit in a row along the bottom, since they lead
-    /// away from playing rather than into it.
+    /// that at runtime); Pokedex, History, Credits, Settings and Quit sit in a row along the
+    /// bottom, since they lead away from playing rather than into it. The Pokédex is down there
+    /// with them rather than in the menu column deliberately: it's somewhere to read the roster,
+    /// not a third way to start a run.
     ///
     /// Built from code like every other scene in the project — re-run via Pets &gt; Build Home
     /// Scene (or Pets &gt; Build All Scenes) after changing SceneNavigator's methods.</summary>
@@ -28,7 +30,10 @@ namespace Pets.EditorTools
         private const float MenuButtonHeight = 64f;
         private const int MenuSpacing = 20;
         private const float FooterHeight = 88f;
-        private const float FooterButtonWidth = 210f;
+        // Five footer buttons have to fit 1280 units: 2*SideMargin + 5*width + 4*spacing, which
+        // caps the width at ~209. 200 leaves a little air — grow SideMargin or drop a button
+        // before growing this, or the last one hangs off the right edge.
+        private const float FooterButtonWidth = 200f;
         private const float SideMargin = 76f;
         // Placeholder working title: "Monster Trails" is the name the UI style guide this
         // project's palette comes from uses (see Pets.UI.Theme) — there's no settled game title
@@ -71,6 +76,7 @@ namespace Pets.EditorTools
             var newGameButton = CreateButton(menu, "NewGameButton", "New Game", Theme.ButtonStyle.Confirm, useSprite: true);
 
             var footer = CreateFooterRow(canvasRect);
+            var pokedexButton = CreateFooterButton(footer, "PokedexButton", "Pokedex", Theme.ButtonStyle.Primary);
             var historyButton = CreateFooterButton(footer, "HistoryButton", "History", Theme.ButtonStyle.Secondary);
             var creditsButton = CreateFooterButton(footer, "CreditsButton", "Credits", Theme.ButtonStyle.Secondary);
             var settingsButton = CreateFooterButton(footer, "SettingsButton", "Settings", Theme.ButtonStyle.Secondary);
@@ -81,6 +87,7 @@ namespace Pets.EditorTools
 
             UnityEventTools.AddVoidPersistentListener(continueButton.onClick, navigator.ContinueRun);
             UnityEventTools.AddVoidPersistentListener(newGameButton.onClick, navigator.StartNewGame);
+            UnityEventTools.AddVoidPersistentListener(pokedexButton.onClick, navigator.GoToPokedex);
             UnityEventTools.AddVoidPersistentListener(historyButton.onClick, navigator.GoToHistory);
             UnityEventTools.AddVoidPersistentListener(creditsButton.onClick, navigator.GoToCredits);
             UnityEventTools.AddVoidPersistentListener(settingsButton.onClick, navigator.GoToSettings);

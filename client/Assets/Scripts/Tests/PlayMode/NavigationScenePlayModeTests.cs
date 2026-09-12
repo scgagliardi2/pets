@@ -94,6 +94,7 @@ namespace Pets.Tests
 
             AssertNavigatesVia("NewGameButton", nameof(SceneNavigator.StartNewGame));
             AssertNavigatesVia("ContinueButton", nameof(SceneNavigator.ContinueRun));
+            AssertNavigatesVia("PokedexButton", nameof(SceneNavigator.GoToPokedex));
             AssertNavigatesVia("HistoryButton", nameof(SceneNavigator.GoToHistory));
             AssertNavigatesVia("CreditsButton", nameof(SceneNavigator.GoToCredits));
             AssertNavigatesVia("SettingsButton", nameof(SceneNavigator.GoToSettings));

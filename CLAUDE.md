@@ -8,7 +8,10 @@ explains why the project looks the way it does; [`0002-shell-first-deviation.md`
 explains why what's built doesn't match the plan's order; and
 [`0003-node-resolution-on-the-battle-scene.md`](docs/architecture-decisions/0003-node-resolution-on-the-battle-scene.md)
 covers how a map node turns into a fight, and which simplifications the run loop deliberately
-carries. Between them they list the deviations from the design doc that are still open questions.
+carries; [`0004-full-roster-import-and-pokedex.md`](docs/architecture-decisions/0004-full-roster-import-and-pokedex.md)
+covers the jump from 28 hand-authored species to all 183, the content-import pipeline that did it,
+and what that expansion left unfinished. Between them they list the deviations from the design doc
+that are still open questions.
 
 ## Project snapshot
 
@@ -28,8 +31,8 @@ exists — the phase list under it describes intent, and the build has deviated 
   deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
   extend, not replace.
 - The game's **shell** is built and playable (Home → Character Select → a walkable Location map,
-  plus an in-run menu, Team, History, Credits, Settings, a dev roster screen), and the **core run
-  loop inside it now works**: arriving at a map node resolves it (ADR 0003). Battle/Gym nodes hand
+  plus an in-run menu, Team, History, Credits, Settings, a Pokédex, a dev roster screen), and the
+  **core run loop inside it now works**: arriving at a map node resolves it (ADR 0003). Battle/Gym nodes hand
   an encounter to `Battle.unity` through `PendingBattle` and it writes the result back to the run
   (Morale, EXP, the stubbed catch, Location complete); the Pokémon Center and the Event/PvP stubs
   resolve as modals on the map. Team's dev button still opens the old throwaway random battle,
@@ -38,6 +41,12 @@ exists — the phase list under it describes intent, and the build has deviated 
   Pokémon Center adoption/healing, a Shop, type synergy, the badge reward, real Event/PvP nodes,
   the Trailblazer minigame, and the Region Hub. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
+- **Content is all 183 roster species** (ADR 0004), imported by
+  `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx`. Two things that
+  expansion left open and that it's easy to mistake for finished: only the original 28 species have
+  a bespoke passive (the rest share one placeholder per primary type), and the encounter/Gym/random
+  -battle pools still draw from the *whole* library unfiltered, so a Forest wild encounter can be a
+  Legendary. See PLAN.md §11 item 9.
 - `RegionMap*` is misnamed: it's the **Location** node-map (design doc §5), not the Region tier
   (§4/§5.2), which isn't built. See PLAN.md §6 "Known naming debt" before adding to it.
 - There is **no save/load layer** (so "Continue Run" only resumes a run still in memory, and
@@ -61,11 +70,13 @@ exists — the phase list under it describes intent, and the build has deviated 
   `docs/content-schema.md`). Don't hardcode a new C# class per Pokémon or per passive — if the
   existing passive/effect vocabulary can't express something, extend the vocabulary, don't
   special-case it. Stats come from `docs/pokemon_stats_unique.xlsx` — never invented, and never
-  hand-tuned in the asset without updating the sheet. **The content-import pipeline PLAN.md §8
-  describes doesn't exist yet**, so today that means typing sheet values into the asset by hand;
-  if you're asked to add more than a handful of species, build the importer instead (PLAN.md §8).
-  Adding or editing a content asset means re-running `ContentIntegrityTests` — an asset that isn't
-  registered in its library is invisible to the game and silent otherwise.
+  hand-tuned in the asset without updating the sheet. **Species assets are generated from that
+  sheet**: edit the sheet, then re-run `Pets > Content > Import Species From Roster Sheet` (PLAN.md
+  §8) rather than editing a species asset's stats or typing by hand — `RosterImportTests` fails if
+  the two disagree. The importer is idempotent and leaves hand-authored passives and evolution links
+  alone, so re-running it is always safe. Adding or editing a content asset means re-running
+  `ContentIntegrityTests` — an asset that isn't registered in its library is invisible to the game
+  and silent otherwise.
 - **No new tests-optional logic in the simulator.** Any change to the battle-sim code needs an
   accompanying EditMode test — this is the one part of the codebase where bugs are both easy to
   introduce and hard to notice by eye.
@@ -158,8 +169,8 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after node resolution and the Gym/Morale loop): **143 EditMode, 76 PlayMode, all
-  passing**. The same binary runs any Editor entry
+  2026-09-12 (after the full-roster import and the Pokédex, ADR 0004): **146 EditMode, 83 PlayMode,
+  all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.
@@ -178,7 +189,9 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
 - Before reporting simulation or gameplay-logic work as complete, run the relevant automated
   tests — don't rely on "looks right in the editor" for anything with test coverage available.
 - For UI changes, actually press play in the Unity editor and click through the affected flow
-  (Home/menu shell, Character Select, the Location map, Team) before calling it done;
+  (Home/menu shell, Character Select, the Pokédex, the Location map, Team) before calling it done;
+  headlessly, `Pets/Dev/Capture *` + `-captureOutput <path>` renders a screen to a PNG, which is the
+  closest substitute;
   type/compile success isn't feature success, and neither is a passing PlayMode test — it clicks
   the buttons it knows about, it doesn't look at the screen.
 - A PlayMode test is the minimum bar for a **new screen or a new button**: the wiring between a

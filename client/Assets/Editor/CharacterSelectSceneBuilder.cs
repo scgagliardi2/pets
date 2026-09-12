@@ -13,10 +13,12 @@ using static Pets.EditorTools.SceneBuilderUtils;
 
 namespace Pets.EditorTools
 {
-    /// <summary>Builds the Character Select scene (design doc §3): a scrollable grid of every
-    /// curated species with its stats, picked once as a Starter and once as a Secondary. Built
-    /// from code like every other scene in the project — re-run via
-    /// Pets &gt; Build Character Select Scene after changing CharacterSelectController's fields.
+    /// <summary>Builds the Character Select scene (design doc §3): a scrollable grid of the
+    /// starter-eligible species with their stats, picked once as a Starter and once as a Secondary.
+    /// Which species those are is CharacterSelectController's rule, not this builder's — the scene
+    /// is the same grid the Pokédex uses over the whole roster. Built from code like every other
+    /// scene in the project — re-run via Pets &gt; Build Character Select Scene after changing
+    /// CharacterSelectController's fields.
     ///
     /// Laid out for a phone held horizontally: a landscape reference canvas, chrome pinned to the
     /// top/bottom edges in pixels, and a five-column grid of small cards so a usable chunk of the
@@ -42,13 +44,6 @@ namespace Pets.EditorTools
         private const int GridColumns = 5;
         private const float GridSpacing = 24f;
         private const float GridPadding = 16f;
-        // Tall enough for the card to hold a 96-unit sprite, a name/attack row, a TypesRow of
-        // TypeIconView icons, and HP and SPD bars, at sizes that still resolve to real
-        // pixels on screen (see CharacterSelectController's card metrics). At 16:9 this leaves room
-        // for two full rows plus over half of a third in the grid viewport (the third row starts at
-        // 16 + 2*205 + 2*24 = 474 of the 596 units the chrome leaves) — the rest scrolls, same as
-        // any longer roster page would.
-        private const float CardHeight = 205f;
 
         /// <summary>Card width that divides the grid viewport into exactly GridColumns columns
         /// (200 at the current numbers). Derived rather than hand-typed so changing a margin or the
@@ -121,7 +116,12 @@ namespace Pets.EditorTools
             // consequence.
             grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             grid.constraintCount = GridColumns;
-            grid.cellSize = new Vector2(CellWidth, CardHeight);
+            // Cell height comes from SpeciesGridView, which owns the card's metrics and is shared
+            // with the Pokédex — a card that grows must not fit one screen's cell and overflow the
+            // other's. At 16:9 it leaves room for two full rows plus over half of a third in the
+            // grid viewport (the third row starts at 16 + 2*205 + 2*24 = 474 of the 596 units the
+            // chrome leaves); the rest scrolls, same as any longer roster page would.
+            grid.cellSize = new Vector2(CellWidth, SpeciesGridView.CardHeight);
             grid.spacing = new Vector2(GridSpacing, GridSpacing);
             grid.padding = new RectOffset((int)GridPadding, (int)GridPadding, (int)GridPadding, (int)GridPadding);
             grid.childAlignment = TextAnchor.UpperCenter;

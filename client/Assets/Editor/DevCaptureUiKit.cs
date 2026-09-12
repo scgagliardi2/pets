@@ -46,6 +46,12 @@ namespace Pets.EditorTools
         public static void CaptureCharacterSelectScenePlaying() =>
             CapturePlaying(CharacterSelectSceneBuilder.ScenePath);
 
+        /// <summary>The Pokédex builds its 183 cards in PokedexController.Start, so like
+        /// Character Select there's nothing to look at outside Play mode.</summary>
+        [MenuItem("Pets/Dev/Capture Pokedex Scene (Playing)")]
+        public static void CapturePokedexScenePlaying() =>
+            CapturePlaying(PokedexSceneBuilder.ScenePath);
+
         /// <summary>The Region Map's nodes, edges, captions and player token are all built in
         /// RegionMapController.Build at runtime, so like Character Select it only shows anything
         /// worth looking at in Play mode.</summary>

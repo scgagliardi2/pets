@@ -29,6 +29,12 @@ namespace Pets.Data
         public int BaseHealth;
         public int BaseSpeed;
 
+        /// <summary>The three base stats added up — the roster's one rough "how strong is this
+        /// species" number, with no weighting, since the sim treats all three as first-draft
+        /// placeholders anyway (PLAN.md §8). Character Select uses it to keep a run from opening on
+        /// a fully-evolved form, and the Pokédex to mark which species that leaves startable.</summary>
+        public int BaseStatTotal => BaseAttack + BaseHealth + BaseSpeed;
+
         [Header("Passive")]
         public PassiveDefinitionAsset Passive;
 

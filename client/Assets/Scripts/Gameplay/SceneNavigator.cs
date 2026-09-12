@@ -41,6 +41,10 @@ namespace Pets.Gameplay
 
         public void GoToCredits() => ScreenFade.TransitionTo(SceneNames.Credits);
 
+        /// <summary>Home's "Pokedex": the whole roster, browsable with or without a run in
+        /// progress — it reads the species library and nothing else.</summary>
+        public void GoToPokedex() => ScreenFade.TransitionTo(SceneNames.Pokedex);
+
         public void GoToDevRoster() => ScreenFade.TransitionTo(SceneNames.DevRoster);
 
         /// <summary>Team's dev "Random Battle" and the Battle screen's "Battle Again" — every load

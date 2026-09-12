@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -15,11 +16,11 @@ using Pets.UI;
 
 namespace Pets.Tests
 {
-    /// <summary>Drives the actual saved Character Select scene: verifies every curated species
-    /// gets a card, that picking a Starter removes it from the Secondary grid, and that confirming
-    /// hands the chosen pair off to RunBootstrapper via PendingRunSelection (see CLAUDE.md's
-    /// "for UI changes, actually click through the flow" convention — this is the automated
-    /// analogue of that for a headless environment).</summary>
+    /// <summary>Drives the actual saved Character Select scene: verifies the grid offers exactly
+    /// the starter-eligible slice of the roster, that picking a Starter removes it from the
+    /// Secondary grid, and that confirming hands the chosen pair off to RunBootstrapper via
+    /// PendingRunSelection (see CLAUDE.md's "for UI changes, actually click through the flow"
+    /// convention — this is the automated analogue of that for a headless environment).</summary>
     public class CharacterSelectScenePlayModeTests
     {
         private const string ScenePath = "Assets/Scenes/CharacterSelect.unity";
@@ -48,11 +49,49 @@ namespace Pets.Tests
 
         private static Transform GridContent() => GameObject.Find("Canvas").transform.Find("SpeciesScroll/Viewport/Content");
 
-        [UnityTest]
-        public IEnumerator Grid_ShowsACardForEveryCuratedSpecies()
+        /// <summary>The library the screen was actually built against, read off its serialized
+        /// field rather than loaded by path, so these tests assert against the same roster the
+        /// scene shows.</summary>
+        private static PokemonSpeciesLibrary SceneLibrary()
         {
+            var controller = Object.FindFirstObjectByType<CharacterSelectController>();
+            Assert.IsNotNull(controller, "the scene should have a CharacterSelectController");
+            var field = typeof(CharacterSelectController)
+                .GetField("speciesLibrary", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (PokemonSpeciesLibrary)field.GetValue(controller);
+        }
+
+        private static int StarterEligibleCount() =>
+            SceneLibrary().AllSpecies.Count(CharacterSelectController.IsStarterEligible);
+
+        /// <summary>The roster is all 183 species including fully-evolved forms and Legendaries;
+        /// this screen offers only the ones under CharacterSelectController.MaxStarterStatTotal.
+        /// Asserted against the rule rather than a hardcoded count, so re-importing the roster
+        /// sheet doesn't make the test a lie — with an explicit check that the rule actually
+        /// excludes something, which a count-only assertion would pass even if the filter were
+        /// dropped.</summary>
+        [UnityTest]
+        public IEnumerator Grid_ShowsACardForEveryStarterEligibleSpeciesAndNoOthers()
+        {
+            var library = SceneLibrary();
+            int eligible = StarterEligibleCount();
+            Assert.Greater(eligible, 0, "no species is startable — the cap is too low to play");
+            Assert.Less(eligible, library.AllSpecies.Count,
+                "the whole roster is startable, so the stat-total cap isn't filtering anything");
+
             var buttons = GridContent().GetComponentsInChildren<Button>();
-            Assert.AreEqual(28, buttons.Length);
+            Assert.AreEqual(eligible, buttons.Length);
+
+            // Read off the cards themselves rather than the library: this is the check that the
+            // grid is bound to the filtered list, not merely the same length as it.
+            foreach (var button in buttons)
+            {
+                int attack = int.Parse(button.transform.Find("NameRow/AttackValue").GetComponent<Text>().text);
+                int health = button.GetComponentInChildren<HealthBarView>().Max;
+                int speed = button.GetComponentInChildren<StatBarView>().Value;
+                Assert.Less(attack + health + speed, CharacterSelectController.MaxStarterStatTotal,
+                    $"{button.gameObject.name} is on the grid with a stat total at or over the cap");
+            }
             yield break;
         }
 
@@ -208,7 +247,8 @@ namespace Pets.Tests
             yield return null;
 
             var secondaryButtons = GridContent().GetComponentsInChildren<Button>();
-            Assert.AreEqual(27, secondaryButtons.Length, "the chosen Starter should not reappear in the Secondary grid");
+            Assert.AreEqual(StarterEligibleCount() - 1, secondaryButtons.Length,
+                "the chosen Starter should not reappear in the Secondary grid");
             Assert.IsFalse(secondaryButtons.Any(b => b.gameObject.name == starterCardName));
 
             secondaryButtons[0].onClick.Invoke();
@@ -240,8 +280,8 @@ namespace Pets.Tests
         /// <summary>Filtering and sorting rebind the existing cards rather than destroying the grid
         /// and building a new one. Asserted on the total child count — including inactive — because
         /// the failure mode if this regresses is silent: the screen looks identical while every
-        /// click churns a few hundred GameObjects, which is a visible hitch on a phone and gets
-        /// worse as the roster grows toward the full 183 (PLAN.md §8).</summary>
+        /// click churns a few hundred GameObjects, which was already a visible hitch on a phone at
+        /// 28 species and now has the full 183-species roster behind it (PLAN.md §8).</summary>
         [UnityTest]
         public IEnumerator FilteringAndSorting_ReuseTheSameCards()
         {

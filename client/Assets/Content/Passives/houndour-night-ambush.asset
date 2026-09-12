@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b4c030e52f69973353b35fd1900d3f7a, type: 3}
+  m_Name: houndour-night-ambush
+  m_EditorClassIdentifier: Pets.Data::Pets.Data.PassiveDefinitionAsset
+  Id: houndour-night-ambush
+  DisplayName: Night Ambush
+  Description: Strikes from the dark, and the hit leaves it hungrier for the next one.
+  TypeFlavor: 15
+  Effects:
+  - Type: 0
+    Target: 2
+    Amount: 3
+    Status: 0
+  - Type: 5
+    Target: 0
+    Amount: 2
+    Status: 0
+  MagnitudeByStage:
+  - 1

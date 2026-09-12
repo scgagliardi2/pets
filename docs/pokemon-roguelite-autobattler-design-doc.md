@@ -356,6 +356,10 @@ Modeled on Super Auto Pets:
 - Camp screen
 - Win screen / Lose screen
 - Achievements / meta-progression screen
+- Pokédex — the whole roster, browsable from the main menu with a Type filter and stat sorts. Not in
+  the original inventory; added when the roster went to all 183 species and Character Select was
+  narrowed to a startable slice, which left most of the roster otherwise invisible outside a wild
+  encounter. See ADR 0004.
 
 ---
 
