@@ -36,19 +36,7 @@ namespace Pets.EditorTools
 
             CreatePanel(canvasRect, "Background", Theme.ScreenBg, Vector2.zero, Vector2.one);
 
-            var titleBar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
-            titleBar.pivot = new Vector2(0.5f, 1f);
-            titleBar.offsetMin = new Vector2(0f, -TitleHeight);
-            titleBar.offsetMax = Vector2.zero;
-
-            var titleText = CreatePlainText(canvasRect, "TitleText", "Menu", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
-            titleText.fontStyle = FontStyle.Bold;
-            var titleTextRect = titleText.GetComponent<RectTransform>();
-            titleTextRect.anchorMin = new Vector2(0f, 1f);
-            titleTextRect.anchorMax = Vector2.one;
-            titleTextRect.pivot = new Vector2(0.5f, 1f);
-            titleTextRect.offsetMin = new Vector2(0f, -TitleHeight);
-            titleTextRect.offsetMax = Vector2.zero;
+            CreateScreenTitleBar(canvasRect, "Menu", TitleHeight);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
 

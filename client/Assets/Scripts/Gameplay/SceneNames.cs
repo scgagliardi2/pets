@@ -12,5 +12,7 @@ namespace Pets.Gameplay
         public const string Map = "RegionMap";
         public const string IngameMenu = "IngameMenu";
         public const string Team = "Team";
+        public const string History = "History";
+        public const string Credits = "Credits";
     }
 }

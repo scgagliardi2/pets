@@ -2,6 +2,7 @@ using UnityEditor;
 using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UI;
 using Pets.Gameplay;
 using Pets.UI;
 using static Pets.EditorTools.SceneBuilderUtils;
@@ -9,9 +10,10 @@ using static Pets.EditorTools.SceneBuilderUtils;
 namespace Pets.EditorTools
 {
     /// <summary>Builds the Home screen — the game's first scene (Build Settings index 0) and the
-    /// only one reachable without a run in progress. Two buttons for now, New Game and Quit; the
-    /// menu is a vertical layout column sized from MenuButtons' own list precisely so that adding
-    /// Continue/Options/Collection later is a one-line change here rather than a re-layout.
+    /// only one reachable without a run in progress. The two ways into a run sit in a centered
+    /// column (New Game, plus Continue Run when ActiveRun holds one — HomeScreenController decides
+    /// that at runtime); History, Credits and Quit sit in a row along the bottom, since they lead
+    /// away from playing rather than into it.
     ///
     /// Built from code like every other scene in the project — re-run via Pets &gt; Build Home
     /// Scene (or Pets &gt; Build All Scenes) after changing SceneNavigator's methods.</summary>
@@ -25,6 +27,9 @@ namespace Pets.EditorTools
         private const float MenuButtonWidth = 360f;
         private const float MenuButtonHeight = 64f;
         private const int MenuSpacing = 20;
+        private const float FooterHeight = 88f;
+        private const float FooterButtonWidth = 210f;
+        private const float SideMargin = 76f;
         // Placeholder working title: "Monster Trails" is the name the UI style guide this
         // project's palette comes from uses (see Pets.UI.Theme) — there's no settled game title
         // yet, and this is the one place a player would read one.
@@ -62,13 +67,27 @@ namespace Pets.EditorTools
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
 
             var menu = CreateMenuColumn(canvasRect, buttonCount: 2);
+            var continueButton = CreateButton(menu, "ContinueButton", "Continue Run", Theme.ButtonStyle.Primary, useSprite: true);
             var newGameButton = CreateButton(menu, "NewGameButton", "New Game", Theme.ButtonStyle.Confirm, useSprite: true);
-            var quitButton = CreateButton(menu, "QuitButton", "Quit", Theme.ButtonStyle.Danger, useSprite: true);
 
+            var footer = CreateFooterRow(canvasRect);
+            var historyButton = CreateFooterButton(footer, "HistoryButton", "History", Theme.ButtonStyle.Secondary);
+            var creditsButton = CreateFooterButton(footer, "CreditsButton", "Credits", Theme.ButtonStyle.Secondary);
+            var quitButton = CreateFooterButton(footer, "QuitButton", "Quit", Theme.ButtonStyle.Danger);
+
+            var home = new GameObject("HomeScreen").AddComponent<HomeScreenController>();
+            SetField(home, "continueButton", continueButton);
+
+            UnityEventTools.AddVoidPersistentListener(continueButton.onClick, navigator.ContinueRun);
             UnityEventTools.AddVoidPersistentListener(newGameButton.onClick, navigator.StartNewGame);
+            UnityEventTools.AddVoidPersistentListener(historyButton.onClick, navigator.GoToHistory);
+            UnityEventTools.AddVoidPersistentListener(creditsButton.onClick, navigator.GoToCredits);
             UnityEventTools.AddVoidPersistentListener(quitButton.onClick, navigator.QuitGame);
 
-            ForceLayoutRebuild(canvasRect);
+            // The menu column stays live: HomeScreenController hides Continue Run when there's no
+            // run to go back to, and a baked-and-destroyed VerticalLayoutGroup would leave that
+            // slot as a hole above New Game instead of recentering the column around it.
+            ForceLayoutRebuild(canvasRect, menu);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -79,10 +98,9 @@ namespace Pets.EditorTools
         }
 
         /// <summary>A centered, exactly-sized column for the menu's sprite buttons. The height is
-        /// derived from the button count rather than hand-typed because the column's
-        /// VerticalLayoutGroup gets baked and destroyed at save time (see ForceLayoutRebuild) —
-        /// a column left taller than its contents bakes the buttons against its top edge instead
-        /// of centered on screen, and nothing at runtime would ever correct it.</summary>
+        /// derived from the button count rather than hand-typed so adding another primary action
+        /// stays a one-line change, and the column is center-aligned so the stack stays centered
+        /// whether or not Continue Run is showing.</summary>
         private static RectTransform CreateMenuColumn(RectTransform canvasRect, int buttonCount)
         {
             var menu = CreatePanel(canvasRect, "MenuButtons", Color.clear,
@@ -93,7 +111,34 @@ namespace Pets.EditorTools
             // Sits below the centre line so the title above it isn't crowded.
             menu.anchoredPosition = new Vector2(0f, -70f);
             AddVerticalLayout(menu, new RectOffset(0, 0, 0, 0), MenuSpacing);
+            menu.GetComponent<VerticalLayoutGroup>().childAlignment = TextAnchor.MiddleCenter;
             return menu;
+        }
+
+        /// <summary>The bottom row of secondary destinations. Pinned to the bottom edge in pixels
+        /// (like the other screens' bars) rather than placed under the menu column, so a shorter
+        /// canvas eats the gap between the two instead of pushing buttons off-screen.</summary>
+        private static RectTransform CreateFooterRow(RectTransform canvasRect)
+        {
+            var footer = CreatePanel(canvasRect, "FooterButtons", Color.clear, Vector2.zero, new Vector2(1f, 0f));
+            footer.pivot = new Vector2(0.5f, 0f);
+            footer.offsetMin = Vector2.zero;
+            footer.offsetMax = new Vector2(0f, FooterHeight);
+            AddHorizontalLayout(footer, expandHeight: false,
+                padding: new RectOffset((int)SideMargin, (int)SideMargin, 12, 12), controlWidth: true);
+            var layout = footer.GetComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.spacing = 20;
+            return footer;
+        }
+
+        private static Button CreateFooterButton(RectTransform footer, string name, string label, Theme.ButtonStyle style)
+        {
+            var button = CreateButton(footer, name, label, style, useSprite: true);
+            var layoutElement = button.GetComponent<LayoutElement>();
+            layoutElement.flexibleWidth = 0f;
+            layoutElement.preferredWidth = FooterButtonWidth;
+            return button;
         }
     }
 }
