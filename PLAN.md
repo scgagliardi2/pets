@@ -220,20 +220,28 @@ criteria are met and the Forest Location is playable end to end:**
   (camera/EventSystem/canvas/panel/text/button/scroll-view helpers) rather than duplicating that
   code per scene. `Assets/Editor/SceneCatalog.cs` owns the Build Settings scene list (and
   `Pets > Build All Scenes`), so no single builder can leave it stale.
-- The game has a shell around the run: `Home.unity` (New Game / Quit) → `CharacterSelect.unity` →
-  `RegionMap.unity`, with the Map's "Menu" button opening `IngameMenu.unity` (Back to Map / Team /
-  Quit to Home) and `Team.unity` showing the run's line-up and Box with a Lead/Support swap. The
-  old Forest hub scene was converted into the Ingame Menu rather than kept alongside. Navigation is
-  one `Gameplay/SceneNavigator.cs` component the builders wire every menu button to;
+- The game has a shell around the run: `Home.unity` (Continue Run / New Game, plus History,
+  Credits and Quit) → `CharacterSelect.unity` → `RegionMap.unity`, with the Map's "Menu" button
+  opening `IngameMenu.unity` (Back to Map / Team / Quit to Home). `Team.unity` shows the run's
+  party as a row of six slots with the Box's first six below it, each filled slot drawing the
+  mon's sprite, type icons and stats through the same `UI/PokemonCardBuilder.cs` that draws
+  Character Select's cards — slot 0 is labelled Lead, slot 1 Support, and the rest are Reserve and
+  dimmed, since only the front two are ever mechanically active (design doc §7). The Lead/Support
+  swap is still the only line-up edit. `History.unity` and `Credits.unity` hang off Home: Credits
+  carries the Pokémon/PokeAPI/font attribution and the non-commercial scope note, History is a
+  real screen with an honest empty state (nothing records a finished run yet). The old Forest hub
+  scene was converted into the Ingame Menu rather than kept alongside. Navigation is one
+  `Gameplay/SceneNavigator.cs` component the builders wire every menu button to;
   `Gameplay/ActiveRun.cs` holds the `RunState` across those scene loads (`RunBootstrapper` now
   publishes to it, and adopts an existing run instead of rerolling one when the Map is re-entered).
-  Covered by `NavigationScenePlayModeTests.cs`. **Still a shell:** Home has no Continue/Options,
-  and "Quit to Home" leaves the run in memory rather than saving it — resuming across a real
-  session is the local-save work in Phase 2.
+  Covered by `NavigationScenePlayModeTests.cs`. **Still a shell:** "Continue Run" only resumes a
+  run still in memory this session (it's hidden when `ActiveRun` is empty) and Home has no
+  Options, because "Quit to Home" doesn't save — real resuming, and anything for History to list,
+  is the local-save work in Phase 2. Box slots past the first six aren't paged either.
 
 **Not yet built (Phase 1):** wiring the branching Region Map into an actual playable Location (node
 resolution, Gym/Badge battle, PvP/Event node behavior), Team management beyond the Lead/Support
-swap (Box promotion/release), the real drag-and-
+swap (Box promotion/release, reordering the reserves, paging a Box past six slots), the real drag-and-
 drop catching system, evolution, the real Trailblazer minigame, Pokémon Center adoption, a real Shop
 economy, narrowing Character Select to match design doc §3 exactly, and any save/load layer.
 

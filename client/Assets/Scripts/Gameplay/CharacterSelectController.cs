@@ -33,11 +33,13 @@ namespace Pets.Gameplay
         //
         // Budget: 12 padding + 96 sprite + 23 name + 30 types row + 20 stats + 3 one-unit gaps =
         // 184, inside the 186 cell (the types row is two 28-unit TypeIconView icons, not a text
-        // line — see AddCardTypeIcons). Grow CharacterSelectSceneBuilder.CardHeight with any of
+        // line — see Pets.UI.PokemonCardBuilder.AddTypeIcons, which builds every card on this
+        // screen and on the Team screen). Grow CharacterSelectSceneBuilder.CardHeight with any of
         // these.
         private const int CardSpriteHeight = 96;
         private const int CardNameFontSize = 17;
         private const int CardLineFontSize = 14;
+        private const int CardTypesRowHeight = 30;
 
         private static readonly PokemonType[] AllTypes = (PokemonType[])Enum.GetValues(typeof(PokemonType));
 
@@ -224,92 +226,23 @@ namespace Pets.Gameplay
 
         private void CreateCard(PokemonSpeciesDefinitionAsset species, Action<PokemonSpeciesDefinitionAsset> onChosen)
         {
-            var go = new GameObject($"Card_{species.DisplayName}", typeof(RectTransform));
-            go.transform.SetParent(gridContainer, false);
+            var go = PokemonCardBuilder.CreateCard(gridContainer, $"Card_{species.DisplayName}");
 
-            var image = go.AddComponent<Image>();
-            image.sprite = Theme.TextBoxSprite;
-            image.type = Image.Type.Sliced;
             var button = go.AddComponent<Button>();
-            button.targetGraphic = image;
+            button.targetGraphic = go.GetComponent<Image>();
             button.onClick.AddListener(() => onChosen(species));
 
-            var layout = go.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(6, 6, 6, 6);
-            layout.spacing = 1;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            // Must be true so each line's LayoutElement.preferredHeight is actually honored —
-            // see the matching note in SceneBuilderUtils.AddVerticalLayout.
-            layout.childControlHeight = true;
-            layout.childAlignment = TextAnchor.UpperCenter;
-
-            AddCardSprite(go.transform, species);
-
-            AddCardLine(go.transform, species.DisplayName, CardNameFontSize, FontStyle.Bold, Theme.TextDark);
-            AddCardTypeIcons(go.transform, species);
+            PokemonCardBuilder.AddSprite(go.transform, PokemonSprites.Load(species), CardSpriteHeight);
+            PokemonCardBuilder.AddLine(go.transform, species.DisplayName, CardNameFontSize, FontStyle.Bold, Theme.TextDark);
+            PokemonCardBuilder.AddTypeIcons(go.transform, typeIconPrefab, CardTypesRowHeight,
+                species.Type1, species.HasSecondType, species.Type2);
             // All three stats on one line: it buys the height that lets the sprite go back to 96
             // and every line go up a couple of sizes, which matters more for readability than
             // giving Attack a row of its own did. Bold like the name — Handjet's Regular weight is
             // too thin to hold up at this size.
-            AddCardLine(go.transform, $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}",
+            PokemonCardBuilder.AddLine(go.transform,
+                $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}",
                 CardLineFontSize, FontStyle.Bold, Theme.TextDark);
-        }
-
-        private static void AddCardSprite(Transform parent, PokemonSpeciesDefinitionAsset species)
-        {
-            var go = new GameObject("Sprite", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var image = go.AddComponent<Image>();
-            image.sprite = PokemonSprites.Load(species);
-            image.preserveAspect = true;
-            var layoutElement = go.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = CardSpriteHeight;
-        }
-
-        /// <summary>One or two Pets.UI.TypeIconView instances (Type1, and Type2 if the species
-        /// has one) side by side in a row — replaces what used to be a plain "Fire" / "Fire/Flying"
-        /// text line colored via Theme.GetTypeColor, now that real per-type icon art exists
-        /// (Assets/Resources/Sprites/Types).</summary>
-        private void AddCardTypeIcons(Transform parent, PokemonSpeciesDefinitionAsset species)
-        {
-            var row = new GameObject("TypesRow", typeof(RectTransform));
-            row.transform.SetParent(parent, false);
-            var layout = row.AddComponent<HorizontalLayoutGroup>();
-            layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.spacing = 6;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-            var rowLayoutElement = row.AddComponent<LayoutElement>();
-            rowLayoutElement.preferredHeight = 30;
-
-            CreateTypeIcon(row.transform, species.Type1);
-            if (species.HasSecondType)
-            {
-                CreateTypeIcon(row.transform, species.Type2);
-            }
-        }
-
-        private void CreateTypeIcon(Transform parent, PokemonType type)
-        {
-            var instance = Instantiate(typeIconPrefab, parent, false);
-            instance.GetComponent<TypeIconView>().Type = type;
-        }
-
-        private static void AddCardLine(Transform parent, string content, int fontSize, FontStyle style, Color color)
-        {
-            var go = new GameObject("Line", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var text = go.AddComponent<Text>();
-            text.font = Theme.GameFont;
-            text.fontSize = fontSize;
-            text.fontStyle = style;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = color;
-            text.text = content;
-            var layoutElement = go.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = fontSize + 6;
         }
     }
 }
