@@ -67,10 +67,13 @@ namespace Pets.Tests
             var actualFaintOrder = log.Events.Where(e => e.Kind == StepEventKind.Faint).Select(e => e.SourceInstanceId).ToList();
             CollectionAssert.AreEqual(fixture.expected.faintOrder, actualFaintOrder, $"faint order mismatch in {name}");
 
-            var allMons = lineUpA.Concat(lineUpB).ToList();
+            // Read off the log's FinalState, not the line-ups passed in: the runner simulates
+            // copies, so the PokemonInstances handed to it come back untouched — which is the
+            // point (see BattleCombatant), and which is why the result has to be reported.
+            var survivors = log.FinalState.LineUpA.Concat(log.FinalState.LineUpB).ToList();
             foreach (var survivor in fixture.expected.survivors)
             {
-                var actual = allMons.FirstOrDefault(m => m.InstanceId == survivor.instanceId);
+                var actual = survivors.FirstOrDefault(m => m.InstanceId == survivor.instanceId);
                 Assert.IsNotNull(actual, $"expected survivor {survivor.instanceId} not found in {name}");
                 Assert.AreEqual(survivor.currentHP, actual.CurrentHP, $"survivor {survivor.instanceId} HP mismatch in {name}");
             }
@@ -78,15 +81,17 @@ namespace Pets.Tests
 
         private static void RunStepsAndAssertState(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, FixtureFile fixture, string name)
         {
-            var state = new BattleState { LineUpA = lineUpA, LineUpB = lineUpB };
-            var rng = new DeterministicRandom(fixture.seed);
-
+            // Through the on-demand runner rather than driving AdvanceStep against a hand-built
+            // BattleState: advancing a Step at a time is exactly what that runner is for, and going
+            // through it means these fixtures exercise the same line-up-to-combatant copy a real
+            // PvE fight does.
+            var runner = new OnDemandStepRunner(lineUpA, lineUpB, fixture.seed);
             for (int i = 0; i < fixture.steps; i++)
             {
-                BattleSimulator.AdvanceStep(state, rng);
+                runner.NextStep();
             }
 
-            var allMons = lineUpA.Concat(lineUpB).ToList();
+            var allMons = runner.State.LineUpA.Concat(runner.State.LineUpB).ToList();
             foreach (var expected in fixture.expectedState)
             {
                 var actual = allMons.FirstOrDefault(m => m.InstanceId == expected.instanceId);

@@ -7,7 +7,14 @@ namespace Pets.Simulation
     /// handed to the UI for playback. Calls the same AdvanceStep as OnDemandStepRunner.</summary>
     public static class PrecomputedStepLogRunner
     {
-        public static StepLog Run(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, int seed)
+        /// <summary>Convenience entry from the run's own roster: copies each line-up into fresh
+        /// combatants and runs. Use the combatant overload instead when anything has to be applied
+        /// at line-up assembly — a Camp buff, type synergy (battle-sim-spec.md §8) — since those
+        /// belong on the combatants and must not touch the roster.</summary>
+        public static StepLog Run(IReadOnlyList<PokemonInstance> lineUpA, IReadOnlyList<PokemonInstance> lineUpB, int seed) =>
+            Run(BattleCombatant.FromLineUp(lineUpA), BattleCombatant.FromLineUp(lineUpB), seed);
+
+        public static StepLog Run(List<BattleCombatant> lineUpA, List<BattleCombatant> lineUpB, int seed)
         {
             var state = new BattleState { LineUpA = lineUpA, LineUpB = lineUpB };
             var rng = new DeterministicRandom(seed);
@@ -19,6 +26,7 @@ namespace Pets.Simulation
                 {
                     log.Outcome = BattleOutcome.Draw;
                     log.Events.Add(new StepEvent { Step = state.StepNumber, Kind = StepEventKind.BattleEnd, Outcome = BattleOutcome.Draw });
+                    log.FinalState = state;
                     return log;
                 }
                 log.Events.AddRange(BattleSimulator.AdvanceStep(state, rng));
@@ -26,6 +34,7 @@ namespace Pets.Simulation
 
             log.Outcome = BattleSimulator.DetermineOutcome(state);
             log.Events.Add(new StepEvent { Step = state.StepNumber, Kind = StepEventKind.BattleEnd, Outcome = log.Outcome });
+            log.FinalState = state;
             return log;
         }
     }
@@ -40,7 +49,14 @@ namespace Pets.Simulation
 
         public BattleState State { get; }
 
-        public OnDemandStepRunner(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, int seed)
+        /// <summary>Convenience entry from the run's own roster — see the note on the precomputed
+        /// runner's equivalent for when to build the combatants yourself instead.</summary>
+        public OnDemandStepRunner(IReadOnlyList<PokemonInstance> lineUpA, IReadOnlyList<PokemonInstance> lineUpB, int seed)
+            : this(BattleCombatant.FromLineUp(lineUpA), BattleCombatant.FromLineUp(lineUpB), seed)
+        {
+        }
+
+        public OnDemandStepRunner(List<BattleCombatant> lineUpA, List<BattleCombatant> lineUpB, int seed)
         {
             State = new BattleState { LineUpA = lineUpA, LineUpB = lineUpB };
             rng = new DeterministicRandom(seed);

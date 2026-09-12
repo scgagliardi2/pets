@@ -109,11 +109,11 @@ namespace Pets.Simulation
 
         private readonly struct Triggerer
         {
-            public readonly PokemonInstance Instance;
+            public readonly BattleCombatant Instance;
             public readonly Side Side;
             public readonly int Role; // 0 = Lead, 1 = Support
 
-            public Triggerer(PokemonInstance instance, Side side, int role)
+            public Triggerer(BattleCombatant instance, Side side, int role)
             {
                 Instance = instance;
                 Side = side;
@@ -121,7 +121,7 @@ namespace Pets.Simulation
             }
         }
 
-        private static void AddIfTriggering(PokemonInstance instance, Side side, int role, List<Triggerer> list)
+        private static void AddIfTriggering(BattleCombatant instance, Side side, int role, List<Triggerer> list)
         {
             if (instance != null && instance.Charge >= BattleConfig.ChargeThreshold)
             {
@@ -144,7 +144,7 @@ namespace Pets.Simulation
             return x.Side.CompareTo(y.Side);
         }
 
-        private static void AccrueCharge(PokemonInstance instance)
+        private static void AccrueCharge(BattleCombatant instance)
         {
             if (instance == null)
             {
@@ -162,7 +162,7 @@ namespace Pets.Simulation
             instance.Charge += (int)(instance.CurrentStats.Speed * BattleConfig.DefaultStepDurationMs * multiplier);
         }
 
-        private static void ApplyStatusTick(PokemonInstance instance, Side side, List<StepEvent> events, int step)
+        private static void ApplyStatusTick(BattleCombatant instance, Side side, List<StepEvent> events, int step)
         {
             if (instance == null || instance.Status == null)
             {
@@ -235,7 +235,7 @@ namespace Pets.Simulation
             }
         }
 
-        private static void ApplyEffect(EffectDefinition effect, PokemonInstance self, Side selfSide, BattleState state, List<StepEvent> events, int step)
+        private static void ApplyEffect(EffectDefinition effect, BattleCombatant self, Side selfSide, BattleState state, List<StepEvent> events, int step)
         {
             var (target, targetSide) = ResolveTarget(effect.Target, self, selfSide, state);
             if (target == null)
@@ -295,7 +295,7 @@ namespace Pets.Simulation
             }
         }
 
-        private static (PokemonInstance target, Side side) ResolveTarget(TargetSelector selector, PokemonInstance self, Side selfSide, BattleState state)
+        private static (BattleCombatant target, Side side) ResolveTarget(TargetSelector selector, BattleCombatant self, Side selfSide, BattleState state)
         {
             switch (selector)
             {
@@ -323,12 +323,12 @@ namespace Pets.Simulation
             }
         }
 
-        private static bool IsValidTarget(PokemonInstance instance)
+        private static bool IsValidTarget(BattleCombatant instance)
         {
             return instance != null && instance.CurrentHP > 0;
         }
 
-        private static void ApplyDamage(PokemonInstance target, Side targetSide, int rawAmount, PokemonInstance attacker, Side attackerSide, List<StepEvent> events, int step)
+        private static void ApplyDamage(BattleCombatant target, Side targetSide, int rawAmount, BattleCombatant attacker, Side attackerSide, List<StepEvent> events, int step)
         {
             int afterReduction = System.Math.Max(0, rawAmount - target.DamageReductionFlat);
             int shieldAbsorbed = System.Math.Min(target.Shield, afterReduction);
@@ -355,7 +355,7 @@ namespace Pets.Simulation
             }
         }
 
-        private static void ApplyHeal(PokemonInstance target, Side targetSide, int amount, PokemonInstance source, Side sourceSide, List<StepEvent> events, int step)
+        private static void ApplyHeal(BattleCombatant target, Side targetSide, int amount, BattleCombatant source, Side sourceSide, List<StepEvent> events, int step)
         {
             int healAmount = System.Math.Min(amount, target.CurrentStats.Health - target.CurrentHP);
             if (healAmount <= 0)
@@ -366,7 +366,7 @@ namespace Pets.Simulation
             events.Add(new StepEvent { Step = step, Kind = StepEventKind.Heal, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = healAmount });
         }
 
-        private static void ApplyStatus(PokemonInstance target, Side targetSide, StatusType status, int amount, PokemonInstance source, Side sourceSide, List<StepEvent> events, int step)
+        private static void ApplyStatus(BattleCombatant target, Side targetSide, StatusType status, int amount, BattleCombatant source, Side sourceSide, List<StepEvent> events, int step)
         {
             target.Status = status;
             target.StatusTickDamage = status == StatusType.Poisoned || status == StatusType.Burned ? amount : 0;
@@ -375,7 +375,7 @@ namespace Pets.Simulation
             events.Add(new StepEvent { Step = step, Kind = StepEventKind.StatusApplied, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Status = status });
         }
 
-        private static void ClearStatus(PokemonInstance target, Side targetSide, PokemonInstance source, Side sourceSide, List<StepEvent> events, int step)
+        private static void ClearStatus(BattleCombatant target, Side targetSide, BattleCombatant source, Side sourceSide, List<StepEvent> events, int step)
         {
             if (target.Status == null)
             {
