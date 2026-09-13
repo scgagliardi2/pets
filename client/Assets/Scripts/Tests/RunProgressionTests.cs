@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Pets.Data;
 using Pets.Meta;
 using Pets.Simulation;
 
@@ -175,72 +176,79 @@ namespace Pets.Tests
             int lastLayer = LocationMapGenerator.ChoiceLayerCount;
             for (int badges = 0; badges < RunProgression.BadgesToWin; badges++)
             {
-                Assert.GreaterOrEqual(RunProgression.GymLevel(badges), RunProgression.WildLevel(badges, lastLayer),
+                Assert.GreaterOrEqual(RunProgression.GymExp(badges), RunProgression.WildExp(badges, lastLayer),
                     $"the Gym should be at least as strong as the Location's toughest wild mons (badge {badges})");
-                Assert.GreaterOrEqual(RunProgression.WildLevel(badges, lastLayer), RunProgression.WildLevel(badges, 1),
+                Assert.GreaterOrEqual(RunProgression.WildExp(badges, lastLayer), RunProgression.WildExp(badges, 1),
                     "wild mons shouldn't get weaker deeper into a Location");
 
                 if (badges == 0)
                 {
                     continue;
                 }
-                Assert.Greater(RunProgression.WildLevel(badges, 1), RunProgression.WildLevel(badges - 1, 1));
-                Assert.Greater(RunProgression.GymLevel(badges), RunProgression.GymLevel(badges - 1));
+                Assert.Greater(RunProgression.WildExp(badges, 1), RunProgression.WildExp(badges - 1, 1));
+                Assert.Greater(RunProgression.GymExp(badges), RunProgression.GymExp(badges - 1));
+                Assert.GreaterOrEqual(RunProgression.MaxTier(badges) ?? SpeciesTier.MaxTier,
+                    RunProgression.MaxTier(badges - 1) ?? SpeciesTier.MaxTier,
+                    "the tier the pool draws from shouldn't fall back");
                 Assert.GreaterOrEqual(RunProgression.WildEncounterSize(badges), RunProgression.WildEncounterSize(badges - 1));
                 Assert.GreaterOrEqual(RunProgression.GymTeamSize(badges, 1), RunProgression.GymTeamSize(badges - 1, 1));
             }
-            Assert.IsNull(RunProgression.MaxBaseStatTotal(RunProgression.BadgesToWin - 1), "the final Location lifts the stat cap");
+            Assert.IsNull(RunProgression.MaxTier(RunProgression.BadgesToWin - 1), "the final Location lifts the tier cap");
         }
 
-        /// <summary>A starter should evolve for the first time in the third Location and for the
-        /// second time in the sixth — the mainline rhythm, spread across an eight-badge run.</summary>
+        /// <summary>A starter evolves for the first time in the second Location and reaches its
+        /// final form in the third. At one EXP a win and five to an evolution, that follows from how
+        /// many fights a Location holds rather than from a fitted curve — and it is *fast*: a
+        /// three-stage line is fully evolved by the third of eight badges, and the rest of the run
+        /// is flat growth. Pinned here so a change to either number is a decision rather than a
+        /// surprise (ADR 0008).</summary>
         [Test]
-        public void EvolutionLevels_LandInTheThirdAndSixthLocations()
+        public void Evolutions_LandInTheSecondAndThirdLocations()
         {
-            Assert.AreEqual(2, ExperienceResolver.EvolutionLevels.Length);
-            AssertLevelFallsInLocation(ExperienceResolver.EvolutionLevels[0], location: 3);
-            AssertLevelFallsInLocation(ExperienceResolver.EvolutionLevels[1], location: 6);
+            AssertEvolutionFallsInLocation(1, expectedLocation: 2);
+            AssertEvolutionFallsInLocation(2, expectedLocation: 3);
         }
 
-        private static void AssertLevelFallsInLocation(int level, int location)
+        private static void AssertEvolutionFallsInLocation(int evolutionNumber, int expectedLocation)
         {
-            int badges = location - 1;
-            Assert.GreaterOrEqual(level, RunProgression.BaselineLevel(badges), $"Lv {level} comes before Location {location}");
-            Assert.Less(level, RunProgression.BaselineLevel(badges + 1), $"Lv {level} comes after Location {location}");
+            int expNeeded = evolutionNumber * ExperienceResolver.ExpPerEvolution;
+            // The Location a mon fighting a typical path is in when it earns its nth evolution.
+            int location = 1 + (expNeeded - 1) / TypicalExpPerLocation;
+            Assert.AreEqual(expectedLocation, location,
+                $"evolution {evolutionNumber} needs {expNeeded} EXP, which a typical path reaches in Location {location}");
         }
 
-        /// <summary>The EXP curve and the rewards were fitted together: a player who starts a
-        /// Location a level above its baseline and plays a typical path through it — a few wild
-        /// wins, sometimes a Pokémon Center, and the Gym — should come out two to four levels up,
-        /// at every badge. Too few and the late game becomes a wall; too many and it's a stroll.</summary>
+        /// <summary>What a typical path through one Location pays: a few wild wins, sometimes a
+        /// Pokémon Center, and the Gym. Everything pays one point (BattleRewardResolver), so this is
+        /// just how many of those a Location holds.</summary>
+        private const int TypicalExpPerLocation = RunProgression.ExpPerBadge;
+
+        /// <summary>The opposition and the player have to climb at the same rate, or the run turns
+        /// into a wall or a stroll. Both are now the same currency — EXP — so this is a direct
+        /// comparison rather than a fitted one: a Location pays about
+        /// <see cref="TypicalExpPerLocation"/>, and RunProgression.ExpPerBadge is what it pitches the
+        /// next Location forward by.</summary>
         [Test]
-        public void ExpectedRewards_KeepPaceWithTheLevelCurve_AtEveryBadge()
+        public void ExpectedRewards_KeepPaceWithTheOpposition_AtEveryBadge()
         {
             const double ExpectedWildWins = 2.5;
             const double ExpectedCenterVisits = 0.5;
-            int layers = LocationMapGenerator.ChoiceLayerCount;
 
-            for (int badges = 0; badges < RunProgression.BadgesToWin; badges++)
+            double perLocation = ExpectedWildWins * BattleRewardResolver.ExpPerWin
+                + ExpectedCenterVisits * CampResolver.ExpFor(RunWithBadges(0))
+                + BattleRewardResolver.ExpPerWin;
+
+            Assert.That(perLocation, Is.InRange(RunProgression.ExpPerBadge - 2, RunProgression.ExpPerBadge + 2),
+                $"a Location pays {perLocation} EXP but pitches the next one {RunProgression.ExpPerBadge} forward");
+
+            for (int badges = 1; badges < RunProgression.BadgesToWin; badges++)
             {
-                double exp = 0;
-                for (int layer = 1; layer <= layers; layer++)
-                {
-                    exp += ExpectedWildWins / layers
-                        * BattleRewardResolver.ExpForWin(FoesAt(RunProgression.WildLevel(badges, layer)), isGym: false);
-                }
-                exp += ExpectedCenterVisits * CampResolver.ExpFor(RunWithBadges(badges));
-                exp += BattleRewardResolver.ExpForWin(FoesAt(RunProgression.GymLevel(badges)), isGym: true);
-
-                int startLevel = RunProgression.BaselineLevel(badges) + 1;
-                int endLevel = ExperienceResolver.LevelForExp(ExperienceResolver.ExpToReachLevel(startLevel) + (int)exp);
-
-                Assert.That(endLevel - startLevel, Is.InRange(2, 4),
-                    $"Location {badges + 1}: a typical path took the player from Lv {startLevel} to Lv {endLevel}");
+                int playerExp = (int)Math.Round(perLocation * badges);
+                int gym = RunProgression.GymExp(badges);
+                Assert.That(playerExp - gym, Is.InRange(-RunProgression.ExpPerBadge, RunProgression.ExpPerBadge),
+                    $"Location {badges + 1}: the player is on {playerExp} EXP against a Gym on {gym}");
             }
         }
-
-        private static List<PokemonInstance> FoesAt(int level) =>
-            new List<PokemonInstance> { new PokemonInstance { Exp = ExperienceResolver.ExpToReachLevel(level) } };
 
         private static RunState RunWithBadges(int badges)
         {

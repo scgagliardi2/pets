@@ -6,7 +6,7 @@
       "instanceId": "sleepy",
       "attack": 0,
       "health": 999,
-      "speed": 100,
+      "speed": 3,
       "passive": {
         "id": "test-self-sleep",
         "effects": [{ "type": "ApplyStatus", "target": "Self", "amount": 0, "status": "Asleep" }]
@@ -16,7 +16,7 @@
       "instanceId": "sparky",
       "attack": 0,
       "health": 999,
-      "speed": 100,
+      "speed": 3,
       "passive": {
         "id": "test-self-paralyze",
         "effects": [{ "type": "ApplyStatus", "target": "Self", "amount": 0, "status": "Paralyzed" }]
@@ -28,6 +28,6 @@
   ],
   "expectedState": [
     { "instanceId": "sleepy", "currentHP": 999, "shield": 0, "charge": 0, "status": "Asleep" },
-    { "instanceId": "sparky", "currentHP": 999, "shield": 0, "charge": 50, "status": "Paralyzed" }
+    { "instanceId": "sparky", "currentHP": 999, "shield": 0, "charge": 1, "status": "Paralyzed" }
   ]
 }

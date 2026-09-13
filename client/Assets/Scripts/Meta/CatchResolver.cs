@@ -44,9 +44,9 @@ namespace Pets.Meta
             return defeated;
         }
 
-        /// <summary>Adds a fresh, full-health copy of the defeated mon to the Box, at its own level or
-        /// the run's catch-up level, whichever is higher — a catch is meant to be usable straight away
-        /// (ExperienceResolver.CatchUpLevel).</summary>
+        /// <summary>Adds a fresh, full-health copy of the defeated mon to the Box, carrying its own
+        /// EXP or the run's catch-up EXP, whichever is higher — a catch is meant to be usable straight
+        /// away (ExperienceResolver.CatchUpExp).</summary>
         public static void Catch(RunState state, PokemonInstance defeated, PokemonSpeciesLibrary library)
         {
             var species = library.GetById(defeated.SpeciesId);
@@ -55,8 +55,8 @@ namespace Pets.Meta
                 return;
             }
             string instanceId = $"box-{species.Id}-{state.Box.Count}";
-            int level = System.Math.Max(ExperienceResolver.LevelOf(defeated), ExperienceResolver.CatchUpLevel(state));
-            state.Box.Add(ExperienceResolver.CreateAtLevel(species, instanceId, level, library));
+            int exp = System.Math.Max(defeated.Exp, ExperienceResolver.CatchUpExp(state));
+            state.Box.Add(ExperienceResolver.CreateAtExp(species, instanceId, exp, library));
         }
     }
 }

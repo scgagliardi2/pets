@@ -113,7 +113,7 @@ namespace Pets.Tests
 
                 var speed = card.GetComponentInChildren<StatBarView>();
                 Assert.IsNotNull(speed, $"{name} has no speed bar");
-                Assert.AreEqual(PokemonSpeciesDefinitionAsset.MaxBaseSpeed, speed.Max,
+                Assert.AreEqual(SpeciesTier.MaxSpeed, speed.Max,
                     $"{name}'s speed bar isn't scaled to the roster-wide cap");
 
                 var rect = card.GetComponent<RectTransform>();

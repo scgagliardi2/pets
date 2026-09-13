@@ -1,56 +1,68 @@
 using System;
+using Pets.Data;
 using Pets.Simulation;
 
 namespace Pets.Meta
 {
     /// <summary>How difficulty scales across a run: an eight-badge run, like a mainline Pokémon game
-    /// (design doc §15's open win condition, settled here — ADR 0007), with every Location's wild
-    /// Pokémon and Gym Leader keyed to how many badges the player already has.
+    /// (design doc §15's open win condition, settled in ADR 0007), with every Location's wild Pokémon
+    /// and Gym Leader keyed to how many badges the player already has.
     ///
-    /// **Enemies scale with progress, not with the player.** A wild encounter's level comes from the
-    /// badge count and how far into the Location's map it is; it never looks at the player's own
-    /// levels. Rubber-banding enemies to the player would make EXP worthless — a player who fights
-    /// more should be ahead, and one who dodges fights should feel it.
+    /// **Two dials, not one** (ADR 0008). A Location raises the **tier** its opposition is drawn from
+    /// — which species turn up at all — and the **EXP** those mons carry, which is how much growth
+    /// they've had on top. Tier is the step change and EXP is the slope between steps; the old single
+    /// "level" number had to be both at once.
     ///
-    /// Every number here was fitted by simulating whole runs against the real roster and the sim's
-    /// exchange rule, targeting roughly 85% wild wins, a Gym won on the first try about two times in
-    /// three, and a starter evolving around the third and sixth Locations. RunProgressionTests pins
-    /// the shape so a later tweak that breaks it fails a test.</summary>
+    /// **Enemies scale with progress, not with the player.** Both dials come from the badge count and
+    /// how far into the Location's map a node is; neither ever looks at the player's own mons.
+    /// Rubber-banding would make EXP worthless — a player who fights more should be ahead, and one
+    /// who dodges fights should feel it.
+    ///
+    /// The pacing target is unchanged from ADR 0007: a player wins most wild fights, takes a Gym on
+    /// the first try about two times in three, and sees a starter's first evolution around the second
+    /// Location. What changed is that the numbers are now countable by hand — a mon earns one EXP a
+    /// win, and a Location is about <see cref="ExpPerBadge"/> wins — rather than fitted to a curve.
+    /// RunProgressionTests pins the shape so a later tweak that breaks it fails a test.</summary>
     public static class RunProgression
     {
         /// <summary>Badges to win the run. Beating the eighth Gym ends it as a victory.</summary>
         public const int BadgesToWin = 8;
 
-        /// <summary>Levels the curve moves up per badge.</summary>
-        public const int LevelsPerBadge = 3;
+        /// <summary>EXP a Location is worth to a mon that fights its way through: two or three wild
+        /// wins, sometimes a Pokémon Center, and the Gym, at one point each
+        /// (BattleRewardResolver.ExpPerWin). It's therefore also the EXP the *next* Location's
+        /// opposition is pitched forward by — the two have to climb at the same rate, and
+        /// RunProgressionTests fails if they drift apart.</summary>
+        public const int ExpPerBadge = 4;
 
-        /// <summary>How far below a Location's baseline its first wild encounters sit; they catch up
-        /// to and pass it deeper into the map.</summary>
-        public const int WildLevelsBelowBaseline = 1;
+        /// <summary>How much EXP a Location's first wild encounters sit below its baseline; they catch
+        /// up to and pass it deeper into the map.</summary>
+        public const int WildExpBelowBaseline = 1;
 
-        /// <summary>How far above the Location's baseline its Gym Leader's team sits.</summary>
-        public const int GymLevelsAboveBaseline = 1;
+        /// <summary>How much EXP a Location's Gym Leader carries above its baseline.</summary>
+        public const int GymExpAboveBaseline = 2;
 
         /// <summary>The smallest a Gym Leader's team is, before it grows with badges and matches the
         /// player's line-up.</summary>
         public const int MinGymTeamSize = 2;
 
-        /// <summary>Base stat total the wild pool is capped at for the first Location — the same line
-        /// Character Select draws for starters — and how much the cap rises per badge. Keeps Snorlax
-        /// and the Eeveelutions out of the early game.</summary>
-        public const int FirstLocationMaxBaseStatTotal = 180;
-        public const int MaxBaseStatTotalIncreasePerBadge = 20;
+        /// <summary>Highest species tier the pool may draw from in the first Location, and how much
+        /// that rises per badge. Base forms are mostly tier 1–2, so this is mainly what keeps Snorlax
+        /// and Hariyama out of the early game — the job ADR 0007 gave a base-stat-total cap, done
+        /// against the tier the stats now actually resolve to.</summary>
+        public const int FirstLocationMaxTier = 1;
+        public const int MaxTierIncreasePerBadge = 1;
 
-        /// <summary>The level a Location is pitched at: 1 for the first, rising by
-        /// <see cref="LevelsPerBadge"/> for each badge already earned.</summary>
-        public static int BaselineLevel(int badges) => 1 + LevelsPerBadge * Math.Max(0, badges);
+        /// <summary>The EXP a Location is pitched at: nothing for the first, rising by
+        /// <see cref="ExpPerBadge"/> for each badge already earned.</summary>
+        public static int BaselineExp(int badges) => ExpPerBadge * Math.Max(0, badges);
 
-        /// <summary>A wild encounter's level, for a node on map layer <paramref name="layer"/>
+        /// <summary>A wild encounter's EXP, for a node on map layer <paramref name="layer"/>
         /// (1 = the first choice layer).</summary>
-        public static int WildLevel(int badges, int layer) =>
-            Math.Max(1, BaselineLevel(badges) - WildLevelsBelowBaseline + Math.Max(0, layer) / 2);
+        public static int WildExp(int badges, int layer) =>
+            Math.Max(0, BaselineExp(badges) - WildExpBelowBaseline + Math.Max(0, layer) / 2);
 
-        public static int GymLevel(int badges) => BaselineLevel(badges) + GymLevelsAboveBaseline;
+        public static int GymExp(int badges) => BaselineExp(badges) + GymExpAboveBaseline;
 
         /// <summary>How many wild mons an encounter fields: one in the first Location, while the
         /// player has only their starting pair; two until the fourth badge; three after.</summary>
@@ -62,12 +74,12 @@ namespace Pets.Meta
         public static int GymTeamSize(int badges, int lineUpCount) =>
             Math.Min(RunState.MaxPartySize, Math.Max(lineUpCount, MinGymTeamSize + Math.Max(0, badges) / 2));
 
-        /// <summary>The highest base stat total an encounter may draw, or null for no cap (the final
+        /// <summary>The highest species tier an encounter may draw, or null for no cap (the final
         /// Location).</summary>
-        public static int? MaxBaseStatTotal(int badges) =>
+        public static int? MaxTier(int badges) =>
             IsFinalLocation(badges)
                 ? (int?)null
-                : FirstLocationMaxBaseStatTotal + MaxBaseStatTotalIncreasePerBadge * Math.Max(0, badges);
+                : Math.Min(SpeciesTier.MaxTier, FirstLocationMaxTier + MaxTierIncreasePerBadge * Math.Max(0, badges));
 
         /// <summary>Legendaries appear only on the final Gym Leader's team — the run's capstone —
         /// never in the wild, where a Groudon in the Forest was the worst thing the unfiltered pool

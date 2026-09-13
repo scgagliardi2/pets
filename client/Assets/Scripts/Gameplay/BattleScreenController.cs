@@ -571,7 +571,7 @@ namespace Pets.Gameplay
                 // A different mon in this place (the first draw, or a promotion): nothing to drain from.
                 slot.Bound = mon;
                 var species = SpeciesOf(mon);
-                slot.Stats.Show(LabelWithLevel(mon),
+                slot.Stats.Show(LabelWithTier(mon),
                     species != null ? species.Type1 : PokemonType.Normal,
                     species != null && species.HasSecondType,
                     species != null ? species.Type2 : PokemonType.Normal,
@@ -684,16 +684,17 @@ namespace Pets.Gameplay
             return species != null ? species.DisplayName : mon.InstanceId;
         }
 
-        /// <summary>The stat box's name line: the mon's name and level, so a player can see how a
-        /// fight is pitched before it plays out.</summary>
-        private string LabelWithLevel(BattleCombatant mon) =>
-            mon.Source != null ? $"{DisplayName(mon)} Lv {ExperienceResolver.LevelOf(mon.Source)}" : DisplayName(mon);
+        /// <summary>The stat box's name line: the mon's name and tier, so a player can see how a
+        /// fight is pitched before it plays out. Tier rather than EXP because it's the number that
+        /// says what a mon *is* — EXP is already visible as the stats it bought.</summary>
+        private string LabelWithTier(BattleCombatant mon)
+        {
+            var species = SpeciesOf(mon);
+            return species != null ? $"{DisplayName(mon)}  T{species.Tier}" : DisplayName(mon);
+        }
 
-        /// <summary>What the speed bar is drawn against: the fastest a species could be at this mon's
-        /// level, so a grown mon's bar still means something rather than pinning full.</summary>
-        private static int SpeedCeilingFor(BattleCombatant mon) =>
-            mon.Source != null
-                ? StatGrowth.SpeedCeilingAtLevel(ExperienceResolver.LevelOf(mon.Source))
-                : PokemonSpeciesDefinitionAsset.MaxBaseSpeed;
+        /// <summary>What the speed bar is drawn against. Speed doesn't grow with EXP any more (ADR
+        /// 0008), so this is simply the roster-wide ceiling of 3.</summary>
+        private static int SpeedCeilingFor(BattleCombatant mon) => SpeciesTier.MaxSpeed;
     }
 }

@@ -69,6 +69,50 @@ namespace Pets.Tests
                 "so a species outside it draws a wrong (or pinned-full) bar");
         }
 
+        /// <summary>A tier whose members don't cost the same isn't a tier (ADR 0008): every species'
+        /// three stats must add up to exactly what its tier is allowed to spend.</summary>
+        [Test]
+        public void EverySpecies_SpendsExactlyItsTiersStatTotal()
+        {
+            var library = LoadSingle<PokemonSpeciesLibrary>();
+
+            var wrongTier = library.AllSpecies
+                .Where(s => s.Tier < SpeciesTier.MinTier || s.Tier > SpeciesTier.MaxTier)
+                .Select(s => $"{s.DisplayName} (tier {s.Tier})");
+            CollectionAssert.IsEmpty(wrongTier.ToArray(),
+                $"Tier must be {SpeciesTier.MinTier}..{SpeciesTier.MaxTier} — re-run " +
+                "Pets > Content > Import Species From Roster Sheet");
+
+            var offBudget = library.AllSpecies
+                .Where(s => s.BaseStatTotal != s.TierStatTotal)
+                .Select(s => $"{s.DisplayName}: tier {s.Tier} allows {s.TierStatTotal}, " +
+                             $"stats add up to {s.BaseStatTotal}");
+            CollectionAssert.IsEmpty(offBudget.ToArray(),
+                "every species in a tier spends the same number of points — re-run the roster import " +
+                "rather than editing an asset's stats by hand");
+
+            var nonPositive = library.AllSpecies
+                .Where(s => s.BaseAttack < 1 || s.BaseHealth < 1)
+                .Select(s => $"{s.DisplayName} ({s.BaseAttack}/{s.BaseHealth})");
+            CollectionAssert.IsEmpty(nonPositive.ToArray(),
+                "a 0-Attack mon can never win and a 0-Health mon is already dead");
+        }
+
+        /// <summary>An evolution has to be worth having: a tier is exactly what five EXP buys
+        /// (SpeciesTier.TotalIncreasePerTier), so evolving into the same tier or lower would hand
+        /// the player a downgrade for their trouble.</summary>
+        [Test]
+        public void EveryEvolution_LandsAtLeastOneTierAboveWhatItComesFrom()
+        {
+            var library = LoadSingle<PokemonSpeciesLibrary>();
+
+            var downgrades = library.AllSpecies
+                .Where(s => s.EvolvesInto != null && s.EvolvesInto.Tier <= s.Tier)
+                .Select(s => $"{s.DisplayName} (tier {s.Tier}) -> {s.EvolvesInto.DisplayName} (tier {s.EvolvesInto.Tier})");
+            CollectionAssert.IsEmpty(downgrades.ToArray(),
+                "re-run Pets > Content > Import Species From Roster Sheet, which enforces this");
+        }
+
         [Test]
         public void EverySpecies_ResolvesItsSprite()
         {

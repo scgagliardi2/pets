@@ -12,10 +12,10 @@ namespace Pets.Meta
     ///   are different mons with different stats, and merging across stages would need a rule for
     ///   which one survives that the design doc doesn't give.
     /// - The mon that **survives is the target** (the one dropped onto); the one dragged is
-    ///   consumed. It gains **exactly one level** (<see cref="ExpFor"/>), however far into its current
-    ///   level it already was and whatever the duplicate had earned — a combine is a dupe sink, not a
-    ///   way to launder a second mon's growth. A level rather than a fixed EXP amount so a combine is
-    ///   worth the same at level 3 as at level 23.
+    ///   consumed. It gains **one point of EXP** (<see cref="ExpFor"/>) — the same as winning a fight,
+    ///   and whatever the duplicate had earned is *not* carried over: a combine is a dupe sink, not a
+    ///   way to launder a second mon's growth. Two fresh Charmanders make a 3/3/1 with one point,
+    ///   five of them make a Charmeleon.
     /// - A combine can't empty the line-up, the same rule every other way of losing a mon obeys
     ///   (RunState.CanReleaseMon).
     ///
@@ -23,11 +23,11 @@ namespace Pets.Meta
     /// stats and follow an evolution — RunState is deliberately library-free.</summary>
     public static class CombineResolver
     {
-        /// <summary>EXP that takes <paramref name="survivor"/> up exactly one level: the cost of its
-        /// current level. Adding it lands short of the level after next wherever in the level the mon
-        /// started, because each level costs more than the one before.</summary>
-        public static int ExpFor(PokemonInstance survivor) =>
-            ExperienceResolver.ExpForLevelUp(ExperienceResolver.LevelOf(survivor));
+        /// <summary>EXP a combine is worth to the survivor: one point, the same as a win
+        /// (BattleRewardResolver.ExpPerWin), so a duplicate is worth exactly the fight you didn't have
+        /// to have. Takes the survivor because whether a dupe should be worth more to a mon that has
+        /// already grown is a balancing question, not a settled one.</summary>
+        public static int ExpFor(PokemonInstance survivor) => BattleRewardResolver.ExpPerWin;
 
         /// <summary>What a combine would do, or why it can't happen — so the Team screen can put
         /// the reason in front of the player instead of a card that snaps back with no
@@ -71,9 +71,16 @@ namespace Pets.Meta
                 return new Eligibility(false, $"{name} is the last mon in your party.\nYou can't be left with none.");
             }
 
-            int nextLevel = ExperienceResolver.LevelOf(survivor) + 1;
+            // What the survivor will actually be afterwards — which is a different species if this
+            // point is the fifth, so the preview has to follow the evolution rather than quote a stat
+            // line the mon will never wear.
+            int expAfter = ExperienceResolver.ExpSinceEvolution(survivor) + ExpFor(survivor);
+            var evolvesInto = ExperienceResolver.NextEvolution(survivor, library);
+            string outcome = expAfter >= ExperienceResolver.ExpPerEvolution && evolvesInto != null
+                ? $"the other evolves into {evolvesInto.DisplayName}"
+                : $"the other grows to {GrowthReport.Line(Pets.Data.StatGrowth.AtExp(species, expAfter))}";
             return new Eligibility(true,
-                $"Combine two {name}?\nOne is consumed; the other grows to Lv {nextLevel}. This cannot be undone.");
+                $"Combine two {name}?\nOne is consumed; {outcome}. This cannot be undone.");
         }
 
         /// <summary>Consumes the mon at <paramref name="fromIndex"/> into the one at

@@ -1,6 +1,9 @@
 # ADR 0007: Levels on a Run-Scale Curve, an Eight-Badge Run, and the Region Hub
 
-**Status:** Accepted
+**Status:** Accepted; decisions 2, 3, 4, 5 and 7 (the level curve, proportional growth with a Health
+multiplier, evolution at Lv 8/17, catch-up in levels, and rewards scaled by foe level) superseded by
+ADR 0008. Decision 1 (the eight-badge run and the Region Hub) and decision 6 (enemies scale with
+progress, not with the player) stand.
 **Date:** 2026-09-12
 **Supersedes:** ADR 0006 (the six-Location run merged to main in PR #8 while this was in progress —
 see "Reconciling with ADR 0006" at the end), and ADR 0005 decisions 1, 3 and 5 (the flat EXP counter, evolution every 3 EXP, flat

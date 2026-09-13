@@ -406,7 +406,7 @@ namespace Pets.Tests
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the dragged duplicate should be consumed");
             Assert.AreEqual("mon-0", ActiveRun.State.LineUp[0].InstanceId, "the mon dropped onto is the survivor");
-            Assert.AreEqual(2, ExperienceResolver.LevelOf(ActiveRun.State.LineUp[0]), "a combine raises the survivor one level");
+            Assert.AreEqual(1, ActiveRun.State.LineUp[0].Exp, "a combine pays the survivor one point of EXP");
             Assert.IsNull(GameObject.Find("CombineConfirm"), "the dialog should be closed again");
         }
 

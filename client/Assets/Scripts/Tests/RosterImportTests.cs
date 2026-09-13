@@ -65,10 +65,17 @@ namespace Pets.Tests
                 {
                     mismatches.Add($"{row.DisplayName}: typing differs from the sheet");
                 }
-                if (species.BaseAttack != row.Attack || species.BaseHealth != row.Health || species.BaseSpeed != row.Speed)
+                if (species.Tier != row.Tier)
+                {
+                    mismatches.Add($"{row.DisplayName}: tier {species.Tier} != the {row.Tier} its sheet " +
+                                   $"stats ({row.Attack}/{row.Health}/{row.Speed}) resolve to");
+                }
+                if (species.BaseAttack != row.TierStats.Attack || species.BaseHealth != row.TierStats.Health ||
+                    species.BaseSpeed != row.TierStats.Speed)
                 {
                     mismatches.Add($"{row.DisplayName}: stats {species.BaseAttack}/{species.BaseHealth}/" +
-                                   $"{species.BaseSpeed} != sheet {row.Attack}/{row.Health}/{row.Speed}");
+                                   $"{species.BaseSpeed} != the {row.TierStats.Attack}/{row.TierStats.Health}/" +
+                                   $"{row.TierStats.Speed} the sheet resolves to");
                 }
             }
 
@@ -115,6 +122,52 @@ namespace Pets.Tests
                 "species assets disagree with docs/roster_evolution_chains.json — re-run the roster importer");
             Assert.Greater(linked, 0,
                 "no species can evolve at all, so the evolution threshold is unreachable in play");
+        }
+
+        /// <summary>The tier table is derived, not authored, so the rule that derives it is worth
+        /// pinning independently of whether the assets happen to match: every species sits at least
+        /// in the band its real base-stat total falls in (the "an evolution is at least one tier up"
+        /// pass only ever raises one), spends exactly its tier's points, and the two examples the
+        /// design was written against come out exactly as specified.</summary>
+        [Test]
+        public void TheTierTable_FollowsFromTheSheetsRealStats()
+        {
+            var roster = SpeciesRosterImporter.ReadRoster();
+
+            foreach (var row in roster)
+            {
+                int band = SpeciesTier.ForBaseStatTotal(row.Attack + row.Health + row.Speed);
+                Assert.GreaterOrEqual(row.Tier, band,
+                    $"{row.DisplayName} sits below the band its own stats put it in");
+                Assert.AreEqual(SpeciesTier.TotalFor(row.Tier),
+                    row.TierStats.Attack + row.TierStats.Health + row.TierStats.Speed,
+                    $"{row.DisplayName} doesn't spend its tier's points");
+            }
+
+            var byName = roster.ToDictionary(r => r.DisplayName);
+            AssertLine(byName["Charmander"], tier: 1, attack: 2, health: 2, speed: 1);
+            AssertLine(byName["Charmeleon"], tier: 2, attack: 7, health: 6, speed: 2);
+        }
+
+        private static void AssertLine(SpeciesRosterImporter.RosterRow row, int tier, int attack, int health, int speed)
+        {
+            Assert.AreEqual(tier, row.Tier, $"{row.DisplayName} tier");
+            Assert.AreEqual($"{attack}/{health}/{speed}",
+                $"{row.TierStats.Attack}/{row.TierStats.Health}/{row.TierStats.Speed}",
+                $"{row.DisplayName} stat line");
+        }
+
+        /// <summary>Most of the roster is Speed 1, and that has to stay true: Speed drives the charge
+        /// meter against a three-point threshold, so it's the difference between one passive a fight
+        /// and three, and a roster where everything is fast is a roster where Speed says nothing.</summary>
+        [Test]
+        public void SpeedStaysScarce_AcrossTheRoster()
+        {
+            var roster = SpeciesRosterImporter.ReadRoster();
+            var speeds = roster.Select(r => r.TierStats.Speed).ToArray();
+
+            Assert.IsTrue(speeds.All(s => s >= 1 && s <= SpeciesTier.MaxSpeed), "Speed is a number from 1 to 3");
+            Assert.Greater(speeds.Count(s => s == 1), roster.Count / 2, "most of the roster should be Speed 1");
         }
 
         /// <summary>A species can't evolve into itself or backwards down its own chain — either

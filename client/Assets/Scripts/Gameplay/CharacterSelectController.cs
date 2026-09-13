@@ -13,8 +13,8 @@ namespace Pets.Gameplay
     /// cosmetic customization aren't implemented — both picks show the same grid instead.
     ///
     /// **Not the whole roster.** The library holds all 183 species (PLAN.md §8), and a run has to
-    /// start on something a player can grow out of, so this screen offers only the low-total end of
-    /// it — see <see cref="MaxStarterStatTotal"/>. The Pokédex (<see cref="PokedexController"/>) is
+    /// start on something a player can grow out of, so this screen offers only the bottom tier of
+    /// it — see <see cref="MaxStarterTier"/>. The Pokédex (<see cref="PokedexController"/>) is
     /// where the full roster is browsable.
     ///
     /// A Type filter and Attack/Speed/Health sort toggles sit above the grid
@@ -23,16 +23,14 @@ namespace Pets.Gameplay
     /// e.g. Water types likely wants that for both.</summary>
     public sealed class CharacterSelectController : MonoBehaviour
     {
-        /// <summary>A species is offerable as a Starter or Secondary only while
-        /// BaseAttack + BaseHealth + BaseSpeed is under this.
+        /// <summary>Highest species tier offerable as a Starter or Secondary.
         ///
         /// The roster is base forms *and* their evolutions all the way to Legendaries, so without a
-        /// cap the screen would let a run open on Groudon. 180 is the line that keeps the pick to
-        /// first-stage-shaped mons (68 of the 183 today) — it isn't derived from anything in the
-        /// sim, so it's a balance number like the stats themselves, and it lives here rather than as
-        /// a flag on the asset because it's this screen's rule, not a property of the species.
-        /// Evolution (PLAN.md Phase 1) is what's eventually meant to gate this properly.</summary>
-        public const int MaxStarterStatTotal = 180;
+        /// cap the screen would let a run open on Groudon. Tier 1 is the whole five-point end of the
+        /// roster (54 of the 183 today) — every one of them a 2/2/1-shaped mon with a run's worth of
+        /// growing to do, which is exactly the pick this screen is for. It lives here rather than as
+        /// a flag on the asset because it's this screen's rule, not a property of the species.</summary>
+        public const int MaxStarterTier = SpeciesTier.MinTier;
 
         [SerializeField] private PokemonSpeciesLibrary speciesLibrary;
         [SerializeField] private Text promptText;
@@ -60,7 +58,7 @@ namespace Pets.Gameplay
         /// same rule the screen applies, rather than against a hardcoded count that goes stale the
         /// next time the roster sheet changes.</summary>
         public static bool IsStarterEligible(PokemonSpeciesDefinitionAsset species) =>
-            species.BaseStatTotal < MaxStarterStatTotal;
+            species.Tier <= MaxStarterTier;
 
         private void Start()
         {

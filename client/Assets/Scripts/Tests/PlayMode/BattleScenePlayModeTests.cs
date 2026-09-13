@@ -31,12 +31,13 @@ namespace Pets.Tests
         private const string BattleScenePath = "Assets/Scenes/Battle.unity";
         private const int TestAttack = 10;
 
-        /// <summary>The test species' *sheet* Health. What a mon actually fights with is this times
-        /// StatGrowth.HealthMultiplier — see TestMaxHealth.</summary>
+        /// <summary>The test species' Health. A mon fights with exactly this at 0 EXP — growth is a
+        /// flat +1 per point on top (ADR 0008), so there's no multiplier between the two any more.</summary>
         private const int TestHealth = 200;
 
-        /// <summary>A level-1 test mon's actual HP — base Health through StatGrowth.</summary>
-        private const int TestMaxHealth = TestHealth * StatGrowth.HealthMultiplier;
+        /// <summary>A 0-EXP test mon's actual HP. Same number; kept as its own name because the
+        /// assertions below are about what the health bar shows, not about the species asset.</summary>
+        private const int TestMaxHealth = TestHealth;
 
         // A node fight's foe, tuned so which way the fight goes is never in question: the weak one
         // dies to a single hit without landing a meaningful one, the strong one outlasts and outhits
@@ -127,7 +128,7 @@ namespace Pets.Tests
             Assert.AreEqual(3, controller.State.LineUpA.Count);
             Assert.AreEqual(3, controller.State.LineUpB.Count, "the foe team matches the party's size");
 
-            Assert.AreEqual("Alpha Lv 1", Stats("PlayerLeadStats").NameText.text, "a stat box names the mon and its level");
+            Assert.AreEqual("Alpha  T1", Stats("PlayerLeadStats").NameText.text, "a stat box names the mon and its tier");
             StringAssert.StartsWith("Beta", Stats("PlayerSupportStats").NameText.text);
             Assert.IsTrue(MonNames.Any(n => Stats("EnemyLeadStats").NameText.text.StartsWith(n)), "the foe is rolled from the library");
             Assert.IsTrue(MonNames.Any(n => Stats("EnemySupportStats").NameText.text.StartsWith(n)));

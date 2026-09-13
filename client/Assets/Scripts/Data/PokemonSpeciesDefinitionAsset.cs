@@ -22,17 +22,34 @@ namespace Pets.Data
         /// <summary>The ceiling for BaseSpeed. Speed bars (Character Select's cards) are drawn as a
         /// fraction of it, so a species above it would silently pin a full bar —
         /// ContentIntegrityTests fails any asset that exceeds it.</summary>
-        public const int MaxBaseSpeed = 200;
+        public const int MaxBaseSpeed = SpeciesTier.MaxSpeed;
 
-        [Header("Base stats (docs/pokemon_stats_unique.xlsx, base-form stage)")]
+        /// <summary>Which tier this species sits in, 1..<see cref="SpeciesTier.MaxTier"/> — the
+        /// band its *real* base-stat total falls in, raised where needed so an evolution always
+        /// lands at least one tier above what it came from (ADR 0008). Every species in a tier
+        /// spends the same number of points across the three stats below, so the tier is the
+        /// species' power and the three stats are only how it spends it.
+        ///
+        /// Set by the roster importer from docs/pokemon_stats_unique.xlsx, never by hand — see
+        /// <see cref="Pets.Data.SpeciesTier"/> for the rule and RosterImportTests for the check
+        /// that the assets still agree with the sheet.</summary>
+        [Header("Tier")]
+        public int Tier = SpeciesTier.MinTier;
+
+        /// <summary>What <see cref="Tier"/> is allowed to spend. <see cref="BaseStatTotal"/> must
+        /// equal this for every species — ContentIntegrityTests fails any asset where it doesn't,
+        /// since a tier whose members don't cost the same is not a tier.</summary>
+        public int TierStatTotal => SpeciesTier.TotalFor(Tier);
+
+        [Header("Base stats (derived from docs/pokemon_stats_unique.xlsx by SpeciesTier)")]
         public int BaseAttack;
         public int BaseHealth;
         public int BaseSpeed;
 
-        /// <summary>The three base stats added up — the roster's one rough "how strong is this
-        /// species" number, with no weighting, since the sim treats all three as first-draft
-        /// placeholders anyway (PLAN.md §8). Character Select uses it to keep a run from opening on
-        /// a fully-evolved form, and the Pokédex to mark which species that leaves startable.</summary>
+        /// <summary>The three base stats added up — which, because these are tier points rather
+        /// than real Pokémon stats, is just <see cref="TierStatTotal"/> restated from the asset's
+        /// own fields. Kept as the thing callers compare against, so a species whose stats were
+        /// edited out of line with its tier still reads as the strength it actually is.</summary>
         public int BaseStatTotal => BaseAttack + BaseHealth + BaseSpeed;
 
         [Header("Passive")]
@@ -46,9 +63,9 @@ namespace Pets.Data
         /// can't express "becomes one of seven"; picking a branch is its own feature. Set by the
         /// roster importer from the cached PokeAPI chains, restricted to the roster.
         ///
-        /// There is deliberately no per-species evolution threshold field: what level an evolution
-        /// happens at is a run-layer rule (ExperienceResolver.EvolutionLevels), and nothing in the
-        /// roster sheet or PokeAPI gives a per-species number to put here.</summary>
+        /// There is deliberately no per-species evolution threshold field: how much EXP an evolution
+        /// costs is a run-layer rule (ExperienceResolver.ExpPerEvolution), and nothing in the roster
+        /// sheet or PokeAPI gives a per-species number to put here.</summary>
         public PokemonSpeciesDefinitionAsset EvolvesInto;
 
         /// <summary>How many evolution steps deep this species sits in its real Pokémon chain —

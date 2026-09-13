@@ -40,19 +40,18 @@ namespace Pets.Tests
         /// Data/StatGrowth — the one place the roster sheet's numbers are transformed on the way
         /// into a fight.</summary>
         [Test]
-        public void EverySpecies_ConvertsToAPokemonInstance_WithItsLevelOneStats()
+        public void EverySpecies_ConvertsToAPokemonInstance_WithItsTierLineStats()
         {
             var library = LoadSpeciesLibrary();
 
             foreach (var species in library.AllSpecies)
             {
                 var instance = PokemonInstanceFactory.Create(species, $"{species.DisplayName}#1");
-                var expected = StatGrowth.AtLevel(species, 1);
+                var expected = StatGrowth.AtExp(species, 0);
 
-                // Level 1 keeps Attack and Speed at the sheet's base values; Health is multiplied
-                // (StatGrowth.HealthMultiplier).
+                // A fresh mon wears its species' tier line exactly — growth is what EXP adds on top.
                 Assert.AreEqual(species.BaseAttack, instance.CurrentStats.Attack);
-                Assert.AreEqual(species.BaseHealth * StatGrowth.HealthMultiplier, instance.CurrentStats.Health);
+                Assert.AreEqual(species.BaseHealth, instance.CurrentStats.Health);
                 Assert.AreEqual(species.BaseSpeed, instance.CurrentStats.Speed);
                 Assert.AreEqual(expected.Health, instance.CurrentHP);
                 Assert.AreEqual(species.Passive.Id, instance.PassiveId);
@@ -73,23 +72,22 @@ namespace Pets.Tests
             var library = LoadSpeciesLibrary();
             var bySpecies = library.AllSpecies.ToDictionary(s => s.DisplayName);
 
-            // Caterpie/Weedle specifically (rather than e.g. the starters) because their
-            // Attack is low relative to their HP — most of this curated slice's placeholder
-            // stats are high enough relative to HP that Leads trade lethal blows in the very
-            // first Step or two, before charge has time to build toward a passive trigger. That
-            // one-or-two-Step lethality is itself expected/documented content-balance behavior
-            // for Phase 0's placeholder numbers (PLAN.md §10) — this matchup is chosen so the
-            // fight actually lasts long enough to exercise a passive trigger, not because the
-            // simulator requires slow fights.
+            // The four bulkiest species in the low tiers, chosen because a passive needs three
+            // Steps to charge at Speed 1 and most matchups don't last that long: every species
+            // spends its tier's points across Attack and Health, and EXP adds +1 to both, so a
+            // mon's Attack and Health sit close together and Leads trade lethal blows almost at
+            // once (ADR 0008, Data/StatGrowth). Metapod and Jigglypuff are the exceptions that
+            // buy the fight enough Steps to exercise a trigger — that short-fight lethality is
+            // expected content-balance behaviour (PLAN.md §10), not a simulator requirement.
             var playerLineUp = new List<PokemonInstance>
             {
-                PokemonInstanceFactory.Create(bySpecies["Caterpie"], "player-caterpie"),
-                PokemonInstanceFactory.Create(bySpecies["Squirtle"], "player-squirtle")
+                PokemonInstanceFactory.Create(bySpecies["Metapod"], "player-metapod"),
+                PokemonInstanceFactory.Create(bySpecies["Jigglypuff"], "player-jigglypuff")
             };
             var wildLineUp = new List<PokemonInstance>
             {
-                PokemonInstanceFactory.Create(bySpecies["Weedle"], "wild-weedle"),
-                PokemonInstanceFactory.Create(bySpecies["Zubat"], "wild-zubat")
+                PokemonInstanceFactory.Create(bySpecies["Kakuna"], "wild-kakuna"),
+                PokemonInstanceFactory.Create(bySpecies["Togepi"], "wild-togepi")
             };
 
             var log = PrecomputedStepLogRunner.Run(playerLineUp, wildLineUp, seed: 12345);
@@ -104,13 +102,13 @@ namespace Pets.Tests
             // fight is reproducible from real content, not just from hand-built test POCOs.
             var rematchPlayer = new List<PokemonInstance>
             {
-                PokemonInstanceFactory.Create(bySpecies["Caterpie"], "player-caterpie"),
-                PokemonInstanceFactory.Create(bySpecies["Squirtle"], "player-squirtle")
+                PokemonInstanceFactory.Create(bySpecies["Metapod"], "player-metapod"),
+                PokemonInstanceFactory.Create(bySpecies["Jigglypuff"], "player-jigglypuff")
             };
             var rematchWild = new List<PokemonInstance>
             {
-                PokemonInstanceFactory.Create(bySpecies["Weedle"], "wild-weedle"),
-                PokemonInstanceFactory.Create(bySpecies["Zubat"], "wild-zubat")
+                PokemonInstanceFactory.Create(bySpecies["Kakuna"], "wild-kakuna"),
+                PokemonInstanceFactory.Create(bySpecies["Togepi"], "wild-togepi")
             };
             var replayLog = PrecomputedStepLogRunner.Run(rematchPlayer, rematchWild, seed: 12345);
 

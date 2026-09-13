@@ -8,16 +8,18 @@ namespace Pets.Data
     /// see content-schema.md §8.</summary>
     public static class PokemonInstanceFactory
     {
-        /// <summary>Builds a fresh, full-health PokemonInstance at level 1 (0 EXP), with its stats
-        /// from <see cref="StatGrowth"/>. Its passive is resolved at the species' own evolution stage
-        /// — a mon caught as a Charmeleon is a stage-1 mon, and its passive's magnitude should say so
-        /// (content-schema.md §1).
+        /// <summary>Builds a fresh, full-health PokemonInstance at 0 EXP, on its species' bare tier
+        /// line (<see cref="StatGrowth"/>). Its passive is resolved at the species' own evolution
+        /// stage — a mon caught as a Charmeleon is a stage-1 mon, and its passive's magnitude should
+        /// say so (content-schema.md §1).
         ///
-        /// A run should usually go through Pets.Meta.ExperienceResolver.CreateAtLevel instead, which
-        /// also sets the level and counts how far along its chain an evolved species already is.</summary>
+        /// A run should usually go through Pets.Meta.ExperienceResolver.CreateAtExp instead, which
+        /// also sets the EXP and counts how far along its chain an evolved species already is — a
+        /// Charmeleon built here claims to have never earned anything, which its own existence
+        /// disproves.</summary>
         public static PokemonInstance Create(PokemonSpeciesDefinitionAsset species, string instanceId)
         {
-            var stats = StatGrowth.AtLevel(species, 1);
+            var stats = StatGrowth.BaseOf(species);
             return new PokemonInstance
             {
                 InstanceId = instanceId,

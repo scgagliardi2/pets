@@ -98,7 +98,7 @@ Every Location's node-map branches through PvE/Event/PvP/Camp nodes but always f
 ### 5.2 The Hub Screens
 
 Two tiers of "hub":
-- **Region Hub:** shown between Locations. Presents **3 candidate next Locations**, each previewing its likely Pokémon type pool (§4 table), for the player to choose from — picking one launches the Trailblazer minigame (§6). **As built** (ADR 0007): shown after Character Select and after every Gym; each card shows the Location's type pool as icons, and the header says which Gym is next and what levels to expect. Travel is instant until the Trailblazer minigame exists. **As built** (ADR 0007): shown after Character Select and after every Gym; each card shows the Location's type pool as icons, and the header says which Gym is next and what levels to expect. Travel is instant until the Trailblazer minigame exists.
+- **Region Hub:** shown between Locations. Presents **3 candidate next Locations**, each previewing its likely Pokémon type pool (§4 table), for the player to choose from — picking one launches the Trailblazer minigame (§6). **As built** (ADR 0007): shown after Character Select and after every Gym; each card shows the Location's type pool as icons, and the header says which Gym is next and — since ADR 0008 — what tier and EXP of opposition to expect. Travel is instant until the Trailblazer minigame exists.
 - **Location Hub:** a tabbed screen (Team Management / Location Map / Shop / Pokémon Center) used *within* a Location while you work through its node-map toward the Gym. All four tabs are present in every Location now.
 
 ---
@@ -152,8 +152,8 @@ It ties directly into stats you already track (Speed, Type), reuses your existin
   | Rock | 14 | | | | |
 
 - **Stats are explicit placeholders.** Attack/HP/Speed are given directly per evolution stage in the sheet (not derived from anything) and are called out as very subject to change — treat every number as a first draft to be rebalanced once real battles are played.
-- **What the sheet's numbers mean in a fight** (as built, ADR 0007): they are a species at **level 1**. Attack, Health and Speed each grow by 10% of the sheet value plus 2 for every level above 1, and Health is then multiplied by 3, because the sheet's raw Health is roughly one hit and fights were ending in two Steps (`Data/StatGrowth`).
-- **A Location's opposition is pitched by the run's badge count** (`Meta/RunProgression`), drawn from base forms under a stat cap that rises per badge, and evolved by the same level rules as the player's mons (§12.3). The 7 Legendaries are reserved for the final Gym.
+- **What the sheet's numbers mean in a fight** (as built, ADR 0008): **nothing directly**. The sheet keeps the real Pokémon stats, and the importer turns each species' base-stat *total* into a **tier** (1–6) and then splits that tier's point budget — 5 points at tier 1, +10 a tier — across Attack, Health and Speed in the ratio of the species' own real stats (`Data/SpeciesTier`). Charmander's 52/39/65 becomes **2/2/1**; Charmeleon's 64/58/80 becomes **7/6/2**. Speed is 1 for most of the roster and never above 3. Growth on top is a flat +1 Attack and +1 Health per point of EXP (`Data/StatGrowth`).
+- **A Location's opposition is pitched by the run's badge count** (`Meta/RunProgression`) on two dials: the **tier** it draws from (1 + badges, lifted for the final Location) and the **EXP** its mons carry (4 × badges). It draws from base forms only, evolved by the same rules as the player's mons (§12.3). The 7 Legendaries are reserved for the final Gym.
 - **Abilities are intentionally blank for now** — the sheet's Ability column is empty across all 183 rows; passives will be added later. Whenever they are, they should follow §10.3's framework (triggers when the mon's own charge meter fills, regardless of Lead/Support role) and lean on the Type-flavor seeds in §11 (Fire→burn, Water→shield/heal, Electric→paralyze/speed, and so on).
 - **Open assumption:** the 7 Legendaries above are folded into the same flat list/format as everything else here, with no rarity flag. Carrying forward §4's earlier design (Legendaries as ultra-rare, PvE-only, full-party-wipe-risk encounters), this doc still treats those 7 as Legendary-tier unless told otherwise.
 - Evolution throughline rule still applies once abilities exist: a passive should persist through a Pokémon's evolutions, with only its magnitude scaling by stage/level, not a different passive per stage.
@@ -182,8 +182,8 @@ interface PokemonInstance {
   instanceId: string;
   speciesId: number;
   nickname?: string;
-  exp: number;               // total EXP; the level is derived from it on a rising curve (ADR 0007)
-  timesEvolved: number;      // evolutions this mon has made; indexes the evolution levels (8, 17)
+  exp: number;               // lifetime EXP, one point a win; +1 Attack and +1 Health each (ADR 0008)
+  timesEvolved: number;      // evolutions this mon has made, each having charged 5 EXP against the total
 
   currentStats: { attack: number; health: number; speed: number };
   currentHP: number;
@@ -304,8 +304,8 @@ Initial directional ideas for the rest of the types — these double as the pass
 
 ### 12.3 Evolution
 
-- Evolution triggers automatically once a mon crosses its EXP threshold (reuse real Pokémon evolution chains via PokeAPI, restricted to your curated Gen 1–3 roster). **As built** (ADR 0007): at level 8 and again at level 17, counted from how many times that mon has already evolved. A mon's level comes from its EXP on a rising curve, stats grow in proportion to the species, and every mon the run owns is kept within 2 levels of its strongest. The three branching lines in the roster — Eevee, Tyrogue, Nincada — don't evolve at all yet: picking a branch needs a choice the player makes, which isn't built.
-- **Combine 2 of the same mon** to instantly grant EXP to one of them (consumes the duplicate) — a sacrifice/fusion mechanic for dupes. **As built:** dragging one onto another of the same species on the Team screen, which asks whether that meant combine or reorder; the mon dropped onto survives and gains exactly one level, and the duplicate's own EXP is not carried over.
+- Evolution triggers automatically once a mon crosses its EXP threshold (reuse real Pokémon evolution chains via PokeAPI, restricted to your curated Gen 1–3 roster). **As built** (ADR 0008): every **5 points of EXP** on the mon's current species. Since a tier is worth exactly that much growth, a maxed 7/7/1 Charmander becomes a 7/6/2 Charmeleon and starts again — an evolution one tier up is stat-neutral, and anything further up is a real jump. EXP is lifetime and never caps, so a final form keeps growing. Every mon the run owns is kept within 2 points of its most-experienced. The three branching lines in the roster — Eevee, Tyrogue, Nincada — don't evolve at all yet: picking a branch needs a choice the player makes, which isn't built.
+- **Combine 2 of the same mon** to instantly grant EXP to one of them (consumes the duplicate) — a sacrifice/fusion mechanic for dupes. **As built:** dragging one onto another of the same species on the Team screen, which asks whether that meant combine or reorder; the mon dropped onto survives and gains one point of EXP — the same as a win — and the duplicate's own EXP is not carried over.
 
 ---
 
@@ -408,7 +408,9 @@ Modeled on Super Auto Pets:
 ## 20. Open Design Questions (explicitly TBD)
 
 - ~~The run's ultimate win condition~~ — settled as eight badges (ADR 0007). Still open: whether a Champion/Elite-Four capstone should follow the eighth Gym.
-- **What should Event and PvP nodes pay?** Both are still stubs and grant no EXP, so a path through them earns less. The level curve (ADR 0007) assumes a typical path of about 2.5 wild wins per Location.
+- **What should Event and PvP nodes pay?** Both are still stubs and grant no EXP, so a path through them earns less. The pacing (ADR 0008) assumes a typical path of about 2.5 wild wins plus a Gym per Location — four points.
+- **A three-stage line is fully evolved by the third of eight badges** (ADR 0008), because five points is an evolution and a Location pays about four. The back half of a run has no evolutions left in it, only flat +1/+1. Whether that's the right rhythm is the first thing to look at in play.
+- **Fights last about one Step per mon, permanently** (ADR 0008): EXP adds to Attack and Health in lockstep, so an even matchup is always decided in a single exchange. That makes Speed and passives what decide a fight rather than attrition, which may or may not be the intended feel.
 - Should players be able to retreat from a Location before beating its Gym (abandoning progress), and if so, at what cost?
 - Exact passive magnitudes for the curated roster — the mechanism (charge meter fills → ability fires, type-flavored) is now fixed, but values are yours to tune.
 - Exact type-synergy bonus values and whether synergy counts the full roster or just the active line-up.

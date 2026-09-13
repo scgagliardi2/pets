@@ -61,8 +61,9 @@ namespace Pets.Gameplay
             headerText.text = badges == 0 ? "Choose your first Location" : "Choose your next Location";
             subheaderText.text =
                 $"Gym {badges + 1} of {RunProgression.BadgesToWin}   -   " +
-                $"wild Pokémon Lv {RunProgression.WildLevel(badges, 1)} to {RunProgression.WildLevel(badges, LocationMapGenerator.ChoiceLayerCount)}   -   " +
-                $"Gym Leader Lv {RunProgression.GymLevel(badges)}";
+                $"wild Pokémon to Tier {RunProgression.MaxTier(badges)?.ToString() ?? "any"}, " +
+                $"{RunProgression.WildExp(badges, 1)}-{RunProgression.WildExp(badges, LocationMapGenerator.ChoiceLayerCount)} EXP   -   " +
+                $"Gym Leader {RunProgression.GymExp(badges)} EXP";
 
             for (int i = 0; i < travelButtons.Length; i++)
             {

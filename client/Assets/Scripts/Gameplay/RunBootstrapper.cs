@@ -65,12 +65,12 @@ namespace Pets.Gameplay
             var state = new RunState
             {
                 RunSeed = System.Environment.TickCount,
-                // Through CreateAtLevel rather than the bare factory, so a starter that is itself an
+                // Through CreateAtExp rather than the bare factory, so a starter that is itself an
                 // evolved form (Metapod is under the starter cap) has its evolutions counted.
                 LineUp =
                 {
-                    ExperienceResolver.CreateAtLevel(lead, "player-lead", 1, speciesLibrary),
-                    ExperienceResolver.CreateAtLevel(support, "player-support", 1, speciesLibrary)
+                    ExperienceResolver.CreateAtExp(lead, "player-lead", 0, speciesLibrary),
+                    ExperienceResolver.CreateAtExp(support, "player-support", 0, speciesLibrary)
                 }
             };
             return state;

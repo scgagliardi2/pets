@@ -14,9 +14,12 @@ and what that expansion left unfinished; and
 [`0005-exp-as-a-small-counter.md`](docs/architecture-decisions/0005-exp-as-a-small-counter.md)
 covers the original EXP counter and the duplicate-combining gesture;
 [`0006-leveling-across-a-six-location-run.md`](docs/architecture-decisions/0006-leveling-across-a-six-location-run.md)
-records the six-Location version that merged first and was superseded; and
+records the six-Location version that merged first and was superseded;
 [`0007-levels-and-the-region-hub.md`](docs/architecture-decisions/0007-levels-and-the-region-hub.md)
-covers the level curve, the eight-badge run and the Region Hub that replaced it. Between them they list the deviations from the design doc
+covers the eight-badge run and the Region Hub that replaced it, and the level curve that ran it; and
+[`0008-tiers-and-a-five-point-evolution.md`](docs/architecture-decisions/0008-tiers-and-a-five-point-evolution.md)
+replaces that curve with species tiers, a flat one-point-a-win EXP count and evolution every five
+points. Between them they list the deviations from the design doc
 that are still open questions.
 
 ## Project snapshot
@@ -47,17 +50,23 @@ exists — the phase list under it describes intent, and the build has deviated 
   Center adoption/healing, a Shop, type synergy, the badge-as-relic reward, the Line-Up menu before
   a Gym, real Event/PvP nodes, and the Trailblazer minigame. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
-- **Growth runs on levels, and a run is eight badges** (ADR 0007): EXP buys levels on a rising
-  curve, stats come from species + level via `Data/StatGrowth` (Health ×3), mons evolve at Lv 8 and
-  17, and every owned mon is kept within 2 levels of the strongest. The Region Hub sits between
-  Locations, and enemies are pitched by badge count (`Meta/RunProgression`), never by the player's
-  levels. `PokemonInstance.CurrentStats` is **derived** by `ExperienceResolver.Recompute` — writing
+- **Growth runs on tiers and a small EXP count, and a run is eight badges** (ADR 0007 for the run,
+  ADR 0008 for the growth). Every species sits in one of six **tiers**, and every species in a tier
+  spends the same points across Attack/Health/Speed — Charmander is `2/2/1`, Charmeleon `7/6/2`. That
+  tier line is **derived from the roster sheet's real stats** by `Data/SpeciesTier` and written by
+  the importer; never hand-author it. On top of it, **one point of EXP is +1 Attack and +1 Health**,
+  everything pays exactly one point, and **five points is an evolution** — there are no levels, and
+  Speed only ever changes by evolving. `Exp` is lifetime and never resets; each evolution charges 5
+  against it (`TimesEvolved`), and `ExperienceResolver.ExpSinceEvolution` is what the current species
+  has grown on. The Region Hub sits between Locations, and enemies are pitched by badge count
+  (`Meta/RunProgression`) on two dials — the pool's tier and the EXP its mons carry — never by the
+  player. `PokemonInstance.CurrentStats` is **derived** by `ExperienceResolver.Recompute` — writing
   stats onto a mon directly works until the next EXP grant silently recomputes them away, which is
-  the one trap in this area. The level is derived from `Exp`, never stored. Build a new mon with
-  `ExperienceResolver.CreateAtLevel` rather than the bare factory, so an evolved species has its
-  earlier evolutions counted.
+  the one trap in this area. Build a new mon with `ExperienceResolver.CreateAtExp` rather than the
+  bare factory, so an evolved species has its earlier evolutions paid for.
 - **Content is all 183 roster species** (ADR 0004), imported by
-  `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx`. Two things that
+  `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx` — which still holds
+  the *real* Pokémon stats; the importer is what turns them into tiers and tier lines. Two things that
   expansion left open and that it's easy to mistake for finished: only the original 28 species have
   a bespoke passive (the rest share one placeholder per primary type), and the dev random battle
   still draws from the *whole* library (wild and Gym pools are filtered by `Meta/EncounterPool`).
@@ -85,7 +94,9 @@ exists — the phase list under it describes intent, and the build has deviated 
   `docs/content-schema.md`). Don't hardcode a new C# class per Pokémon or per passive — if the
   existing passive/effect vocabulary can't express something, extend the vocabulary, don't
   special-case it. Stats come from `docs/pokemon_stats_unique.xlsx` — never invented, and never
-  hand-tuned in the asset without updating the sheet. **Species assets are generated from that
+  hand-tuned in the asset without updating the sheet. A species' `Tier` and its three small stats
+  are **derived** from the sheet's real numbers by `Data/SpeciesTier` (ADR 0008), so to change what
+  a species is worth, change the rule or the sheet — never the asset. **Species assets are generated from that
   sheet**: edit the sheet, then re-run `Pets > Content > Import Species From Roster Sheet` (PLAN.md
   §8) rather than editing a species asset's stats or typing by hand — `RosterImportTests` fails if
   the two disagree. The importer is idempotent and leaves hand-authored passives and evolution links
@@ -184,8 +195,7 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the level curve, eight-badge run and Region Hub, ADR 0007): **178 EditMode,
-  97 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-13 (after the tier/EXP refactor, ADR 0008): **182 EditMode, 97 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

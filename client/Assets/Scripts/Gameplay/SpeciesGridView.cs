@@ -164,7 +164,7 @@ namespace Pets.Gameplay
             // species apart. Speed, by contrast, is drawn against the roster-wide cap, so the bar
             // itself compares species.
             card.HealthBar.SetHealth(species.BaseHealth, species.BaseHealth);
-            card.SpeedBar.SetValue(species.BaseSpeed, PokemonSpeciesDefinitionAsset.MaxBaseSpeed);
+            card.SpeedBar.SetValue(species.BaseSpeed, SpeciesTier.MaxSpeed);
             card.Root.SetActive(true);
         }
     }

@@ -40,10 +40,10 @@ namespace Pets.Tests
         /// encounter, so every fight these tests walk into is won in a Step or two and Morale never
         /// enters the picture.
         ///
-        /// Set as a level rather than written straight onto CurrentStats: stats are *derived* from
-        /// species + level (Meta/ExperienceResolver), so the first win's own EXP award would recompute
-        /// a hand-set CurrentStats right back down and lose every fight after it.</summary>
-        private const int UnbeatableLevel = ExperienceResolver.MaxLevel;
+        /// Set as an amount of EXP rather than written straight onto CurrentStats: stats are
+        /// *derived* from species + EXP (Meta/ExperienceResolver), so the first win's own EXP award
+        /// would recompute a hand-set CurrentStats right back down and lose every fight after it.</summary>
+        private const int UnbeatableExp = 999;
 
         private const int MapSeedSearchLimit = 500;
 
@@ -425,7 +425,7 @@ namespace Pets.Tests
             Assert.IsNotNull(library, "the Map scene's RunBootstrapper should have published the curated library");
 
             var run = new RunState { RunSeed = 4242, LocationMap = LocationMapGenerator.Generate(mapSeed) };
-            run.LineUp.Add(ExperienceResolver.CreateAtLevel(library.AllSpecies[0], "test-lead", UnbeatableLevel, library));
+            run.LineUp.Add(ExperienceResolver.CreateAtExp(library.AllSpecies[0], "test-lead", UnbeatableExp, library));
 
             ActiveRun.End();
             ActiveRun.Begin(run, library);
@@ -458,7 +458,7 @@ namespace Pets.Tests
             FindActiveButton("SkipButton").onClick.Invoke();
             yield return null;
             Assert.AreEqual(BattleOutcome.SideAWins, battle.Outcome,
-                "the test party is built to win every fight — check UnbeatableLevel");
+                "the test party is built to win every fight — check UnbeatableExp");
 
             FindActiveButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);

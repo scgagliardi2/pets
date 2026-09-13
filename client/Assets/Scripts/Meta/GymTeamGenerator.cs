@@ -9,9 +9,9 @@ namespace Pets.Meta
     ///
     /// A Leader specialises in their Location's types, the way mainline Gym Leaders do, so the team
     /// draws from the same type-biased pool as the wild encounters (EncounterPool). What makes it the
-    /// boss is level and size: it sits above the Location's baseline and fields at least as many mons
-    /// as the player brings (RunProgression.GymLevel, GymTeamSize). The final Leader may field a
-    /// Legendary.
+    /// boss is experience and size: its mons carry more EXP than the Location's baseline and it fields
+    /// at least as many as the player brings (RunProgression.GymExp, GymTeamSize). The final Leader may
+    /// field a Legendary.
     ///
     /// There's no extra Health bonus any more: with the team matched to the player's line-up, the old
     /// +25% made every Gym a coin flip in the run simulations (ADR 0007).</summary>
@@ -31,13 +31,13 @@ namespace Pets.Meta
 
             var pool = EncounterPool.For(library, typeBias, badges, isGym: true);
             int size = RunProgression.GymTeamSize(badges, lineUpCount);
-            int level = RunProgression.GymLevel(badges);
+            int exp = RunProgression.GymExp(badges);
             var rng = new DeterministicRandom(seed);
             var team = new List<PokemonInstance>(size);
             for (int i = 0; i < size; i++)
             {
                 var species = pool[rng.NextInt(pool.Count)];
-                team.Add(ExperienceResolver.CreateAtLevel(species, $"{InstanceIdPrefix}{i}", level, library));
+                team.Add(ExperienceResolver.CreateAtExp(species, $"{InstanceIdPrefix}{i}", exp, library));
             }
             return team;
         }

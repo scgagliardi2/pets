@@ -109,9 +109,21 @@ namespace Pets.EditorTools
             public PokemonType Type1;
             public bool HasSecondType;
             public PokemonType Type2;
+            /// <summary>The species' *real* Pokémon stats, straight off the sheet. These are not
+            /// what the game plays with — see <see cref="Tier"/> and <see cref="TierStats"/>.</summary>
             public int Attack;
             public int Health;
             public int Speed;
+
+            /// <summary>The tier <see cref="Attack"/> + <see cref="Health"/> + <see cref="Speed"/>
+            /// puts this species in, after <see cref="AssignTiers"/>' pass that forces every
+            /// evolution at least one tier above what it came from. Assigned across the whole
+            /// roster at once, which is why it isn't filled in by ReadRoster's per-row loop.</summary>
+            public int Tier;
+
+            /// <summary>The small stat line the game actually uses — a Charmander's 2/2/1 — derived
+            /// from the real stats above by <see cref="SpeciesTier.Distribute"/>.</summary>
+            public Stats TierStats;
 
             /// <summary>Chain depth from the cached PokeAPI evolution data, 0 for a base form.</summary>
             public int EvolutionStage;
@@ -242,9 +254,10 @@ namespace Pets.EditorTools
                 species.Type1 != entry.Type1 ||
                 species.HasSecondType != entry.HasSecondType ||
                 (entry.HasSecondType && species.Type2 != entry.Type2) ||
-                species.BaseAttack != entry.Attack ||
-                species.BaseHealth != entry.Health ||
-                species.BaseSpeed != entry.Speed ||
+                species.Tier != entry.Tier ||
+                species.BaseAttack != entry.TierStats.Attack ||
+                species.BaseHealth != entry.TierStats.Health ||
+                species.BaseSpeed != entry.TierStats.Speed ||
                 species.EvolutionStage != entry.EvolutionStage ||
                 species.IsLegendary != LegendaryNames.Contains(entry.SheetName);
 
@@ -259,9 +272,10 @@ namespace Pets.EditorTools
             {
                 species.Type2 = entry.Type2;
             }
-            species.BaseAttack = entry.Attack;
-            species.BaseHealth = entry.Health;
-            species.BaseSpeed = entry.Speed;
+            species.Tier = entry.Tier;
+            species.BaseAttack = entry.TierStats.Attack;
+            species.BaseHealth = entry.TierStats.Health;
+            species.BaseSpeed = entry.TierStats.Speed;
             species.EvolutionStage = entry.EvolutionStage;
             species.IsLegendary = LegendaryNames.Contains(entry.SheetName);
             return changed;
@@ -493,7 +507,86 @@ namespace Pets.EditorTools
             {
                 throw new InvalidDataException("The roster sheet parsed to zero species rows.");
             }
+            AssignTiers(roster);
             return roster;
+        }
+
+        /// <summary>Fills every row's <see cref="RosterRow.Tier"/> and
+        /// <see cref="RosterRow.TierStats"/> — the whole of ADR 0008's "real stats in, tier line
+        /// out" translation, done across the roster at once because one of its two rules is about
+        /// pairs of species rather than single ones.
+        ///
+        /// **The band comes from the species' own real base-stat total** (SpeciesTier).
+        ///
+        /// **Then every evolution is forced at least one tier above what it came from.** Nine real
+        /// chains need this, all of them cases where the middle stage is genuinely the weaker
+        /// Pokémon — a Metapod has worse stats than the Caterpie it came from, and a Kirlia than a
+        /// Ralts. Left alone they'd evolve into a *downgrade*, since a tier is exactly what five EXP
+        /// buys. Run to a fixed point so a bump can cascade down a three-stage line.
+        ///
+        /// Public so RosterImportTests can re-derive the whole table from the sheet and compare it
+        /// against the assets on disk — the check that catches an edited sheet nobody re-imported.</summary>
+        public static void AssignTiers(List<RosterRow> roster)
+        {
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var row = roster[i];
+                row.Tier = SpeciesTier.ForBaseStatTotal(row.Attack + row.Health + row.Speed);
+                roster[i] = row;
+            }
+
+            var indexById = new Dictionary<int, int>();
+            for (int i = 0; i < roster.Count; i++)
+            {
+                indexById[roster[i].Id] = i;
+            }
+
+            // Bounded rather than while(changed): a chain that somehow cycles must not hang the
+            // import. One pass per possible tier step is always enough to reach the fixed point.
+            var stuck = new List<string>();
+            for (int pass = 0; pass < SpeciesTier.MaxTier; pass++)
+            {
+                bool changed = false;
+                for (int i = 0; i < roster.Count; i++)
+                {
+                    var row = roster[i];
+                    if (row.EvolvesIntoId == 0 || !indexById.TryGetValue(row.EvolvesIntoId, out int target))
+                    {
+                        continue;
+                    }
+                    var next = roster[target];
+                    if (next.Tier > row.Tier)
+                    {
+                        continue;
+                    }
+                    if (row.Tier >= SpeciesTier.MaxTier)
+                    {
+                        stuck.Add($"{row.DisplayName} -> {next.DisplayName}");
+                        continue;
+                    }
+                    next.Tier = row.Tier + 1;
+                    roster[target] = next;
+                    changed = true;
+                }
+                if (!changed)
+                {
+                    break;
+                }
+            }
+
+            if (stuck.Count > 0)
+            {
+                Debug.LogWarning($"{stuck.Count} evolutions can't be placed a tier above their pre-evolution " +
+                                 $"because it is already at the top tier: {string.Join(", ", stuck.Distinct())}. " +
+                                 "They evolve into a species no stronger than themselves.");
+            }
+
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var row = roster[i];
+                row.TierStats = SpeciesTier.Distribute(row.Attack, row.Health, row.Speed, row.Tier);
+                roster[i] = row;
+            }
         }
 
         [Serializable]

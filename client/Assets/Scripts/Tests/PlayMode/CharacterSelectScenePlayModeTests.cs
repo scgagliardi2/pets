@@ -65,7 +65,7 @@ namespace Pets.Tests
             SceneLibrary().AllSpecies.Count(CharacterSelectController.IsStarterEligible);
 
         /// <summary>The roster is all 183 species including fully-evolved forms and Legendaries;
-        /// this screen offers only the ones under CharacterSelectController.MaxStarterStatTotal.
+        /// this screen offers only the ones at or under CharacterSelectController.MaxStarterTier.
         /// Asserted against the rule rather than a hardcoded count, so re-importing the roster
         /// sheet doesn't make the test a lie — with an explicit check that the rule actually
         /// excludes something, which a count-only assertion would pass even if the filter were
@@ -77,7 +77,7 @@ namespace Pets.Tests
             int eligible = StarterEligibleCount();
             Assert.Greater(eligible, 0, "no species is startable — the cap is too low to play");
             Assert.Less(eligible, library.AllSpecies.Count,
-                "the whole roster is startable, so the stat-total cap isn't filtering anything");
+                "the whole roster is startable, so the tier cap isn't filtering anything");
 
             var buttons = GridContent().GetComponentsInChildren<Button>();
             Assert.AreEqual(eligible, buttons.Length);
@@ -89,8 +89,8 @@ namespace Pets.Tests
                 int attack = int.Parse(button.transform.Find("NameRow/AttackValue").GetComponent<Text>().text);
                 int health = button.GetComponentInChildren<HealthBarView>().Max;
                 int speed = button.GetComponentInChildren<StatBarView>().Value;
-                Assert.Less(attack + health + speed, CharacterSelectController.MaxStarterStatTotal,
-                    $"{button.gameObject.name} is on the grid with a stat total at or over the cap");
+                Assert.AreEqual(SpeciesTier.TotalFor(CharacterSelectController.MaxStarterTier), attack + health + speed,
+                    $"{button.gameObject.name} is on the grid without spending exactly the starter tier's points");
             }
             yield break;
         }
@@ -204,7 +204,7 @@ namespace Pets.Tests
             }
         }
 
-        /// <summary>Speed is drawn against the roster-wide cap (PokemonSpeciesDefinitionAsset.MaxBaseSpeed),
+        /// <summary>Speed is drawn against the roster-wide cap (SpeciesTier.MaxSpeed),
         /// not per species, and attack sits beside the name with its sword icon. Sorting by Speed
         /// and requiring the bars in the same order proves each pooled card's bar is bound to its
         /// own species.</summary>
@@ -222,7 +222,7 @@ namespace Pets.Tests
 
                 var bar = button.GetComponentInChildren<StatBarView>();
                 Assert.IsNotNull(bar, $"{card} has no speed bar");
-                Assert.AreEqual(PokemonSpeciesDefinitionAsset.MaxBaseSpeed, bar.Max, $"{card}'s speed bar isn't scaled to the speed cap");
+                Assert.AreEqual(SpeciesTier.MaxSpeed, bar.Max, $"{card}'s speed bar isn't scaled to the speed cap");
                 Assert.Greater(bar.Value, 0, $"{card} shows no speed");
                 Assert.AreEqual((float)bar.Value / bar.Max, bar.Fill.rectTransform.anchorMax.x, 0.001f, $"{card}'s speed fill doesn't match its speed");
                 Assert.AreEqual(bar.Value.ToString(), bar.ValueLabel.text);

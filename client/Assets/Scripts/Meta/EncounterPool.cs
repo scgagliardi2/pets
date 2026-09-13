@@ -10,10 +10,10 @@ namespace Pets.Meta
     ///
     /// Three filters, each closing a hole the unfiltered roster left open (PLAN.md §11 item 9):
     /// - **Base forms only.** A species some roster species evolves into is never drawn directly; a
-    ///   Charizard shows up as a Charmander that has levelled past its thresholds
-    ///   (ExperienceResolver.CreateAtLevel), under exactly the rules the player's mons follow.
-    /// - **A base-stat-total cap that rises with badges** (RunProgression.MaxBaseStatTotal), which
-    ///   keeps the high-total base forms (Snorlax, Scyther, the Eeveelutions) out of the early game.
+    ///   Charizard shows up as a Charmander that has earned its way past both thresholds
+    ///   (ExperienceResolver.CreateAtExp), under exactly the rules the player's mons follow.
+    /// - **A tier cap that rises with badges** (RunProgression.MaxTier), which keeps the high-tier
+    ///   base forms (Snorlax, Hariyama, the Eeveelutions) out of the early game.
     /// - **No Legendaries** except on the final Gym Leader's team.
     ///
     /// Then the Location's type bias, falling back to the filtered pool when nothing matches, and to
@@ -25,14 +25,14 @@ namespace Pets.Meta
         {
             var evolvedForms = new HashSet<int>(
                 library.AllSpecies.Where(s => s != null && s.EvolvesInto != null).Select(s => s.EvolvesInto.Id));
-            int? cap = RunProgression.MaxBaseStatTotal(badges);
+            int? cap = RunProgression.MaxTier(badges);
             bool allowLegendaries = RunProgression.AllowsLegendaries(isGym, badges);
 
             var eligible = library.AllSpecies
                 .Where(s => s != null
                     && !evolvedForms.Contains(s.Id)
                     && (allowLegendaries || !s.IsLegendary)
-                    && (cap == null || s.BaseStatTotal <= cap.Value))
+                    && (cap == null || s.Tier <= cap.Value))
                 .ToList();
 
             var biased = eligible.Where(s => Matches(s, typeBias)).ToList();

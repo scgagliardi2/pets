@@ -69,7 +69,7 @@ namespace Pets.EditorTools
             var run = new Pets.Meta.RunState { RunSeed = 12345 };
             run.CompletedLocations.Add(Pets.Meta.LocationType.Forest);
             run.CompletedLocations.Add(Pets.Meta.LocationType.Cave);
-            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtLevel(library.AllSpecies[0], "capture-0", 7, library));
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-0", 7, library));
             Pets.Gameplay.ActiveRun.Begin(run, library);
             CapturePlaying(RegionHubSceneBuilder.ScenePath);
         }

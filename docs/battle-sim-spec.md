@@ -38,7 +38,7 @@ line-up between Steps, but the catch-chance formula and drag-and-drop handling l
   next dormant mon (if any) is promoted to Support. A line-up with only one mon left has a Lead
   and no Support; a line-up with zero mons left has lost.
 - A mon's effective stats when it becomes active (Lead or Support) are the `currentStats` copied
-  onto its combatant — already leveled — plus any active team-synergy bonus (§8 below) and any
+  onto its combatant — its species' tier line plus the EXP it has earned — plus any active team-synergy bonus (§8 below) and any
   equipped-item modifiers. There is no additional per-Step stat recomputation beyond what
   buffs/statuses apply (§5).
 - Anything applied **at line-up assembly** (team synergy, a Camp buff, item modifiers) is written
@@ -66,7 +66,7 @@ Within one Step, in this order:
    Step, so a freshly-promoted mon starts accruing on the *next* Step. (This is a concrete
    resolution of an ambiguity the design doc leaves implicit; revisit if playtesting says
    otherwise.)
-3. **Passive resolution.** Any mon whose `charge >= CHARGE_THRESHOLD` (constant, default `100` —
+3. **Passive resolution.** Any mon whose `charge >= CHARGE_THRESHOLD` (constant, default `3` —
    see §4) triggers its passive now, before the Step concludes and before the next Step's attack
    exchange begins. Its charge resets to `0` (not `charge - CHARGE_THRESHOLD` — no carry-over)
    and begins accruing again next Step. See §6 for ordering when more than one mon triggers in the
@@ -95,8 +95,12 @@ The loop repeats until a battle-end condition (§9) is reached.
 
 ## 4. Charge meters & the threshold constant
 
-- `CHARGE_THRESHOLD` is a single global balance constant (default `100`), not per-mon or
-  per-type. Speed is what varies triggering frequency between mons.
+- `CHARGE_THRESHOLD` is a single global balance constant (default `3` — was `100` before ADR 0008),
+  not per-mon or per-type. Speed is what varies triggering frequency between mons.
+- **Speed is a number from 1 to 3** (`Pets.Data.SpeciesTier`), and a mon accrues its Speed in charge
+  each Step, so the threshold reads directly as "Steps per trigger at Speed 1": Speed 1 fires on the
+  third Step, Speed 2 on the second, Speed 3 every Step. Most of the roster is Speed 1, so for most
+  mons a passive is something that happens once or twice a fight, not every Step.
 - A charge meter can, in principle, cross the threshold by more than the exact amount in one Step
   (if `speed * stepDurationMs` overshoots). Per §3 step 3, the meter resets to `0` regardless of
   overshoot — the overshoot amount is discarded, not carried into the next cycle. This keeps the
@@ -210,11 +214,16 @@ A few numeric/ordering choices this spec left implicit, pinned down during the P
 tune the *values* freely, but keep the *shape* of these rules in sync with
 `BattleSimulator.cs` if you change them:
 
-- **`stepDurationMs` is a small placeholder scalar, not literal milliseconds.** With the curated
-  roster's Speed stats in the ~20-130 range, `BattleConfig.DefaultStepDurationMs = 1` makes
-  `charge += speed * stepDurationMs` track Speed directly at a readable 2-5 Steps per trigger.
-  Literal real-world milliseconds (e.g. 1000) would cross `ChargeThreshold` every single Step
-  regardless of Speed — rescale this constant, not the formula, if pacing needs to change.
+- **`stepDurationMs` is a small placeholder scalar, not literal milliseconds.** At
+  `BattleConfig.DefaultStepDurationMs = 1`, `charge += speed * stepDurationMs` is simply "add your
+  Speed", which is what lets `ChargeThreshold` be read as Steps-per-trigger (§4). Literal real-world
+  milliseconds (e.g. 1000) would cross the threshold every single Step regardless of Speed — rescale
+  this constant, not the formula, if pacing needs to change.
+- **Fights are short, and that is a property of the stat model, not of this spec.** Since ADR 0008 a
+  point of EXP adds +1 to Attack *and* Health, so a mon's Attack and Health stay close together for
+  the whole run and an even Lead-vs-Lead exchange is usually lethal both ways in one Step. A battle
+  therefore runs roughly one Step per mon on the field. The golden fixtures use Speed 3 where they
+  want "fires every Step".
 - **The same-Step trigger set is fixed once per Step**, computed from charge values after step 2's
   accrual. A passive that speeds up another mon's charge rate (`ModifyChargeRate`) can't cause
   that mon to *also* trigger later in the same Step it was sped up — the effect applies starting

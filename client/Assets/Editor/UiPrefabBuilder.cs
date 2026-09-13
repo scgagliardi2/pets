@@ -228,7 +228,7 @@ namespace Pets.EditorTools
             SetField(view, "speedBar", speed);
             SetField(view, "group", group);
             view.Show("Pokemon", Pets.Simulation.PokemonType.Normal, false, Pets.Simulation.PokemonType.Normal,
-                10, 50, Pets.Data.PokemonSpeciesDefinitionAsset.MaxBaseSpeed);
+                10, 50, Pets.Data.SpeciesTier.MaxSpeed);
             health.SetHealth(40, 40);
 
             SavePrefab(go, BattleStatsBoxPrefabPath);

@@ -8,10 +8,9 @@ namespace Pets.Meta
     {
         private const float NextBattleAttackBonusPercent = 0.2f;
 
-        /// <summary>A rest is worth what a wild win at the Location's baseline level would pay — about
-        /// a fight's worth of EXP, so choosing the Center over a Battle node isn't a sacrifice.</summary>
-        public static int ExpFor(RunState state) =>
-            BattleRewardResolver.BaseExpPerWin + RunProgression.BaselineLevel(state.BadgeCount);
+        /// <summary>A rest is worth exactly what a fight is, so choosing the Center over a Battle
+        /// node costs no growth — only the chance to catch something.</summary>
+        public static int ExpFor(RunState state) => BattleRewardResolver.ExpPerWin;
 
         public static GrowthReport Resolve(RunState state, PokemonSpeciesLibrary library)
         {

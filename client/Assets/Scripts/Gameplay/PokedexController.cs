@@ -7,7 +7,7 @@ namespace Pets.Gameplay
     /// <summary>The Pokédex: the whole curated roster in one browsable grid, reached from Home.
     ///
     /// Character Select only offers the low-total end of the roster
-    /// (<see cref="CharacterSelectController.MaxStarterStatTotal"/>), so without this screen most
+    /// (<see cref="CharacterSelectController.MaxStarterTier"/>), so without this screen most
     /// of the 183 species would only ever be seen as a wild encounter. It's the same grid, filter
     /// and sort as Character Select (<see cref="SpeciesGridView"/>,
     /// <see cref="SpeciesRosterToolbar"/>) with the picking removed: a card press selects it into
@@ -71,7 +71,7 @@ namespace Pets.Gameplay
                 ? "Legendary"
                 : CharacterSelectController.IsStarterEligible(species) ? "Starter-eligible" : "Not a starter";
 
-            detailText.text = $"#{species.Id} {species.DisplayName}   {types}   " +
+            detailText.text = $"#{species.Id} {species.DisplayName}   {types}   Tier {species.Tier}   " +
                 $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}  " +
                 $"(total {species.BaseStatTotal})   {passive}   {note}";
         }

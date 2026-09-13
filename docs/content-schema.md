@@ -39,7 +39,8 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `id` | `int` | PokeAPI id, reused directly — see design doc §9. |
 | `displayName` | `string` | Real Pokémon name (this project uses actual Pokémon names/species — see PLAN.md §9 scope note). |
 | `types` | `PokemonType` + optional second `PokemonType` | One or two of the 18 types (design doc §9's `PokemonType` union). |
-| `baseAttack` / `baseHealth` / `baseSpeed` | `int` | Per-evolution-stage stats, sourced directly from `docs/pokemon_stats_unique.xlsx` — **explicit placeholders**, not derived from a formula (design doc §8). `baseSpeed` is capped at `PokemonSpeciesDefinitionAsset.MaxBaseSpeed` (200): speed bars are drawn as a fraction of it, and `ContentIntegrityTests` fails a species above it. |
+| `tier` | `int` | 1–6. Which power band the species sits in, **derived** by `Data/SpeciesTier` from the band its *real* base-stat total in `docs/pokemon_stats_unique.xlsx` falls in, then raised where needed so an evolution always lands at least one tier above what it came from (ADR 0008). Written by the roster importer, never authored. |
+| `baseAttack` / `baseHealth` / `baseSpeed` | `int` | The species' small tier line — a Charmander is 2/2/1. **Derived, not authored:** `SpeciesTier.Distribute` splits the tier's point budget (5 at tier 1, +10 a tier) using the species' real Attack:Health ratio, with Speed from its real Speed (2 at 80, 3 at 110, capped by what the tier can afford). The three must add up to `tier`'s total, and `baseSpeed` is capped at `SpeciesTier.MaxSpeed` (3); `ContentIntegrityTests` fails either. Edit the sheet and re-import — never these fields. |
 | `passive` | `PassiveDefinition` reference | Always set — `ContentIntegrityTests` requires it. The source sheet's Ability column is blank, so only the original 28 curated species have a bespoke passive; the roster importer gives every other species one shared placeholder per primary type (`SpeciesRosterImporter.DefaultPassiveIdByType`). Hand-authoring one later simply overrides it (PLAN.md §8, ADR 0004). |
 | `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). Set by the roster importer from `docs/roster_evolution_chains.json` (real PokeAPI chains, restricted to the roster). Null for a final form **and** for the three branching lines — Eevee, Tyrogue, Nincada — which one reference can't express. |
 | `evolutionStage` | `int` | Chain depth: 0 for a base form, 1 for a first evolution. Counted against the *real* chain, so Pikachu is stage 1 (Pichu exists, it just isn't curated). Used only as the index into the passive's `magnitudeByStage` table (§1, §3) — **not** to decide when a mon evolves, which is counted per instance. |
@@ -154,18 +155,23 @@ Design doc §9 describes a single `PokemonInstance` carrying both run-level and 
 The implementation splits it in two, because the two halves have different lifetimes and the
 simulator mutates its subject in place.
 
-It also **stores no `level` / `expToNextLevel`** (ADR 0007). A mon stores only its total `Exp`; its
-level is read off `ExperienceResolver`'s rising curve, and `CurrentStats` is **derived** from the
-species and that level by `Data/StatGrowth` (+10% of base and +2 per level, Health ×3), never
-accumulated into. Anything written to `CurrentStats` that doesn't follow from those two is
-overwritten on the next EXP grant, so a permanent modifier (an item, say) has to become an input to
-that calculation rather than a one-off addition.
+It also **stores no level at all** (ADR 0008, which removed ADR 0007's curve). A mon stores its
+lifetime `Exp` — one point a win — and `CurrentStats` is **derived** from the species' tier line plus
+that EXP by `Data/StatGrowth`: +1 Attack and +1 Health a point, Speed untouched. Never accumulated
+into. Anything written to `CurrentStats` that doesn't follow from those two is overwritten on the
+next EXP grant, so a permanent modifier (an item, say) has to become an input to that calculation
+rather than a one-off addition.
 
-Evolution is counted per instance (`TimesEvolved`) rather than from the species' chain depth: a mon
-evolves at `ExperienceResolver.EvolutionLevels` (8, then 17), so a curated base form whose real
-pre-evolution isn't in the roster still evolves at the first threshold. A mon created at a level
-(`ExperienceResolver.CreateAtLevel`) starts with the roster evolutions before its species already
-counted. There is deliberately no per-species threshold field — nothing in the roster sheet or
+`Exp` is lifetime and never resets. What resets on an evolution is the growth applied on top of the
+current species: each evolution charges `ExperienceResolver.ExpPerEvolution` (5) against the total,
+`TimesEvolved` counts them, and `ExperienceResolver.ExpSinceEvolution` is the difference — the EXP
+the current species has actually grown on.
+
+Evolution is counted per instance rather than from the species' chain depth: any mon evolves on its
+fifth point, so a curated base form whose real pre-evolution isn't in the roster still evolves like
+anything else. A mon created at an amount of EXP (`ExperienceResolver.CreateAtExp`) is raised to at
+least what the evolutions before its species cost, so a Charmeleon can never claim to have earned
+nothing. There is deliberately no per-species threshold field — nothing in the roster sheet or
 PokeAPI supplies one.
 
 ```csharp
@@ -174,9 +180,9 @@ public class PokemonInstance {
     public string InstanceId;
     public int SpeciesId;
     public string Nickname;          // optional
-    public int Exp;                  // total ever earned; the level is derived from it (ADR 0007)
-    public int TimesEvolved;         // this instance's own count — see below
-    public Stats CurrentStats;       // DERIVED: StatGrowth.AtLevel(species, ExperienceResolver.LevelOf(this))
+    public int Exp;                  // lifetime, one point a win; +1 Attack and +1 Health each (ADR 0008)
+    public int TimesEvolved;         // this instance's own count; each charged 5 EXP against Exp
+    public Stats CurrentStats;       // DERIVED: StatGrowth.AtExp(species, ExperienceResolver.ExpSinceEvolution(this))
     public int CurrentHP;            // HP it starts its next battle at
     public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
     public PassiveDefinition ResolvedPassive;
@@ -247,9 +253,10 @@ Analogous to the old schema's export, adapted to the new fields. A `PokemonSpeci
   "id": 4,
   "displayName": "Charmander",
   "types": ["Fire"],
-  "baseAttack": 6,
-  "baseHealth": 8,
-  "baseSpeed": 7,
+  "tier": 1,
+  "baseAttack": 2,
+  "baseHealth": 2,
+  "baseSpeed": 1,
   "passiveId": "ember-burst",
   "evolvesInto": { "speciesId": 5 },
   "evolutionStage": 0,

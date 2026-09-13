@@ -223,14 +223,16 @@ namespace Pets.Tests
         [Test]
         public void Paralyzed_HalvesChargeAccrual()
         {
-            var a = Mon("a-lead", 0, 999, 100);
+            // Speed 2 rather than the threshold: paralysis has to leave the mon *short* of firing,
+            // or the trigger resets its charge and there's nothing left to measure.
+            var a = Mon("a-lead", 0, 999, 2);
             a.Status = StatusType.Paralyzed;
             var b = Mon("b-lead", 0, 999, 0);
             var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
 
             BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
 
-            Assert.AreEqual(50, a.Charge);
+            Assert.AreEqual(1, a.Charge);
         }
 
         [Test]
@@ -286,7 +288,7 @@ namespace Pets.Tests
         {
             // An Asleep mon can never trigger its own cleanse (its own charge is permanently
             // zeroed), so this exercises the realistic path: an ally's passive clears it instead.
-            var aLead = Mon("a-lead", 0, 999, 50);
+            var aLead = Mon("a-lead", 0, 999, BattleConfig.ChargeThreshold - 1);
             aLead.Status = StatusType.Asleep;
             var cleanseFx = new PassiveDefinition { Id = "cleanse", Effects = { new EffectDefinition { Type = EffectType.ClearStatus, Target = TargetSelector.Ally } } };
             var aSupport = Mon("a-support", 0, 999, BattleConfig.ChargeThreshold, cleanseFx);
@@ -299,7 +301,8 @@ namespace Pets.Tests
             Assert.AreEqual(0, aLead.Charge, "clearing happens after this Step's charge accrual, so it's too late to affect this Step");
 
             BattleSimulator.AdvanceStep(state, rng);
-            Assert.AreEqual(50, aLead.Charge, "with status cleared, aLead should accrue normally on the next Step");
+            Assert.AreEqual(BattleConfig.ChargeThreshold - 1, aLead.Charge,
+                "with status cleared, aLead should accrue normally on the next Step");
         }
 
         // --- 6. Shield, damage reduction, lifesteal ------------------------------------------

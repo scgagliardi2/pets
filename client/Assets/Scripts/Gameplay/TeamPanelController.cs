@@ -273,11 +273,14 @@ namespace Pets.Gameplay
             var card = PokemonCardBuilder.CreateCard(slot, "Card");
             Stretch(card.GetComponent<RectTransform>());
 
-            // The level, with the level this mon next evolves at when it has one — the two numbers a
-            // player plans a line-up around (see Meta/ExperienceResolver).
-            int level = ExperienceResolver.LevelOf(mon);
-            int? evolvesAt = ExperienceResolver.NextEvolutionLevel(mon, library);
-            string growth = evolvesAt.HasValue ? $"Lv {level}  Evo {evolvesAt.Value}" : $"Lv {level}";
+            // The tier and how far along the next evolution is — the two numbers a player plans a
+            // line-up around (see Meta/ExperienceResolver). A mon with nowhere left to evolve shows
+            // its lifetime EXP instead, since a "3 / 5" that never resolves would just read as broken.
+            int tier = species != null ? species.Tier : SpeciesTier.MinTier;
+            int? toGo = ExperienceResolver.ExpToNextEvolution(mon, library);
+            string growth = toGo.HasValue
+                ? $"T{tier}  Evo in {toGo.Value}"
+                : $"T{tier}  {mon.Exp} EXP";
             PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
                 CardRoleFontSize, FontStyle.Bold, Theme.TextMuted).name = "RoleText";
             PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.Load(species), CardSpriteHeight);
