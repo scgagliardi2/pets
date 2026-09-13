@@ -1,40 +1,60 @@
+using System;
 using System.Collections.Generic;
 using Pets.Data;
+using Pets.Simulation;
 
 namespace Pets.Meta
 {
-    /// <summary>What winning a node's fight gives the run (design doc §7: mons "grow via
-    /// EXP/level").
+    /// <summary>What winning a node's fight gives the run (design doc §7: mons "grow via EXP/level").
     ///
-    /// **The whole line-up is paid, not just the survivors**, and the amount is the same for a
-    /// Gym as for a wild fight. Both of those used to be otherwise — survivors only, and a Gym
-    /// worth three PvE nodes — and both changed when EXP became a small counter rather than a
-    /// points pool (see ExperienceResolver): at one point per win there's no room left to express
-    /// "more" without making a Gym worth an instant evolution, and paying only the survivors would
-    /// mean a Reserve mon behind a Lead that never faints can never grow at all.
+    /// **A win pays by the level of what was beaten**: <see cref="BaseExpPerWin"/> plus the foes'
+    /// average level, doubled for a Gym. Scaling with the foe is what keeps the rising level curve
+    /// (ExperienceResolver) moving at a steady pace across all eight badges; a flat reward would
+    /// either race through the early game or crawl through the late one.
     ///
-    /// The amount is a flat placeholder like every other number in the EXP model (PLAN.md §10).</summary>
+    /// **The whole line-up is paid, not just the survivors** — a Reserve behind a Lead that never
+    /// faints would otherwise never grow — and then everything the run owns is caught up
+    /// (ExperienceResolver.ApplyCatchUp), so the Box isn't left behind either.</summary>
     public static class BattleRewardResolver
     {
-        /// <summary>EXP each mon in the line-up earns for a won fight.</summary>
-        public const int ExpPerWin = 1;
+        /// <summary>EXP a win pays on top of the foes' average level.</summary>
+        public const int BaseExpPerWin = 2;
 
-        /// <summary>Pays the run's line-up for a win and returns the evolutions it set off, so the
-        /// caller can tell the player about them — three wins is a mon's first evolution, which is
-        /// the one thing here worth more than a number ticking up.</summary>
-        public static List<ExperienceResolver.Evolution> GrantWinRewards(RunState state, PokemonSpeciesLibrary library)
+        /// <summary>A Gym pays this many times what a wild fight at its level would.</summary>
+        public const int GymExpMultiplier = 2;
+
+        /// <summary>EXP each mon in the line-up earns for beating <paramref name="enemyLineUp"/>.</summary>
+        public static int ExpForWin(IReadOnlyList<PokemonInstance> enemyLineUp, bool isGym)
         {
-            var evolutions = new List<ExperienceResolver.Evolution>();
+            int total = 0;
+            int count = enemyLineUp?.Count ?? 0;
+            for (int i = 0; i < count; i++)
+            {
+                total += ExperienceResolver.LevelOf(enemyLineUp[i]);
+            }
+            int averageLevel = count > 0 ? (int)Math.Round((double)total / count, MidpointRounding.AwayFromZero) : 1;
+            return (BaseExpPerWin + averageLevel) * (isGym ? GymExpMultiplier : 1);
+        }
+
+        /// <summary>Pays the run's line-up for a win and reports what grew. Box mons the catch-up
+        /// raised aren't in the report: they didn't fight, and the Team screen shows where they got to.</summary>
+        public static GrowthReport GrantWinRewards(RunState state, IReadOnlyList<PokemonInstance> enemyLineUp, bool isGym,
+            PokemonSpeciesLibrary library)
+        {
+            var report = new GrowthReport();
             if (state == null)
             {
-                return evolutions;
+                return report;
             }
 
+            int amount = ExpForWin(enemyLineUp, isGym);
+            report.ExpGranted = amount;
             foreach (var mon in state.LineUp)
             {
-                evolutions.AddRange(ExperienceResolver.GrantExp(mon, ExpPerWin, library));
+                report.Merge(ExperienceResolver.GrantExp(mon, amount, library));
             }
-            return evolutions;
+            ExperienceResolver.ApplyCatchUp(state, library);
+            return report;
         }
     }
 }

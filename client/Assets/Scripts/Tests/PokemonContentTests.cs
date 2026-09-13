@@ -37,18 +37,21 @@ namespace Pets.Tests
         }
 
         [Test]
-        public void EverySpecies_ConvertsToAPokemonInstance_WithBaseStatsIntact()
+        public void EverySpecies_ConvertsToAPokemonInstance_WithItsLevelOneStats()
         {
             var library = LoadSpeciesLibrary();
 
             foreach (var species in library.AllSpecies)
             {
                 var instance = PokemonInstanceFactory.Create(species, $"{species.DisplayName}#1");
+                var expected = StatGrowth.AtLevel(species, 1);
 
+                // Level 1 keeps Attack and Speed at the sheet's base values; Health is multiplied
+                // (StatGrowth.HealthMultiplier).
                 Assert.AreEqual(species.BaseAttack, instance.CurrentStats.Attack);
-                Assert.AreEqual(species.BaseHealth, instance.CurrentStats.Health);
+                Assert.AreEqual(species.BaseHealth * StatGrowth.HealthMultiplier, instance.CurrentStats.Health);
                 Assert.AreEqual(species.BaseSpeed, instance.CurrentStats.Speed);
-                Assert.AreEqual(species.BaseHealth, instance.CurrentHP);
+                Assert.AreEqual(expected.Health, instance.CurrentHP);
                 Assert.AreEqual(species.Passive.Id, instance.PassiveId);
                 Assert.IsNotNull(instance.ResolvedPassive);
                 Assert.AreEqual(species.Passive.Effects.Count, instance.ResolvedPassive.Effects.Count);

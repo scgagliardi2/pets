@@ -29,7 +29,16 @@ namespace Pets.Gameplay
 
         public void GoToCharacterSelect() => ScreenFade.TransitionTo(SceneNames.CharacterSelect);
 
-        public void GoToMap() => ScreenFade.TransitionTo(SceneNames.Map);
+        /// <summary>The Ingame Menu's "Back to Map". A run between Locations has no map to go back to
+        /// — its last one ended at a Gym — so this lands on the Region Hub instead.</summary>
+        public void GoToMap() => ScreenFade.TransitionTo(MapOrHubFor(ActiveRun.State));
+
+        public void GoToRegionHub() => ScreenFade.TransitionTo(SceneNames.RegionHub);
+
+        /// <summary>Where "the map" is for this run right now: the Location's map, or the Region Hub
+        /// while a next Location still has to be picked.</summary>
+        public static string MapOrHubFor(Pets.Meta.RunState state) =>
+            state != null && state.NeedsLocationChoice ? SceneNames.RegionHub : SceneNames.Map;
 
         public void GoToIngameMenu() => ScreenFade.TransitionTo(SceneNames.IngameMenu);
 

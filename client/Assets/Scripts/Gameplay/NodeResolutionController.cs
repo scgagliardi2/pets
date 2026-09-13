@@ -66,15 +66,18 @@ namespace Pets.Gameplay
             }
 
             var run = map.Run;
+            // A Map opened on its own has no Location behind it; LocationCatalog falls back to the
+            // Forest so there's still something to fight.
+            var typeBias = LocationCatalog.CurrentFor(run).TypeBias;
             switch (node.Type)
             {
                 case NodeType.PvE:
                     StartBattle(EncounterGenerator.GenerateWildLineUp(
-                        library, ForestLocationFactory.TypeBias, SeedFor(run, node), $"wild-{node.Id}"), node, isGym: false);
+                        library, typeBias, run.BadgeCount, node.Layer, SeedFor(run, node), $"wild-{node.Id}"), node, isGym: false);
                     break;
                 case NodeType.Gym:
                     StartBattle(GymTeamGenerator.Generate(
-                        library, run.LineUp.Count, SeedFor(run, node)), node, isGym: true);
+                        library, typeBias, run.BadgeCount, run.LineUp.Count, SeedFor(run, node)), node, isGym: true);
                     break;
                 case NodeType.Camp:
                     campOverlay.gameObject.SetActive(true);
@@ -91,9 +94,10 @@ namespace Pets.Gameplay
         ///
         /// Built from the node's position rather than its id: string.GetHashCode isn't guaranteed to
         /// be the same value in the next process, so once runs are saved and resumed, hashing the id
-        /// would quietly re-roll the encounter a saved run was carrying.</summary>
+        /// would quietly re-roll the encounter a saved run was carrying. The badge count is folded in
+        /// so the same map position in two Locations isn't the same fight.</summary>
         private static int SeedFor(RunState run, LocationMapNode node) =>
-            run.RunSeed ^ (node.Layer * 397 + node.IndexInLayer);
+            run.RunSeed ^ (node.Layer * 397 + node.IndexInLayer) ^ (run.BadgeCount * 7919);
 
         private void StartBattle(List<PokemonInstance> enemyLineUp, LocationMapNode node, bool isGym)
         {

@@ -45,7 +45,7 @@ namespace Pets.EditorTools
         private const float ButtonHeight = 64f;
         private const float MenuButtonWidth = 150f;
         private const float NewMapButtonWidth = 200f;
-        private const float ResourceBarWidth = 280f;
+        private const float ResourceBarWidth = 460f;
 
         [MenuItem("Pets/Build Location Map Scene")]
         public static void Build()
@@ -94,13 +94,14 @@ namespace Pets.EditorTools
             // the player decides which fight to take. Right corner of the title bar, opposite the
             // Menu button and clear of the centered title.
             var (resourceBar, resourceValues) = CreateResourceBar(
-                titleBar, "ResourceBar", new Vector2(1f, 0f), new Vector2(1f, 1f), new[] { "Morale", "Money" });
+                titleBar, "ResourceBar", new Vector2(1f, 0f), new Vector2(1f, 1f), new[] { "Morale", "Money", "Badges" });
             resourceBar.pivot = new Vector2(1f, 0.5f);
             resourceBar.sizeDelta = new Vector2(ResourceBarWidth, 0f);
             resourceBar.anchoredPosition = new Vector2(-SideMargin, 0f);
             var resourceBarController = resourceBar.gameObject.AddComponent<ResourceBarController>();
             SetField(resourceBarController, "moraleValue", resourceValues[0]);
             SetField(resourceBarController, "moneyValue", resourceValues[1]);
+            SetField(resourceBarController, "badgesValue", resourceValues[2]);
 
             // Vertical scrolling as well as horizontal: the taller chrome these sprite buttons
             // need leaves the map area 560 units high, and the widest map the generator can
@@ -146,6 +147,7 @@ namespace Pets.EditorTools
             SetField(controller, "scrollRect", scrollRect);
             SetField(controller, "statusText", statusText);
             SetField(controller, "newMapButton", newMapButton);
+            SetField(controller, "titleText", titleText);
 
             // Last children of the canvas, so they draw over the map and its chrome; each covers
             // the screen and takes the raycast, which is what makes them modal. Left inactive —
@@ -196,8 +198,9 @@ namespace Pets.EditorTools
 
         /// <summary>Starting Lead/Support for a run begun without going through Character Select
         /// (opening this scene directly in the Editor). A real hand-off overrides these via
-        /// PendingRunSelection — see RunBootstrapper.</summary>
-        private static void CreateBootstrapper()
+        /// PendingRunSelection — see RunBootstrapper. Shared with RegionHubSceneBuilder, which is
+        /// where Character Select's hand-off actually lands now.</summary>
+        public static void CreateBootstrapper()
         {
             var bootstrapper = new GameObject("RunBootstrapper").AddComponent<RunBootstrapper>();
             SetField(bootstrapper, "speciesLibrary",

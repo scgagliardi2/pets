@@ -20,10 +20,30 @@ namespace Pets.Meta
         /// <summary>Caught/adopted mons not currently in the active line-up.</summary>
         public List<PokemonInstance> Box = new List<PokemonInstance>();
 
+        /// <summary>Morale a run starts with, and what earning a badge restores it to.</summary>
+        public const int StartingMorale = 3;
+
         public int Money;
 
-        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.</summary>
-        public int Morale = 3;
+        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run. Refilled by each
+        /// badge (<see cref="EarnBadge"/>), so it's a per-Location budget of losses rather than one
+        /// that has to last all eight Gyms.</summary>
+        public int Morale = StartingMorale;
+
+        /// <summary>The Location the run is in, or null while it's at the Region Hub choosing the
+        /// next one (design doc §5.2).</summary>
+        public LocationType? CurrentLocation;
+
+        /// <summary>Every Location whose Gym has fallen, oldest first. One badge each.</summary>
+        public List<LocationType> CompletedLocations = new List<LocationType>();
+
+        public int BadgeCount => CompletedLocations.Count;
+
+        /// <summary>All eight badges earned (RunProgression.BadgesToWin) — the run is won.</summary>
+        public bool IsRunWon => BadgeCount >= RunProgression.BadgesToWin;
+
+        /// <summary>The run is between Locations and has to pick its next one at the Region Hub.</summary>
+        public bool NeedsLocationChoice => CurrentLocation == null && !IsRunWon && !IsRunOver;
 
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —
@@ -44,6 +64,30 @@ namespace Pets.Meta
         public float NextBattleAttackBonusPercent;
 
         public bool IsRunOver => Morale <= 0;
+
+        /// <summary>Sets off for a Location chosen at the Region Hub: its map is generated fresh when
+        /// the Map scene next shows it.</summary>
+        public void TravelTo(LocationType location)
+        {
+            CurrentLocation = location;
+            LocationMap = null;
+            VisitedMapNodeIds.Clear();
+        }
+
+        /// <summary>The Gym has fallen: the Location is completed and the run returns to the Region
+        /// Hub. Morale is refilled and any unspent Pokémon Center buff lapses with the Location.
+        ///
+        /// A run with no Location chosen (a Map scene opened on its own) is credited with the one its
+        /// encounters were rolled from, LocationCatalog.Fallback, so a badge is never lost.</summary>
+        public void EarnBadge()
+        {
+            CompletedLocations.Add(CurrentLocation ?? LocationCatalog.Fallback);
+            CurrentLocation = null;
+            LocationMap = null;
+            VisitedMapNodeIds.Clear();
+            NextBattleAttackBonusPercent = 0f;
+            Morale = StartingMorale;
+        }
 
         /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team
         /// screen offers so far: with exactly two active slots (design doc §7) it's unambiguous,

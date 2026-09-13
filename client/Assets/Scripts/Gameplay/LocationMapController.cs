@@ -98,6 +98,9 @@ namespace Pets.Gameplay
         [SerializeField] private Text statusText;
         [SerializeField] private Button newMapButton;
 
+        /// <summary>The title bar's label, which names the Location and which Gym it leads to.</summary>
+        [SerializeField] private Text titleText;
+
         [Tooltip("0 = a fresh random seed each time this scene runs.")]
         [SerializeField] private int seed;
 
@@ -186,9 +189,24 @@ namespace Pets.Gameplay
         public RunState Run =>
             standaloneRun ?? (ActiveRun.HasRun ? ActiveRun.State : standaloneRun = new RunState());
 
+        /// <summary>"Forest - Gym 3 of 8" for a run in a Location; a plain label for a map opened
+        /// with no Location behind it.</summary>
+        public static string TitleFor(RunState run)
+        {
+            if (run?.CurrentLocation == null)
+            {
+                return "Location Map";
+            }
+            return $"{LocationCatalog.Get(run.CurrentLocation.Value).DisplayName} - Gym {run.BadgeCount + 1} of {RunProgression.BadgesToWin}";
+        }
+
         private void Build(LocationMapTraversal traversal)
         {
             Traversal = traversal;
+            if (titleText != null)
+            {
+                titleText.text = TitleFor(Run);
+            }
             var map = traversal.Map;
 
             EnsureContainers();

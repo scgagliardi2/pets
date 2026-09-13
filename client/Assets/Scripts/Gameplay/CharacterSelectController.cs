@@ -109,7 +109,9 @@ namespace Pets.Gameplay
         {
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
-            ScreenFade.TransitionTo(SceneNames.Map);
+            // To the Region Hub, which bootstraps the run from this pair and offers its first
+            // Location (design doc §3 step 5).
+            ScreenFade.TransitionTo(SceneNames.RegionHub);
         }
 
         public void OnSortAttackClicked() => toolbar.SortByAttack();

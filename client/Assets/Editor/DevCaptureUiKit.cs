@@ -60,6 +60,20 @@ namespace Pets.EditorTools
         public static void CaptureLocationMapScenePlaying() =>
             CapturePlaying(LocationMapSceneBuilder.ScenePath);
 
+        /// <summary>The Region Hub fills its three cards in Start. Seeded two badges in, so the
+        /// header, the level preview and the Badges readout all show something past the defaults.</summary>
+        [MenuItem("Pets/Dev/Capture Region Hub Scene (Playing)")]
+        public static void CaptureRegionHubScenePlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState { RunSeed = 12345 };
+            run.CompletedLocations.Add(Pets.Meta.LocationType.Forest);
+            run.CompletedLocations.Add(Pets.Meta.LocationType.Cave);
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtLevel(library.AllSpecies[0], "capture-0", 7, library));
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+            CapturePlaying(RegionHubSceneBuilder.ScenePath);
+        }
+
         /// <summary>The Battle screen redirects to Character Select without a party, so a
         /// three-mon run from the library's first species is seeded first — before Play mode is
         /// entered, since Start runs before the EnteredPlayMode callback would get a chance.</summary>

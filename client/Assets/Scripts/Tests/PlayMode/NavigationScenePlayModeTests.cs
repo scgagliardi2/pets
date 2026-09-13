@@ -191,8 +191,9 @@ namespace Pets.Tests
             AssertNavigatesVia("MenuButton", nameof(SceneNavigator.GoToIngameMenu));
         }
 
-        /// <summary>The Map is where a run is created now that Character Select hands off to it,
-        /// so its bootstrapper has to publish that run for the Team screen in the next scene.</summary>
+        /// <summary>Character Select hands off to the Region Hub now, but the Map keeps its own
+        /// bootstrapper so the scene still works opened on its own — and it has to publish that run for
+        /// the Team screen in the next scene.</summary>
         [UnityTest]
         public IEnumerator LocationMapScene_BootstrapsARunAndPublishesItToActiveRun()
         {
@@ -405,7 +406,7 @@ namespace Pets.Tests
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the dragged duplicate should be consumed");
             Assert.AreEqual("mon-0", ActiveRun.State.LineUp[0].InstanceId, "the mon dropped onto is the survivor");
-            Assert.AreEqual(CombineResolver.ExpGranted, ActiveRun.State.LineUp[0].Exp);
+            Assert.AreEqual(2, ExperienceResolver.LevelOf(ActiveRun.State.LineUp[0]), "a combine raises the survivor one level");
             Assert.IsNull(GameObject.Find("CombineConfirm"), "the dialog should be closed again");
         }
 

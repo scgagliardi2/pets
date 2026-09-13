@@ -273,13 +273,11 @@ namespace Pets.Gameplay
             var card = PokemonCardBuilder.CreateCard(slot, "Card");
             Stretch(card.GetComponent<RectTransform>());
 
-            // EXP rather than a level: with a flat gain per point there is no level any more (see
-            // Meta/ExperienceResolver), and the count that matters to a player is how close this mon
-            // is to evolving — so it's shown as progress toward that whenever there's something to
-            // evolve into.
-            string growth = ExperienceResolver.CanEverEvolve(mon, library)
-                ? $"EXP {mon.Exp}/{ExperienceResolver.ExpToNextEvolution(mon)}"
-                : $"EXP {mon.Exp}";
+            // The level, with the level this mon next evolves at when it has one — the two numbers a
+            // player plans a line-up around (see Meta/ExperienceResolver).
+            int level = ExperienceResolver.LevelOf(mon);
+            int? evolvesAt = ExperienceResolver.NextEvolutionLevel(mon, library);
+            string growth = evolvesAt.HasValue ? $"Lv {level}  Evo {evolvesAt.Value}" : $"Lv {level}";
             PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
                 CardRoleFontSize, FontStyle.Bold, Theme.TextMuted).name = "RoleText";
             PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.Load(species), CardSpriteHeight);

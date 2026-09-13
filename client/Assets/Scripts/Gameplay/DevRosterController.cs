@@ -76,7 +76,10 @@ namespace Pets.Gameplay
         {
             var state = ActiveRun.State;
             addedCount++;
-            var mon = PokemonInstanceFactory.Create(species, $"dev-{species.Id}-{addedCount}");
+            // At the run's catch-up level, the same rule a real catch follows, so a dev-added mon is as
+            // usable as a caught one rather than a level-1 dead weight.
+            var mon = ExperienceResolver.CreateAtLevel(species, $"dev-{species.Id}-{addedCount}",
+                ExperienceResolver.CatchUpLevel(state), speciesLibrary);
 
             bool partyFull = state.LineUp.Count >= RunState.MaxPartySize;
             var landedIn = target == RosterGroup.Party && !partyFull ? RosterGroup.Party : RosterGroup.Box;

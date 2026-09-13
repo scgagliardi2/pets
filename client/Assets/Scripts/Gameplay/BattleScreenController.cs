@@ -361,7 +361,7 @@ namespace Pets.Gameplay
             {
                 case BattleOutcome.SideAWins:
                     resultText.text = context == BattleContext.MapGym
-                        ? "Badge earned!\nLocation complete."
+                        ? "Badge earned!"
                         : "Victory!";
                     resultText.color = Theme.Positive;
                     break;
@@ -413,13 +413,24 @@ namespace Pets.Gameplay
                 return;
             }
 
-            // The run's line-up, not the battle's survivors: EXP is one point a win, and a Reserve
-            // behind a Lead that never faints would otherwise never grow (see BattleRewardResolver).
-            var evolutions = BattleRewardResolver.GrantWinRewards(state, library);
-            resultText.text += $"\nThe team gains {BattleRewardResolver.ExpPerWin} EXP.";
-            foreach (var evolution in evolutions)
+            // The run's line-up, not the battle's survivors: a Reserve behind a Lead that never
+            // faints would otherwise never grow (see BattleRewardResolver).
+            bool isGym = context == BattleContext.MapGym;
+            var growth = BattleRewardResolver.GrantWinRewards(state, nodeEnemyLineUp, isGym, library);
+            resultText.text += $"\nThe team gains {growth.ExpGranted} EXP.";
+            string grew = growth.Describe();
+            if (grew.Length > 0)
             {
-                resultText.text += $"\n{evolution.FromName} evolved into {evolution.ToName}!";
+                resultText.text += "\n" + grew;
+            }
+
+            if (isGym)
+            {
+                // After the EXP, so the Location's last reward lands before the run leaves it.
+                state.EarnBadge();
+                resultText.text += state.IsRunWon
+                    ? $"\nAll {RunProgression.BadgesToWin} badges! You're the Champion."
+                    : $"\nBadges: {state.BadgeCount} of {RunProgression.BadgesToWin}.";
             }
 
             if (context == BattleContext.MapPvE)
@@ -472,33 +483,35 @@ namespace Pets.Gameplay
         }
 
         /// <summary>A node fight's one way on from the result panel — the whole win-loss loop. A
-        /// broken run and a completed Location both end at Home (there's no Region Hub to pick the
-        /// next Location from yet — see ADR 0003), a Gym still standing is fought again, and
-        /// anything else returns to the map to keep walking.
+        /// broken run, and a run that has just won its eighth badge, end at Home; any other beaten Gym
+        /// returns to the Region Hub to pick the next Location (ADR 0006); a Gym still standing is
+        /// fought again; and anything else returns to the map to keep walking.
         ///
         /// The dev battle's own two buttons go straight to the navigator and never reach here.</summary>
         public void OnResultActionClicked()
         {
+            var state = ActiveRun.State;
             if (GymNeedsAnotherAttempt)
             {
                 // A fresh seed, not the node's: a retry is meant to be a new fight, not the same one
                 // played out again.
                 int seed = Random.Range(int.MinValue, int.MaxValue);
-                PendingBattle.Set(
-                    GymTeamGenerator.Generate(library, ActiveRun.State.LineUp.Count, seed), nodeId, isGym: true, seed);
+                var team = GymTeamGenerator.Generate(library, LocationCatalog.CurrentFor(state).TypeBias,
+                    state.BadgeCount, state.LineUp.Count, seed);
+                PendingBattle.Set(team, nodeId, isGym: true, seed);
                 ScreenFade.TransitionTo(SceneNames.Battle);
                 return;
             }
 
-            bool locationComplete = context == BattleContext.MapGym && runner.Outcome == BattleOutcome.SideAWins;
-            if (ActiveRun.State.IsRunOver || locationComplete)
+            if (state.IsRunOver || state.IsRunWon)
             {
                 ActiveRun.End();
                 ScreenFade.TransitionTo(SceneNames.Home);
                 return;
             }
 
-            ScreenFade.TransitionTo(SceneNames.Map);
+            bool locationComplete = context == BattleContext.MapGym && runner.Outcome == BattleOutcome.SideAWins;
+            ScreenFade.TransitionTo(locationComplete ? SceneNames.RegionHub : SceneNames.Map);
         }
 
         /// <summary>The Gym is every path's terminus (design doc §14), so a run that's still alive
@@ -556,11 +569,11 @@ namespace Pets.Gameplay
                 // A different mon in this place (the first draw, or a promotion): nothing to drain from.
                 slot.Bound = mon;
                 var species = SpeciesOf(mon);
-                slot.Stats.Show(DisplayName(mon),
+                slot.Stats.Show(LabelWithLevel(mon),
                     species != null ? species.Type1 : PokemonType.Normal,
                     species != null && species.HasSecondType,
                     species != null ? species.Type2 : PokemonType.Normal,
-                    mon.CurrentStats.Attack, mon.CurrentStats.Speed, PokemonSpeciesDefinitionAsset.MaxBaseSpeed);
+                    mon.CurrentStats.Attack, mon.CurrentStats.Speed, SpeedCeilingFor(mon));
                 slot.Stats.HealthBar.SetHealth(mon.CurrentHP, maxHp);
                 slot.Sprite.sprite = PokemonSprites.Load(species);
             }
@@ -668,5 +681,17 @@ namespace Pets.Gameplay
             var species = SpeciesOf(mon);
             return species != null ? species.DisplayName : mon.InstanceId;
         }
+
+        /// <summary>The stat box's name line: the mon's name and level, so a player can see how a
+        /// fight is pitched before it plays out.</summary>
+        private string LabelWithLevel(BattleCombatant mon) =>
+            mon.Source != null ? $"{DisplayName(mon)} Lv {ExperienceResolver.LevelOf(mon.Source)}" : DisplayName(mon);
+
+        /// <summary>What the speed bar is drawn against: the fastest a species could be at this mon's
+        /// level, so a grown mon's bar still means something rather than pinning full.</summary>
+        private static int SpeedCeilingFor(BattleCombatant mon) =>
+            mon.Source != null
+                ? StatGrowth.SpeedCeilingAtLevel(ExperienceResolver.LevelOf(mon.Source))
+                : PokemonSpeciesDefinitionAsset.MaxBaseSpeed;
     }
 }

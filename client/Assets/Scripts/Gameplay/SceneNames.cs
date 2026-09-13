@@ -10,6 +10,10 @@ namespace Pets.Gameplay
         public const string Home = "Home";
         public const string CharacterSelect = "CharacterSelect";
         public const string Map = "LocationMap";
+
+        /// <summary>The Region Hub (see RegionHubController) — where a run picks its next Location,
+        /// after Character Select and after every Gym.</summary>
+        public const string RegionHub = "RegionHub";
         public const string IngameMenu = "IngameMenu";
         public const string Team = "Team";
         public const string History = "History";

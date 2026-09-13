@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Pets.Data;
 using Pets.Simulation;
 
@@ -13,10 +12,10 @@ namespace Pets.Meta
     ///   are different mons with different stats, and merging across stages would need a rule for
     ///   which one survives that the design doc doesn't give.
     /// - The mon that **survives is the target** (the one dropped onto); the one dragged is
-    ///   consumed. Its own EXP is not carried over — a combine is worth a flat
-    ///   <see cref="ExpGranted"/>, the same whether the duplicate was fresh or veteran. That's the
-    ///   simple reading of "grant EXP to one of them", and it stays a dupe sink rather than a way
-    ///   to launder a whole second mon's growth.
+    ///   consumed. It gains **exactly one level** (<see cref="ExpFor"/>), however far into its current
+    ///   level it already was and whatever the duplicate had earned — a combine is a dupe sink, not a
+    ///   way to launder a second mon's growth. A level rather than a fixed EXP amount so a combine is
+    ///   worth the same at level 3 as at level 23.
     /// - A combine can't empty the line-up, the same rule every other way of losing a mon obeys
     ///   (RunState.CanReleaseMon).
     ///
@@ -24,9 +23,11 @@ namespace Pets.Meta
     /// stats and follow an evolution — RunState is deliberately library-free.</summary>
     public static class CombineResolver
     {
-        /// <summary>EXP the surviving mon gains. Two battle wins' worth: enough that feeding a
-        /// duplicate is clearly better than carrying it, without being a shortcut past playing.</summary>
-        public const int ExpGranted = 2;
+        /// <summary>EXP that takes <paramref name="survivor"/> up exactly one level: the cost of its
+        /// current level. Adding it lands short of the level after next wherever in the level the mon
+        /// started, because each level costs more than the one before.</summary>
+        public static int ExpFor(PokemonInstance survivor) =>
+            ExperienceResolver.ExpForLevelUp(ExperienceResolver.LevelOf(survivor));
 
         /// <summary>What a combine would do, or why it can't happen — so the Team screen can put
         /// the reason in front of the player instead of a card that snaps back with no
@@ -70,21 +71,20 @@ namespace Pets.Meta
                 return new Eligibility(false, $"{name} is the last mon in your party.\nYou can't be left with none.");
             }
 
+            int nextLevel = ExperienceResolver.LevelOf(survivor) + 1;
             return new Eligibility(true,
-                $"Combine two {name}?\nOne is consumed; the other gains {ExpGranted} EXP. This cannot be undone.");
+                $"Combine two {name}?\nOne is consumed; the other grows to Lv {nextLevel}. This cannot be undone.");
         }
 
         /// <summary>Consumes the mon at <paramref name="fromIndex"/> into the one at
-        /// <paramref name="toIndex"/>, granting it <see cref="ExpGranted"/>. Returns the evolutions
-        /// that EXP set off (see ExperienceResolver.GrantExp) — combining is the fastest way to
-        /// reach an evolution threshold, so this is the common way a player sees one. Does nothing
-        /// and returns an empty list if <see cref="CanCombine"/> wouldn't allow it.</summary>
-        public static List<ExperienceResolver.Evolution> Combine(RunState state, RosterGroup fromGroup, int fromIndex,
+        /// <paramref name="toIndex"/>, raising it a level. Returns what grew. Does nothing and returns
+        /// an empty report if <see cref="CanCombine"/> wouldn't allow it.</summary>
+        public static GrowthReport Combine(RunState state, RosterGroup fromGroup, int fromIndex,
             RosterGroup toGroup, int toIndex, PokemonSpeciesLibrary library)
         {
             if (!CanCombine(state, fromGroup, fromIndex, toGroup, toIndex, library).Allowed)
             {
-                return new List<ExperienceResolver.Evolution>();
+                return new GrowthReport();
             }
 
             TryResolve(state, fromGroup, fromIndex, toGroup, toIndex, out _, out var survivor);
@@ -92,7 +92,9 @@ namespace Pets.Meta
             // Removed before the EXP is granted, so the run is never momentarily holding both the
             // consumed mon and a grown survivor — the Team screen redraws off this state.
             state.CollectionFor(fromGroup).RemoveAt(fromIndex);
-            return ExperienceResolver.GrantExp(survivor, ExpGranted, library);
+            var report = ExperienceResolver.GrantExp(survivor, ExpFor(survivor), library);
+            ExperienceResolver.ApplyCatchUp(state, library);
+            return report;
         }
 
         /// <summary>Resolves two slot addresses to the two mons, or false if either doesn't point

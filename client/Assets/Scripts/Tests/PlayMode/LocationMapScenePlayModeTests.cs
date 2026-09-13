@@ -36,15 +36,14 @@ namespace Pets.Tests
         // coroutine still fails well within a test's own timeout.
         private const int MoveTimeoutFrames = 20000;
 
-        /// <summary>EXP enough to put the test's mon's stats far beyond any curated species, so
-        /// every fight these tests walk into is won in a Step or two and Morale never enters the
-        /// picture.
+        /// <summary>A level high enough to put the test's mon's stats far beyond any first-Location
+        /// encounter, so every fight these tests walk into is won in a Step or two and Morale never
+        /// enters the picture.
         ///
-        /// Granted as EXP rather than written straight onto CurrentStats: stats are *derived* from
-        /// species + EXP (Meta/ExperienceResolver), so the first win's own EXP award would recompute
-        /// a hand-set CurrentStats right back down to the species' base and lose every fight
-        /// after it.</summary>
-        private const int UnbeatableExp = 1000;
+        /// Set as a level rather than written straight onto CurrentStats: stats are *derived* from
+        /// species + level (Meta/ExperienceResolver), so the first win's own EXP award would recompute
+        /// a hand-set CurrentStats right back down and lose every fight after it.</summary>
+        private const int UnbeatableLevel = ExperienceResolver.MaxLevel;
 
         private const int MapSeedSearchLimit = 500;
 
@@ -160,6 +159,8 @@ namespace Pets.Tests
         {
             Assert.AreEqual($"Morale {ActiveRun.State.Morale}", GameObject.Find("MoraleValue").GetComponent<Text>().text);
             Assert.AreEqual($"Money {ActiveRun.State.Money}", GameObject.Find("MoneyValue").GetComponent<Text>().text);
+            Assert.AreEqual($"Badges {ActiveRun.State.BadgeCount}/{RunProgression.BadgesToWin}",
+                GameObject.Find("BadgesValue").GetComponent<Text>().text);
             yield break;
         }
 
@@ -359,7 +360,8 @@ namespace Pets.Tests
 
             var battle = Object.FindFirstObjectByType<BattleScreenController>();
             Assert.IsNotNull(battle, "the Battle scene should be running the node's fight");
-            Assert.AreEqual(2, battle.State.LineUpB.Count, "a wild encounter is a pair (EncounterGenerator)");
+            Assert.AreEqual(RunProgression.WildEncounterSize(run.BadgeCount), battle.State.LineUpB.Count,
+                "a wild encounter's size comes from the run's progress (RunProgression)");
 
             yield return FinishFightAndReturnToMap();
 
@@ -423,10 +425,7 @@ namespace Pets.Tests
             Assert.IsNotNull(library, "the Map scene's RunBootstrapper should have published the curated library");
 
             var run = new RunState { RunSeed = 4242, LocationMap = LocationMapGenerator.Generate(mapSeed) };
-            var mon = PokemonInstanceFactory.Create(library.AllSpecies[0], "test-lead");
-            mon.Exp = UnbeatableExp;
-            ExperienceResolver.Recompute(mon, library);
-            run.LineUp.Add(mon);
+            run.LineUp.Add(ExperienceResolver.CreateAtLevel(library.AllSpecies[0], "test-lead", UnbeatableLevel, library));
 
             ActiveRun.End();
             ActiveRun.Begin(run, library);
@@ -459,7 +458,7 @@ namespace Pets.Tests
             FindActiveButton("SkipButton").onClick.Invoke();
             yield return null;
             Assert.AreEqual(BattleOutcome.SideAWins, battle.Outcome,
-                "the test party is built to win every fight — check UnbeatableStat");
+                "the test party is built to win every fight — check UnbeatableLevel");
 
             FindActiveButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Pets.Data;
 
 namespace Pets.Meta
@@ -7,25 +6,25 @@ namespace Pets.Meta
     /// line-up and a temporary Attack buff for the next fight.</summary>
     public static class CampResolver
     {
-        /// <summary>A rest is worth the same as a won fight. It used to be 30, back when EXP was a
-        /// points pool and a level cost 100 — carried over unchanged that would now be +300 to
-        /// every stat and ten evolutions in one click. See ExperienceResolver for the model.</summary>
-        public const int ExpGranted = 1;
-
         private const float NextBattleAttackBonusPercent = 0.2f;
 
-        /// <summary>Returns the evolutions the rest set off, for the same reason
-        /// BattleRewardResolver does — the Pokémon Center overlay is where the player would see
-        /// them.</summary>
-        public static List<ExperienceResolver.Evolution> Resolve(RunState state, PokemonSpeciesLibrary library)
+        /// <summary>A rest is worth what a wild win at the Location's baseline level would pay — about
+        /// a fight's worth of EXP, so choosing the Center over a Battle node isn't a sacrifice.</summary>
+        public static int ExpFor(RunState state) =>
+            BattleRewardResolver.BaseExpPerWin + RunProgression.BaselineLevel(state.BadgeCount);
+
+        public static GrowthReport Resolve(RunState state, PokemonSpeciesLibrary library)
         {
-            var evolutions = new List<ExperienceResolver.Evolution>();
+            var report = new GrowthReport();
+            int amount = ExpFor(state);
+            report.ExpGranted = amount;
             foreach (var mon in state.LineUp)
             {
-                evolutions.AddRange(ExperienceResolver.GrantExp(mon, ExpGranted, library));
+                report.Merge(ExperienceResolver.GrantExp(mon, amount, library));
             }
+            ExperienceResolver.ApplyCatchUp(state, library);
             state.NextBattleAttackBonusPercent = NextBattleAttackBonusPercent;
-            return evolutions;
+            return report;
         }
     }
 }
