@@ -363,6 +363,7 @@ namespace Pets.Gameplay
                     resultText.text = context == BattleContext.MapGym
                         ? "Badge earned!\nLocation complete."
                         : "Victory!";
+
                     resultText.color = Theme.Positive;
                     break;
                 case BattleOutcome.SideBWins:
@@ -428,6 +429,17 @@ namespace Pets.Gameplay
             {
                 OfferCatches();
             }
+
+            if (context == BattleContext.MapGym)
+            {
+                // Banks the badge and clears the map, which is what sends the player to the Region
+                // Hub to pick the next Location (RunState.CompleteLocation). Done here rather than
+                // on the Continue button so the result panel can say what the badge was worth.
+                state.CompleteLocation();
+                resultText.text += state.IsRunWon
+                    ? $"\n{state.Badges} badges. The run is won."
+                    : $"\nBadge {state.Badges} of {RegionTier.RegionsPerRun}.";
+            }
         }
 
         /// <summary>The stubbed catch (design doc §12.1 is the real, Step-boundary version): one
@@ -474,9 +486,9 @@ namespace Pets.Gameplay
         }
 
         /// <summary>A node fight's one way on from the result panel — the whole win-loss loop. A
-        /// broken run and a completed Location both end at Home (there's no Region Hub to pick the
-        /// next Location from yet — see ADR 0003), a Gym still standing is fought again, and
-        /// anything else returns to the map to keep walking.
+        /// broken run ends at Home and so does a won one (six badges, RunState.IsRunWon); a
+        /// completed Location goes to the Region Hub to choose the next one; a Gym still standing is
+        /// fought again; anything else returns to the map to keep walking.
         ///
         /// The dev battle's own two buttons go straight to the navigator and never reach here.</summary>
         public void OnResultActionClicked()
@@ -494,15 +506,16 @@ namespace Pets.Gameplay
                 return;
             }
 
-            bool locationComplete = context == BattleContext.MapGym && runner.Outcome == BattleOutcome.SideAWins;
-            if (ActiveRun.State.IsRunOver || locationComplete)
+            var state = ActiveRun.State;
+            if (state.IsRunOver || state.IsRunWon)
             {
                 ActiveRun.End();
                 ScreenFade.TransitionTo(SceneNames.Home);
                 return;
             }
 
-            ScreenFade.TransitionTo(SceneNames.Map);
+            bool locationComplete = context == BattleContext.MapGym && runner.Outcome == BattleOutcome.SideAWins;
+            ScreenFade.TransitionTo(locationComplete ? SceneNames.RegionHub : SceneNames.Map);
         }
 
         /// <summary>The Gym is every path's terminus (design doc §14), so a run that's still alive

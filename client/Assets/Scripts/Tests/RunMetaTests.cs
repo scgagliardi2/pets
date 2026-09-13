@@ -258,9 +258,9 @@ namespace Pets.Tests
                 MakeSpecies(2, "B", PokemonType.Bug),
                 MakeSpecies(3, "C", PokemonType.Flying));
 
-            var a = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99,
+            var a = EncounterGenerator.GenerateWildLineUp(library, LocationCatalog.TypeBiasFor(LocationType.Forest), seed: 99,
                 instanceIdPrefix: "wild", RegionTier.Encounter.Default);
-            var b = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99,
+            var b = EncounterGenerator.GenerateWildLineUp(library, LocationCatalog.TypeBiasFor(LocationType.Forest), seed: 99,
                 instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));

@@ -35,9 +35,14 @@ namespace Pets.Meta
         public int RegionIndex = 1;
 
         /// <summary>Gym Leaders beaten. Design doc §14 wants each badge to also grant a run-wide
-        /// passive; for now it's a counter and a win condition (RegionTier.BadgesToWin) — the
-        /// relic-style effect needs run-wide passives the effect vocabulary doesn't have yet.</summary>
+        /// passive; for now it's a counter and a win condition — the relic-style effect needs
+        /// run-wide passives the effect vocabulary doesn't have yet.</summary>
         public int Badges;
+
+        /// <summary>Which kind of Location the run is currently in — what its wild encounters are
+        /// biased toward (LocationCatalog), and what the map screen calls itself. Picked at the
+        /// Region Hub; the default only matters for a Map scene opened with no run behind it.</summary>
+        public LocationType CurrentLocation = LocationType.Forest;
 
         /// <summary>Total EXP this run has paid its line-up. Not a mon's EXP and not a sum of
         /// theirs — it's the run's own progress, and what the floor under every mon it owns is
@@ -69,6 +74,35 @@ namespace Pets.Meta
         public float NextBattleAttackBonusPercent;
 
         public bool IsRunOver => Morale <= 0;
+
+        /// <summary>The run is won once every Location's Gym has been beaten — the fixed-badge-count
+        /// answer to design doc §20's open "what ends a run" question (ADR 0006).</summary>
+        public bool IsRunWon => Badges >= RegionTier.RegionsPerRun;
+
+        /// <summary>True between Locations: the Gym is beaten, the map is gone, and the next thing
+        /// the player does is pick where to go. It's how Home's "Continue Run" knows to resume at
+        /// the Region Hub rather than at a map that no longer exists.</summary>
+        public bool IsBetweenLocations => LocationMap == null;
+
+        /// <summary>Enters the Location chosen at the Region Hub: its node-map is generated from
+        /// the offer's own seed, and the walk starts over at the new map's start node.</summary>
+        public void StartLocation(RegionHubGenerator.Offer offer, int layerCount)
+        {
+            CurrentLocation = offer.Type;
+            LocationMap = RegionMapGenerator.Generate(offer.MapSeed, layerCount);
+            VisitedMapNodeIds.Clear();
+        }
+
+        /// <summary>Banks a beaten Gym: a badge, the next Location's difficulty tier, and no map —
+        /// which is what sends the player back to the Region Hub to choose the next one. Doesn't
+        /// decide whether the run is over; <see cref="IsRunWon"/> is what the caller checks.</summary>
+        public void CompleteLocation()
+        {
+            Badges++;
+            RegionIndex++;
+            LocationMap = null;
+            VisitedMapNodeIds.Clear();
+        }
 
         /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team
         /// screen offers so far: with exactly two active slots (design doc §7) it's unambiguous,

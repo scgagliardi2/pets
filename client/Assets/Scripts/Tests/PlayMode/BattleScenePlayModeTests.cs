@@ -363,7 +363,7 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator GymFight_Won_CompletesTheLocation_AndEndsTheRunAtHome()
+        public IEnumerator GymFight_Won_BanksABadge_AndSendsTheRunToTheRegionHub()
         {
             var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth, isGym: true);
 
@@ -371,13 +371,38 @@ namespace Pets.Tests
             FindButton("SkipButton").onClick.Invoke();
             yield return null;
 
-            StringAssert.Contains("Badge earned", GameObject.Find("ResultText").GetComponent<Text>().text);
+            var resultText = GameObject.Find("ResultText").GetComponent<Text>().text;
+            StringAssert.Contains("Badge earned", resultText);
+            StringAssert.Contains($"Badge 1 of {RegionTier.RegionsPerRun}", resultText);
+            Assert.AreEqual(1, run.Badges);
+            Assert.AreEqual(2, run.RegionIndex, "the next Location is a tier harder");
+            Assert.IsTrue(run.IsBetweenLocations, "the beaten Location's map is done with");
             Assert.AreEqual(BattleRewardResolver.ExpPerGymWin, run.LineUp[0].Exp,
                 "a Gym is the Location's finale, and pays more than the fights on the way to it");
             Assert.IsNull(FindCatchButton(), "a Gym Leader's team isn't wildlife to catch");
 
             FindButton("ResultActionButton").onClick.Invoke();
-            // No Region Hub to pick the next Location from yet — see ADR 0003.
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.RegionHub);
+            Assert.IsTrue(ActiveRun.HasRun, "one badge in, the run carries on");
+        }
+
+        /// <summary>The last badge is the run's win condition (RunState.IsRunWon) — the one Gym
+        /// win that does end at Home.</summary>
+        [UnityTest]
+        public IEnumerator GymFight_WonOnTheLastBadge_EndsTheRunAtHome()
+        {
+            var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth, isGym: true);
+            run.Badges = RegionTier.RegionsPerRun - 1;
+            run.RegionIndex = RegionTier.RegionsPerRun;
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            Assert.IsTrue(run.IsRunWon);
+            StringAssert.Contains("run is won", GameObject.Find("ResultText").GetComponent<Text>().text);
+
+            FindButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
             Assert.IsFalse(ActiveRun.HasRun);
         }
