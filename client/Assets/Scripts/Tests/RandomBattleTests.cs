@@ -139,7 +139,8 @@ namespace Pets.Tests
 
             PrecomputedStepLogRunner.Run(battle.PlayerLineUp, battle.EnemyLineUp, battle.Seed);
 
-            Assert.IsTrue(party.All(m => m.CurrentHP == 40), "damage belongs to the combatants, not the run");
+            Assert.IsTrue(party.All(m => m.CurrentHP == 40 * StatGrowth.HealthScalar),
+                "damage belongs to the combatants, not the run");
             Assert.AreEqual(3, party.Count, "fainting in battle must not remove mons from the run");
         }
 

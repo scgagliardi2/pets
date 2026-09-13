@@ -413,10 +413,12 @@ namespace Pets.Gameplay
                 return;
             }
 
-            // The run's line-up, not the battle's survivors: EXP is one point a win, and a Reserve
-            // behind a Lead that never faints would otherwise never grow (see BattleRewardResolver).
-            var evolutions = BattleRewardResolver.GrantWinRewards(state, library);
-            resultText.text += $"\nThe team gains {BattleRewardResolver.ExpPerWin} EXP.";
+            // The run's line-up, not the battle's survivors: a Reserve behind a Lead that never
+            // faints would otherwise never grow (see BattleRewardResolver). What it pays depends on
+            // the node — a Gym is most of a level, a wild fight a third of one.
+            var nodeType = context == BattleContext.MapGym ? NodeType.Gym : NodeType.PvE;
+            var evolutions = BattleRewardResolver.GrantWinRewards(state, library, nodeType);
+            resultText.text += $"\nThe team gains {BattleRewardResolver.ExpForWin(nodeType)} EXP.";
             foreach (var evolution in evolutions)
             {
                 resultText.text += $"\n{evolution.FromName} evolved into {evolution.ToName}!";

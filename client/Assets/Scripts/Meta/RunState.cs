@@ -22,8 +22,33 @@ namespace Pets.Meta
 
         public int Money;
 
-        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.</summary>
-        public int Morale = 3;
+        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.
+        ///
+        /// 5, not the 3 it was, because a run is now six Locations rather than one: at ~27 fights
+        /// and the win rates RegionTier's enemy levels aim for, a run expects to lose about three
+        /// of them, and 3 Morale meant the average run died to arithmetic before its last badge
+        /// (ADR 0006).</summary>
+        public int Morale = 5;
+
+        /// <summary>Which Location of the run this is, 1-based — the difficulty tier everything
+        /// scales off (RegionTier), and the badge count's other half.</summary>
+        public int RegionIndex = 1;
+
+        /// <summary>Gym Leaders beaten. Design doc §14 wants each badge to also grant a run-wide
+        /// passive; for now it's a counter and a win condition (RegionTier.BadgesToWin) — the
+        /// relic-style effect needs run-wide passives the effect vocabulary doesn't have yet.</summary>
+        public int Badges;
+
+        /// <summary>Total EXP this run has paid its line-up. Not a mon's EXP and not a sum of
+        /// theirs — it's the run's own progress, and what the floor under every mon it owns is
+        /// derived from (RunProgression).</summary>
+        public int RunExp;
+
+        /// <summary>The level no mon this run owns is allowed to be below: one under what the run
+        /// has earned, so a mon that joins late is immediately playable while a mon that has been
+        /// here the whole time is still, just, ahead. See RunProgression for why this exists.</summary>
+        public int FloorLevel =>
+            System.Math.Max(LevelCurve.StartingLevel, LevelCurve.LevelForExp(RunExp) - 1);
 
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —

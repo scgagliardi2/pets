@@ -77,6 +77,9 @@ namespace Pets.Gameplay
             var state = ActiveRun.State;
             addedCount++;
             var mon = PokemonInstanceFactory.Create(species, $"dev-{species.Id}-{addedCount}");
+            // Joins at the run's floor like anything else the run acquires, so a mon stuffed in
+            // during Location 5 is testable rather than five Locations behind.
+            RunProgression.Onboard(state, mon, speciesLibrary);
 
             bool partyFull = state.LineUp.Count >= RunState.MaxPartySize;
             var landedIn = target == RosterGroup.Party && !partyFull ? RosterGroup.Party : RosterGroup.Box;
