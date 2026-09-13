@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using Pets.Data;
+using Pets.Simulation;
 
 namespace Pets.Meta
 {
@@ -74,5 +77,59 @@ namespace Pets.Meta
         public static bool AllowsLegendaries(bool isGym, int badges) => isGym && IsFinalLocation(badges);
 
         public static bool IsFinalLocation(int badges) => badges >= BadgesToWin - 1;
+
+        /// <summary>Pays the active line-up, tracks run-level EXP, and applies floor catch-up to the
+        /// whole roster. Returns evolutions triggered by the grant.</summary>
+        public static List<ExperienceResolver.Evolution> GrantToLineUp(
+            RunState state, int amount, PokemonSpeciesLibrary library)
+        {
+            var evolutions = new List<ExperienceResolver.Evolution>();
+            if (state == null || amount <= 0)
+            {
+                return evolutions;
+            }
+
+            state.RunExp += amount;
+            foreach (var mon in state.LineUp)
+            {
+                evolutions.AddRange(ExperienceResolver.GrantExp(mon, amount, library).Evolutions);
+            }
+
+            int floor = state.FloorLevel;
+            foreach (var mon in state.Box)
+            {
+                evolutions.AddRange(ExperienceResolver.SetMinLevel(mon, floor, library));
+            }
+            return evolutions;
+        }
+
+        /// <summary>Brings a just-acquired mon up to the run's floor level before it is surfaced.</summary>
+        public static List<ExperienceResolver.Evolution> Onboard(
+            RunState state, PokemonInstance mon, PokemonSpeciesLibrary library) =>
+            state == null
+                ? new List<ExperienceResolver.Evolution>()
+                : ExperienceResolver.SetMinLevel(mon, state.FloorLevel, library);
+
+        /// <summary>Raises all owned mons to the run floor. Idempotent for mons already above it.</summary>
+        public static List<ExperienceResolver.Evolution> ApplyFloor(RunState state, PokemonSpeciesLibrary library)
+        {
+            var evolutions = new List<ExperienceResolver.Evolution>();
+            if (state == null)
+            {
+                return evolutions;
+            }
+
+            int floor = state.FloorLevel;
+            foreach (var mon in state.LineUp)
+            {
+                evolutions.AddRange(ExperienceResolver.SetMinLevel(mon, floor, library));
+            }
+            foreach (var mon in state.Box)
+            {
+                evolutions.AddRange(ExperienceResolver.SetMinLevel(mon, floor, library));
+            }
+
+            return evolutions;
+        }
     }
 }

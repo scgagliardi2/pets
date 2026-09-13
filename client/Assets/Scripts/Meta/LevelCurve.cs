@@ -10,7 +10,7 @@ namespace Pets.Meta
     /// ~22 EXP per Location at BattleRewardResolver's rates. Six Locations is therefore ~132 EXP,
     /// which is exactly <see cref="TotalExpForLevel"/>(<see cref="MaxLevel"/>) — so a run that
     /// walks six Locations finishes at the cap, and one that walks five finishes a level or two
-    /// short. That relationship is the design, and RunBudgetTests asserts it rather than leaving it
+    /// short. That relationship is the design, and GrowthAndEvolutionTests asserts it rather than leaving it
     /// to drift the first time a node weight changes.
     ///
     /// Costs rise with level (<see cref="ExpToAdvanceFrom"/> is `6 + level`, so 7 EXP for the

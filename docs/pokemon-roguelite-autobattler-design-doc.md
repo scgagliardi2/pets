@@ -154,7 +154,7 @@ It ties directly into stats you already track (Speed, Type), reuses your existin
   | Rock | 14 | | | | |
 
 - **Stats are explicit placeholders.** Attack/HP/Speed are given directly per evolution stage in the sheet (not derived from anything) and are called out as very subject to change — treat every number as a first draft to be rebalanced once real battles are played.
-- **What the sheet's numbers mean in a fight** (as built, ADR 0006): they are a species at **level 1**. A mon's stats are `StatGrowth.StatsFor(sheet stats, level)` — Attack and Health grow by 10% of the sheet value plus a flat 3 per level, Speed does not grow at all (it drives the charge meter against a fixed threshold, §10.3), and every Health number is multiplied by 3 because the sheet's raw Health is roughly one hit and fights were ending in two Steps. Levels run 1–12 across a six-Location run.
+- **What the sheet's numbers mean in a fight** (as built, ADR 0006): they are a species at **level 1**. A mon's stats are `StatGrowth.StatsFor(sheet stats, level)` — Attack and Health grow by 10% of the sheet value plus a flat 3 for each level **above 1**, Speed does not grow at all (it drives the charge meter against a fixed threshold, §10.3), and every Health number is multiplied by 3 because the sheet's raw Health is roughly one hit and fights were ending in two Steps. Levels run 1–12 across a six-Location run.
 - **A Location's opposition is built at the run's level too** (`RegionTier`), a few levels below the party, and drawn only from evolution stages the run has reached — base forms early, everything by the last Location, with the 7 Legendaries reserved for the final Gym. That is what makes §4's difficulty tiers mean anything.
 - **Abilities are intentionally blank for now** — the sheet's Ability column is empty across all 183 rows; passives will be added later. Whenever they are, they should follow §10.3's framework (triggers when the mon's own charge meter fills, regardless of Lead/Support role) and lean on the Type-flavor seeds in §11 (Fire→burn, Water→shield/heal, Electric→paralyze/speed, and so on).
 - **Open assumption:** the 7 Legendaries above are folded into the same flat list/format as everything else here, with no rarity flag. Carrying forward §4's earlier design (Legendaries as ultra-rare, PvE-only, full-party-wipe-risk encounters), this doc still treats those 7 as Legendary-tier unless told otherwise.
@@ -332,9 +332,9 @@ Every Location has exactly one Gym — its mandatory final/boss node. Beating it
 
 ## 15. Morale, Win & Loss
 
-- Morale starts at some fixed value and decrements on a lost battle node. **As built:** 5, sized against a six-Location run's ~27 fights at the win rates `RegionTier` aims for, which expects about three losses (ADR 0006).
+- Morale starts at some fixed value and decrements on a lost battle node. **As built (ADR 0006):** 5, sized against a six-Location run's ~27 fights at the win rates `RegionTier` aims for, and each badge restores it to full.
 - `Morale <= 0` → run over, "Better luck next time" screen, achievements recorded regardless.
-- The run's win condition, **as built** (ADR 0006): eight badges. Morale starts at 3 and refills with each badge.
+- The run's win condition, **as built (ADR 0006):** six badges (one per Location's Gym).
 
 ---
 

@@ -32,8 +32,6 @@ namespace Pets.Meta
             var pool = EncounterPool.For(library, typeBias, badges, isGym: true);
             int size = RunProgression.GymTeamSize(badges, lineUpCount);
             int level = RunProgression.GymLevel(badges);
-
-            var pool = RegionTier.Filter(library.AllSpecies, tier);
             var rng = new DeterministicRandom(seed);
             var team = new List<PokemonInstance>(size);
             for (int i = 0; i < size; i++)

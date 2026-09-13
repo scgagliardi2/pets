@@ -113,9 +113,9 @@ namespace Pets.Meta
                 AllowsLegendaries(region, nodeType));
         }
 
-        /// <summary>Narrows a species list to what <paramref name="tier"/> allows. Falls back to
-        /// the list it was given rather than returning nothing: a pool that filters empty (a type
-        /// bias with no base forms in it, say) should make the encounter odd, not impossible.</summary>
+        /// <summary>Narrows a species list to what <paramref name="tier"/> allows. If that filters
+        /// empty, relaxes only the evolution-stage cap (still enforcing the Legendary rule) so an
+        /// encounter can still be built without reintroducing forbidden Legendaries.</summary>
         public static List<PokemonSpeciesDefinitionAsset> Filter(
             IReadOnlyList<PokemonSpeciesDefinitionAsset> species, Encounter tier)
         {
@@ -135,7 +135,18 @@ namespace Pets.Meta
 
             if (pool.Count == 0)
             {
-                pool.AddRange(species);
+                foreach (var candidate in species)
+                {
+                    if (candidate == null)
+                    {
+                        continue;
+                    }
+                    if (candidate.IsLegendary && !tier.AllowLegendaries)
+                    {
+                        continue;
+                    }
+                    pool.Add(candidate);
+                }
             }
             return pool;
         }

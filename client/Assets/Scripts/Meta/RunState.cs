@@ -25,6 +25,9 @@ namespace Pets.Meta
 
         public int Money;
 
+        /// <summary>Total EXP this run has paid out, for run-level progression systems.</summary>
+        public int RunExp;
+
         /// <summary>The run's life total (design doc §4). Hitting 0 ends the run. Refilled by each
         /// badge (<see cref="EarnBadge"/>), so it's a per-Location budget of losses rather than one
         /// that has to last all eight Gyms.</summary>
@@ -38,12 +41,16 @@ namespace Pets.Meta
         public List<LocationType> CompletedLocations = new List<LocationType>();
 
         public int BadgeCount => CompletedLocations.Count;
+        public int Badges => BadgeCount;
+        public int RegionIndex => BadgeCount + 1;
+        public int FloorLevel => System.Math.Max(LevelCurve.StartingLevel, LevelCurve.LevelForExp(RunExp) - 1);
 
         /// <summary>All eight badges earned (RunProgression.BadgesToWin) — the run is won.</summary>
         public bool IsRunWon => BadgeCount >= RunProgression.BadgesToWin;
 
         /// <summary>The run is between Locations and has to pick its next one at the Region Hub.</summary>
         public bool NeedsLocationChoice => CurrentLocation == null && !IsRunWon && !IsRunOver;
+        public bool IsBetweenLocations => CurrentLocation == null;
 
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —
@@ -74,6 +81,12 @@ namespace Pets.Meta
             VisitedMapNodeIds.Clear();
         }
 
+        public void StartLocation(RegionHubGenerator.Offer offer, int layerCount)
+        {
+            TravelTo(offer.Type);
+            LocationMap = LocationMapGenerator.Generate(offer.MapSeed, layerCount);
+        }
+
         /// <summary>The Gym has fallen: the Location is completed and the run returns to the Region
         /// Hub. Morale is refilled and any unspent Pokémon Center buff lapses with the Location.
         ///
@@ -88,6 +101,8 @@ namespace Pets.Meta
             NextBattleAttackBonusPercent = 0f;
             Morale = StartingMorale;
         }
+
+        public void CompleteLocation() => EarnBadge();
 
         /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team
         /// screen offers so far: with exactly two active slots (design doc §7) it's unambiguous,

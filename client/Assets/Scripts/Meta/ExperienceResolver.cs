@@ -134,6 +134,11 @@ namespace Pets.Meta
             return report;
         }
 
+        /// <summary>Raises <paramref name="mon"/> to at least <paramref name="level"/> and returns
+        /// only the evolutions that happened while doing so.</summary>
+        public static List<Evolution> SetMinLevel(PokemonInstance mon, int level, PokemonSpeciesLibrary library) =>
+            RaiseToLevel(mon, level, library).Evolutions;
+
         /// <summary>A mon of <paramref name="species"/> at <paramref name="level"/>, already evolved as
         /// far as that level allows — what a wild encounter, a Gym Leader's team, a catch and a new run
         /// are all built from.
