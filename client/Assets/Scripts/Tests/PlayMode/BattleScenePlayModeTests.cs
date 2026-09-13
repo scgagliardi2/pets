@@ -127,10 +127,13 @@ namespace Pets.Tests
             Assert.AreEqual(3, controller.State.LineUpA.Count);
             Assert.AreEqual(3, controller.State.LineUpB.Count, "the foe team matches the party's size");
 
-            Assert.AreEqual("Alpha", Stats("PlayerLeadStats").NameText.text);
-            Assert.AreEqual("Beta", Stats("PlayerSupportStats").NameText.text);
-            CollectionAssert.Contains(MonNames, Stats("EnemyLeadStats").NameText.text, "the foe is rolled from the library");
-            CollectionAssert.Contains(MonNames, Stats("EnemySupportStats").NameText.text);
+            // Name *and* level: the stat box carries the level that explains its numbers.
+            StringAssert.StartsWith("Alpha", Stats("PlayerLeadStats").NameText.text);
+            StringAssert.Contains("Lv 1", Stats("PlayerLeadStats").NameText.text);
+            StringAssert.StartsWith("Beta", Stats("PlayerSupportStats").NameText.text);
+            Assert.IsTrue(MonNames.Any(n => Stats("EnemyLeadStats").NameText.text.StartsWith(n)),
+                "the foe is rolled from the library");
+            Assert.IsTrue(MonNames.Any(n => Stats("EnemySupportStats").NameText.text.StartsWith(n)));
             Assert.AreEqual($"{TestFullHealth}/{TestFullHealth}", Stats("PlayerLeadStats").HealthBar.ValueLabel.text);
             Assert.AreEqual(TestAttack.ToString(), Stats("PlayerLeadStats").AttackText.text);
 
@@ -279,7 +282,7 @@ namespace Pets.Tests
             var controller = Controller();
 
             Assert.AreEqual(1, controller.State.LineUpB.Count, "the foe team is the one the node handed over");
-            Assert.AreEqual(WildName, Stats("EnemyLeadStats").NameText.text);
+            StringAssert.StartsWith(WildName, Stats("EnemyLeadStats").NameText.text);
             Assert.IsNotNull(controller.State.LineUpB[0].ResolvedPassive, "a node fight keeps its passives");
             Assert.IsFalse(PendingBattle.HasPending, "the pending fight is consumed once it starts");
             Assert.IsFalse(FindButton("BackButton", includeInactive: true).gameObject.activeInHierarchy,

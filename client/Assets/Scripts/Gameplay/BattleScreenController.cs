@@ -573,7 +573,7 @@ namespace Pets.Gameplay
                 // A different mon in this place (the first draw, or a promotion): nothing to drain from.
                 slot.Bound = mon;
                 var species = SpeciesOf(mon);
-                slot.Stats.Show(DisplayName(mon),
+                slot.Stats.Show(DisplayNameWithLevel(mon),
                     species != null ? species.Type1 : PokemonType.Normal,
                     species != null && species.HasSecondType,
                     species != null ? species.Type2 : PokemonType.Normal,
@@ -685,5 +685,14 @@ namespace Pets.Gameplay
             var species = SpeciesOf(mon);
             return species != null ? species.DisplayName : mon.InstanceId;
         }
+
+        /// <summary>Name plus level, for the four stat boxes — the level is what explains the
+        /// numbers under it, and on the wild side it's the only place a player can see that the
+        /// opposition scales with them (RegionTier) rather than being a fixed encounter. The party
+        /// strip along the bottom keeps the bare name; there's no room there for both.</summary>
+        private string DisplayNameWithLevel(BattleCombatant mon) =>
+            mon.Source == null
+                ? DisplayName(mon)
+                : $"{DisplayName(mon)}  Lv {ExperienceResolver.LevelOf(mon.Source)}";
     }
 }

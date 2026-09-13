@@ -194,17 +194,24 @@ doesn't map cleanly onto phase boundaries. The honest summary:
 
 *What you can actually play right now:* `Home` (also → `Pokedex`, the whole roster, browsable) →
 `CharacterSelect` (pick Starter + Secondary, from the 68 species under the stat-total cap) →
-`RegionMap` (walk a branching node map to the Gym) — and **arriving at a node now resolves it**: a
+`RegionHub` (pick one of three Locations) → `RegionMap` (walk a branching node map to the Gym) →
+back to the Hub for the next Location, six of them, six badges, and the run is won on the last
+(ADR 0006) — and **arriving at a node now resolves it**: a
 Battle node fights a seeded wild encounter on `Battle` with passives on, the Pokémon Center rests
 the team, the Gym fights a boss team, and Event/PvP show an honest "not built yet" modal. A won
 fight pays EXP and offers the stubbed catch; a lost one costs Morale, and at 0 Morale the run ends
-at Home. Beating the Gym completes the Location, which also ends the run at Home — there's no
-Region Hub to return to yet (ADR 0003). `IngameMenu` → `Team` (drag to rearrange/release) /
+at Home. Beating the Gym banks a badge, bumps the difficulty tier and returns to the Region Hub to
+pick the next Location; the sixth badge wins the run (ADR 0006).
+`IngameMenu` → `Team` (drag to rearrange/release) /
 `DevRoster` (stuff mons into the run) still hang off the map, plus `History` and `Credits` off Home,
 and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run nothing.
 
-*Verified green as of this writing:* 156 EditMode and 87 PlayMode tests pass (see CLAUDE.md for
-the CLI commands).
+*Verified green as of this writing:* 156 EditMode and 87 PlayMode tests passed at the 2026-09-12
+re-alignment. **The ADR 0006 work (levels, enemy scaling, the Region Hub) has not been run against
+the suites** — it was written in an environment with no Unity install. It adds `GrowthAndEvolutionTests`,
+`RegionTierTests`, `RunLoopTests` and `RegionHubScenePlayModeTests`, and the last of those needs
+`Pets > Build All Scenes` first, since `RegionHub.unity` is generated and isn't in the repo yet.
+Run both suites (see CLAUDE.md for the CLI commands) before trusting this line again.
 
 **Built and covered by tests:**
 - `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
@@ -323,13 +330,33 @@ rest of this file was written against their absence:
    forward-only, so a node is reached exactly once and "visited" already means "resolved" — there is
    no separate cleared flag.
 
-**Growth, as of ADR 0005:** EXP is a small counter — 1 per battle won (to the whole line-up, not
-just the survivors), 2 per duplicate combined in, 1 for a Pokémon Center rest. Each point is a flat
-+10 to Attack, Health and Speed, and every 3 points a mon evolves if its species can. Stats are
-*derived* from species + EXP rather than accumulated, so anything written onto `CurrentStats` that
+**Growth, as of ADR 0006** (which supersedes ADR 0005's numbers — its derived-stats rule survives):
+EXP buys **levels**, 1 to a cap of 12 across a six-Location run. A won PvE fight pays the whole
+line-up 3 EXP, PvP 4, a Gym 8, a Pokémon Center rest 2, a combined duplicate 6; a level costs
+`6 + level` to leave, so six Locations' expected node mix lands exactly on the cap. A level adds 10%
+of the species' *own* base Attack and Health plus a flat 3 — proportional, so the roster doesn't
+converge on identical numbers the way the old flat +10 did. **Speed doesn't grow** (it drives the
+charge meter against a fixed threshold; growing it would have every mon firing every Step by
+mid-run), and **every Health number is x3** (`StatGrowth.HealthScalar`) because the sheet's raw
+Health is about one hit and fights were ending in two Steps. Mons evolve at **levels 4 and 9** —
+first evolution in Location 2, final form by the end of Location 4.
+
+Stats stay *derived* (from species + level now), so anything written onto `CurrentStats` that
 doesn't follow from those two is overwritten on the next grant. 92 of the 183 species have a real
 PokeAPI evolution link; the three branching lines (Eevee, Tyrogue, Nincada) deliberately have none,
 so they can't evolve until a branch picker exists.
+
+**The run's floor level** (`RunState.FloorLevel`, `RunProgression`) holds every mon the run owns —
+line-up *and* Box — one level below what the run has earned. A mon caught or adopted in Location 5
+is therefore immediately playable and evolves on arrival, and a Box mon doesn't rot while the
+line-up fights. Personal EXP only matters above the floor, which makes combining duplicates the one
+way to push a single mon ahead of the run.
+
+**Difficulty scales with the run** (`RegionTier`): wild encounters are built 3 levels below the
+party, trainers 2, a Gym 1, all through the same growth rule — and the pool they're drawn from opens
+up by Location (base forms for 1–2, first evolutions for 3–4, everything for 5–6, Legendaries only
+at the final Gym). Morale starts at **5**, and a run is **six Locations and six badges**, won on the
+last one.
 
 **What the loop still doesn't do** (deliberate, see ADR 0003): a lost non-Gym fight costs Morale and
 nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; Event
@@ -341,9 +368,11 @@ stub; and money is never awarded, since there's no Shop to spend it in.
   `RegionMapController`, `RegionMapSceneBuilder`, `RegionMap.unity`, `SceneNames.Map`) is really
   the **Location** node-map from design doc §5 — branching PvE/Event/PvP/Camp converging on a
   mandatory Gym. The *Region* in the design doc (§4, §5.2) is the tier above it: the pool of
-  candidate Locations and the Region Hub that offers 3 of them. That screen doesn't exist yet, so
-  when it's built the current `RegionMap*` names should become `LocationMap*` first, or the two
-  tiers will be permanently confusing.
+  candidate Locations and the Region Hub that offers 3 of them. **That screen now exists**
+  (`RegionHub.unity`, `RegionHubController`, ADR 0006), so the two tiers are live in the same build
+  under confusingly similar names — renaming the `RegionMap*` set to `LocationMap*` went from
+  "should happen first" to overdue. It was left out of ADR 0006's change to keep a rename out of a
+  behavioral diff.
 - ~~`NodeType.Camp` labelled "Pokémon Center"~~ — settled with node resolution (ADR 0003): the node
   *is* the Pokémon Center (its map art and caption always were), and design doc §5.1's Camp effect
   (EXP + a next-fight Attack buff) is what resting there currently does. §5.2's adoption, and
@@ -353,11 +382,11 @@ stub; and money is never awarded, since there's no Shop to spend it in.
   well be the better shape for the game — but it's a live deviation from the design doc, not an
   implementation of it. See ADR 0002.
 
-**Also not built:** the real drag-and-drop catching system, evolution, the Trailblazer minigame
-(no `Scripts/Minigame` folder — it was never started), Pokémon Center adoption and healing, a real
-Shop economy, type synergy bonuses, the badge-as-relic reward behind the Gym win, Event and PvP node
-behavior, Region Hub / Location selection, paging the Box past six slots, and **any save/load
-layer** — which is why "Continue Run" only resumes a run still in memory this session, and why
+**Also not built:** the real drag-and-drop catching system, the branching-evolution picker
+(Eevee/Tyrogue/Nincada), the Trailblazer minigame (no `Scripts/Minigame` folder — it was never
+started), Pokémon Center adoption and healing, a real Shop economy, type synergy bonuses, the
+badge-as-relic reward behind the Gym win (badges are counted and shown, but do nothing — ADR 0006),
+Event and PvP node behavior, paging the Box past six slots, and **any save/load layer** — which is why "Continue Run" only resumes a run still in memory this session, and why
 History has nothing to list even now that a run can be finished. Save/load is Phase 2 in the list
 below but is arguably the thing most blocking the shell from feeling real.
 
@@ -385,13 +414,14 @@ retired hub scene (ADR 0002, ADR 0003).*
 - ✅ Node resolution on the map, one map model, the Gym fight, and the Morale/win-loss loop —
   including EXP for a won fight and the Location completing when the Gym falls (ADR 0003).
 - ✅ Also done out of order: the EXP/growth model, duplicate combining, and evolution along real
-  PokeAPI chains (ADR 0005).
+  PokeAPI chains (ADR 0005), then re-paced across a six-Location run together with enemy scaling,
+  the Region Hub and a badge-count win condition (ADR 0006).
 - Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), the full
   drag-and-drop catching system (Step-boundary throws, HP%/status-based odds) in place of the "pick
   1 from defeated" stub, Pokémon Center adoption and healing, type synergy bonuses, the
-  badge-as-relic reward and a Region Hub for a Gym win to return to, real Event and PvP nodes in
-  place of their modals, and the real Trailblazer minigame (lane obstacle-dodge, Speed/Type-driven
-  per §6 of the design doc). Each is its own piece of work, not a finishing touch on the above.
+  badge-as-relic reward, real Event and PvP nodes in place of their modals, and the real Trailblazer
+  minigame (lane obstacle-dodge, Speed/Type-driven per §6 of the design doc) in the slot the Region
+  Hub now leaves for it. Each is its own piece of work, not a finishing touch on the above.
 
 **Phase 2 — Content & breadth**
 - Events (narrative branches), the rest of the Location types (§4 of the design doc) and their
@@ -544,10 +574,11 @@ there's finally a run worth persisting, and a finished run with nothing to recor
    `NodeResolutionController`, with PvE/Gym handing an encounter to `Battle.unity` through
    `PendingBattle`, the Pokémon Center and the Event/PvP stubs resolving as modals on the map, and
    the Camp-vs-Center question settled in the Center's favor.
-3. **Gym/Badge node:** the fight, the Morale/win-loss loop and Location completion are in. Still
-   open here: the **Line-Up menu** (scout the opponent and reorder before the fight starts) and the
-   **badge-as-relic reward**, which needs somewhere for a relic to live and a Region Hub to carry it
-   between Locations.
+3. **Gym/Badge node:** the fight, the Morale/win-loss loop, Location completion and the badge count
+   are in, and a Gym win now returns to the Region Hub (ADR 0006). Still open here: the **Line-Up
+   menu** (scout the opponent and reorder before the fight starts) and the **badge-as-relic reward**
+   — the Hub exists to carry a relic between Locations now, but the effect vocabulary has no way to
+   express a run-wide passive.
 4. **Save/load.** Listed under Phase 2 below, but it's what "Continue Run", History, and any
    meta-progression all actually wait on — worth pulling forward now that a run can be played to a
    finish and nothing records that it happened.
@@ -565,10 +596,11 @@ there's finally a run worth persisting, and a finished run with nothing to recor
    secondary pick + cosmetics) if that distinction ends up mattering in play.
 9. ~~**Expand curated content past 28 species.**~~ Done — all 183 are imported (ADR 0004). What the
    expansion left behind, in rough priority order:
-   - **Filter the encounter pools.** `EncounterGenerator`, `GymTeamGenerator` and `RandomBattle`
-     draw from `library.AllSpecies` unfiltered, so the Forest's wild pool now runs from Caterpie to
-     Groudon. `IsLegendary` is imported and correct but read by nothing. This is the one place the
-     roster expansion actually made the game worse, and it's a small change.
+   - ~~**Filter the encounter pools.**~~ Done for the two that matter (ADR 0006): `EncounterGenerator`
+     and `GymTeamGenerator` draw through `RegionTier`, which filters by evolution stage per Location
+     and keeps Legendaries for the final Gym — `IsLegendary` is finally read by something. The dev
+     `RandomBattle` still draws from the whole library unfiltered, deliberately: it's a dev battle
+     with no run behind it to take a tier from.
    - **Real passives for the 155 imported species**, replacing the per-type placeholder.
    - ~~**Wire the evolution chains**~~ — done (ADR 0005). What's left there is the **branching
      picker**: Eevee, Tyrogue and Nincada can't evolve, because one `EvolvesInto` reference can't
