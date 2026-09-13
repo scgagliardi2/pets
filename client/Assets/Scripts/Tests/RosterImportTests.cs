@@ -70,6 +70,11 @@ namespace Pets.Tests
                     mismatches.Add($"{row.DisplayName}: tier {species.Tier} != the {row.Tier} its sheet " +
                                    $"stats ({row.Attack}/{row.Health}/{row.Speed}) resolve to");
                 }
+                if (species.HealthGrowthPercent != row.HealthGrowthPercent)
+                {
+                    mismatches.Add($"{row.DisplayName}: health growth {species.HealthGrowthPercent}% != " +
+                                   $"the {row.HealthGrowthPercent}% its sheet stats resolve to");
+                }
                 if (species.BaseAttack != row.TierStats.Attack || species.BaseHealth != row.TierStats.Health ||
                     species.BaseSpeed != row.TierStats.Speed)
                 {
@@ -145,8 +150,41 @@ namespace Pets.Tests
             }
 
             var byName = roster.ToDictionary(r => r.DisplayName);
-            AssertLine(byName["Charmander"], tier: 1, attack: 2, health: 2, speed: 1);
-            AssertLine(byName["Charmeleon"], tier: 2, attack: 7, health: 6, speed: 2);
+            AssertLine(byName["Charmander"], tier: 1, attack: 3, health: 4, speed: 1);
+            AssertLine(byName["Magikarp"], tier: 1, attack: 2, health: 5, speed: 1);
+        }
+
+        /// <summary>Health always beats Attack at the base line, so no mon can trade a lethal blow
+        /// with its own mirror before it has earned anything.</summary>
+        [Test]
+        public void EveryTierLine_PutsMoreInHealthThanAttack()
+        {
+            var offenders = SpeciesRosterImporter.ReadRoster()
+                .Where(r => r.TierStats.Health <= r.TierStats.Attack)
+                .Select(r => $"{r.DisplayName} {r.TierStats.Attack}/{r.TierStats.Health}")
+                .ToArray();
+
+            CollectionAssert.IsEmpty(offenders, "SpeciesTier.Distribute should cap Attack below Health");
+        }
+
+        /// <summary>The growth values have to actually separate a wall from a glass cannon, and the
+        /// one species the real games give a single hit point never gains any.</summary>
+        [Test]
+        public void GrowthValues_FavourHealth_AndSpreadAcrossTheRoster()
+        {
+            var roster = SpeciesRosterImporter.ReadRoster();
+            var byName = roster.ToDictionary(r => r.DisplayName);
+
+            Assert.AreEqual(0, byName["Shedinja"].HealthGrowthPercent, "Shedinja never gains Health");
+            Assert.Greater(byName["Metapod"].HealthGrowthPercent, byName["Charmander"].HealthGrowthPercent,
+                "a cocoon should bank more of its growth into Health than a starter does");
+
+            foreach (var row in roster.Where(r => r.DisplayName != "Shedinja"))
+            {
+                Assert.GreaterOrEqual(row.HealthGrowthPercent, SpeciesTier.MinHealthGrowthPercent,
+                    $"{row.DisplayName} favours Attack over Health");
+                Assert.LessOrEqual(row.HealthGrowthPercent, 100, row.DisplayName);
+            }
         }
 
         private static void AssertLine(SpeciesRosterImporter.RosterRow row, int tier, int attack, int health, int speed)

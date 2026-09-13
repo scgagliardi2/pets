@@ -15,8 +15,10 @@ namespace Pets.Meta
     /// rewards did, moved to the side of the ledger a player doesn't have to track.
     ///
     /// **The whole line-up is paid, not just the survivors** — a Reserve behind a Lead that never
-    /// faints would otherwise never grow — and then everything the run owns is caught up
-    /// (ExperienceResolver.ApplyCatchUp), so the Box isn't left behind either.</summary>
+    /// faints would otherwise never grow — and **nothing outside it is paid at all**. The Box sat in
+    /// storage; it doesn't share in a fight it wasn't at. The catch-up that follows
+    /// (ExperienceResolver.ApplyCatchUp) is line-up-only for the same reason: it exists so a mon just
+    /// promoted into the party isn't hopeless, not so benched mons level for free.</summary>
     public static class BattleRewardResolver
     {
         /// <summary>EXP a won fight pays every mon in the line-up. One, for every kind of fight.</summary>

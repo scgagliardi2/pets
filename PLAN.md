@@ -191,7 +191,7 @@ Select to starter-shaped mons (ADR 0004). On top of that the **EXP/growth/evolut
 works** — a won fight pays the line-up, mons grow, duplicates combine, and species evolve along
 their real chains (ADR 0005) — over an eight-badge run with a Region Hub between Locations
 (ADR 0007), and since ADR 0008 that growth is a Super Auto Pets–style tier line: a species is
-2/2/1, a win is +1/+1, and five wins is an evolution. "What's built" still
+3/4/1, a win buys +1 Attack or +1 Health, and twelve wins is an evolution (ADR 0009). "What's built" still
 doesn't map cleanly onto phase boundaries. The honest summary:
 
 *What you can actually play right now:* `Home` (also → `Pokedex`, the whole roster, browsable) →
@@ -206,7 +206,7 @@ returns to the Region Hub** for the next Location; the eighth badge wins the run
 `DevRoster` (stuff mons into the run) still hang off the map, plus `History` and `Credits` off Home,
 and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run nothing.
 
-*Verified green as of this writing:* 178 EditMode and 97 PlayMode tests pass (see CLAUDE.md for
+*Verified green as of this writing:* 191 EditMode and 98 PlayMode tests pass (see CLAUDE.md for
 the CLI commands).
 
 **Built and covered by tests:**
@@ -228,8 +228,9 @@ the CLI commands).
   (`RunProgression`), the nine Location types and the Region Hub's offers (`LocationCatalog`),
   filtered encounter pools (`EncounterPool`), seeded wild encounters and the Gym Leader's team
   pitched by badge count, the EXP/evolution model with catch-up (`ExperienceResolver`, with
-  stats from `Data/StatGrowth` and species tiers from `Data/SpeciesTier` — ADR 0008), a flat one
-  point per win (`BattleRewardResolver`), duplicate combining (`CombineResolver`), Camp's EXP+buff grant, the
+  stats from `Data/StatGrowth` and species tiers from `Data/SpeciesTier` — ADR 0008/0009), a flat one
+  point per win **paid to the line-up only, Box excluded** (`BattleRewardResolver`, ADR 0010),
+  duplicate combining (`CombineResolver`), Camp's EXP+buff grant, the
   stubbed "pick 1 from defeated" catch, and a branching map generator + traversal model
   (`LocationMapGenerator`, `LocationMapTraversal`) that produces no dead ends, no unreachable nodes
   and no crossing edges. Covered by `RunMetaTests.cs`, `RunProgressionTests.cs`,
@@ -241,7 +242,7 @@ the CLI commands).
   tests that click the real `Button`s in the saved scenes:
   - `Home.unity` — Continue Run (only when a run is live in memory) / New Game / History /
     Credits / Quit.
-  - `CharacterSelect.unity` — the starter-eligible slice of the roster (tier 1 only,
+  - `CharacterSelect.unity` — the starter-eligible slice of the roster (tier 1 only, 8-point mons,
     `CharacterSelectController.MaxStarterTier`; 54 of 183 today, since the library now
     holds evolutions and Legendaries too — ADR 0004) in a scrollable stat grid (each card laid out
     like a battle panel: name with a sword + attack, type icons, and HP/SPD bars from
@@ -265,7 +266,8 @@ the CLI commands).
   - `LocationMap.unity` — the branching map, flowing left to right, with a player token that slides
     between nodes, only forward-reachable nodes clickable, the walked path highlighted, a
     "New Map" re-roll, the Location and Gym number as its title, and the run's Morale/Money/Badges
-    in the title bar. Walking onto a node resolves it
+    plus Menu and **Team** buttons in the title bar — Team goes straight to `Team.unity` and its Back
+    button comes straight back here (`SceneNavigator.GoToTeam`/`ReturnFromTeam`). Walking onto a node resolves it
     (`Gameplay/NodeResolutionController`): Battle/Gym hand an encounter to `Battle.unity` through
     `PendingBattle` and leave; the Pokémon Center (`CampOverlay.prefab`) and the Event/PvP stub
     (`NodeEventOverlay.prefab`) resolve in place as modals over the map. Resolution is skipped
@@ -285,7 +287,7 @@ the CLI commands).
   - `Battle.unity` — the battle screen (design doc §10, §17), via `Gameplay/BattleScreenController`
     on the on-demand runner. It runs **node fights** (an encounter handed over by a map node through
     `PendingBattle`: passives on both sides, the Camp buff spent at line-up assembly, and the result
-    written back to the run — Morale on a defeat, EXP to the survivors, the stubbed catch offered on
+    written back to the run — Morale on a defeat, EXP to the whole line-up, the stubbed catch offered on
     a PvE win, a badge for beating the Gym) and, when nothing is pending, the original
     **dev random battle** off Team's button (a same-size team rolled by `Meta/RandomBattle` from the
     whole curated roster at the party's top EXP, passives stripped, costing the run nothing).
@@ -295,7 +297,10 @@ the CLI commands).
     types, name, attack, HP and SPD bars) for each active mon, the party along a bottom strip
     (`Prefabs/UI/BattlePartySlot.prefab`, gold frame = Lead, blue = Support, dimmed when fainted),
     and a pause / step / play / skip pill. Each Step drains HP over 2 seconds, fades whoever
-    fainted, then promotes; the result panel's two buttons say what the fight was (Battle Again /
+    fainted, then promotes; the result panel carries a headline plus a rewards list — the EXP, then
+    one line per party mon reading `Charmander  3/4/1 → 3/5/1  (+1 Health)`, then any evolution, the
+    badge, or the Morale a loss cost (`GrowthReport.GainLines`, ADR 0010) — and two buttons that say
+    what the fight was (Battle Again /
     Back to Team for a dev battle; Continue for a node fight, or Try Again for a Gym that's still
     standing). Autoplay at start follows the Settings screen's "Auto-play battles". Arriving with no
     run or an empty party redirects to Character Select (dropping the empty run).
@@ -337,18 +342,23 @@ rest of this file was written against their absence:
    forward-only, so a node is reached exactly once and "visited" already means "resolved" — there is
    no separate cleared flag.
 
-**Growth, as of ADR 0008:** every species sits in one of six **tiers**, and every species in a tier
-spends the same points across Attack/Health/Speed — 5 at tier 1, +10 a tier, up to 55. Charmander is
-2/2/1, Charmeleon 7/6/2, Charizard 12/11/2. The tiers are *derived* from the roster sheet's real
-base-stat totals by `Data/SpeciesTier` and written by the importer, never authored.
+**Growth, as of ADR 0008 + ADR 0009:** every species sits in one of six **tiers**, and every species
+in a tier spends the same points across Attack/Health/Speed — 8 at tier 1, +10 a tier, up to 58.
+**Health always beats Attack.** Charmander is 3/4/1, Magikarp 2/5/1. Each species also carries a
+**growth value** (`HealthGrowthPercent`, 50–100, and 0 for Shedinja). Both the tier line and the
+growth value are *derived* from the roster sheet's real stats by `Data/SpeciesTier` and written by
+the importer, never authored.
 
-**EXP is a count of wins, and a point is +1 Attack and +1 Health** (`Data/StatGrowth`) — no levels,
-no curve, no Health multiplier. Speed only ever changes by evolving. Everything pays exactly one
-point: a wild win, a Gym, a Pokémon Center rest, a combine. **Five points is an evolution**, and
-since a tier is worth exactly that much growth, evolving one tier up is stat-neutral and anything
-further is a real jump. `Exp` is lifetime and never resets; `TimesEvolved` records the five points
-each evolution charged against it. Stats stay *derived* from species + EXP, so anything written onto
-`CurrentStats` is overwritten on the next grant.
+**EXP is a count of wins, and a point is +1 Attack *or* +1 Health, never both** (`Data/StatGrowth`) —
+which one is a deterministic draw against the species' growth value, keyed to the mon's instance id,
+so two of the same species grow apart while each stays rebuildable from its EXP alone. Everything
+pays exactly one point: a wild win, a Gym, a Pokémon Center rest, a combine. **Twelve points is an
+evolution**, worth a flat +3 Attack and +3 Health — and **the species evolved into contributes
+nothing**: a mon grows off its base form's tier line for life, so an evolved species' own line is
+only a Pokédex entry. Speed never changes at all (a gap ADR 0009 records: gaining Speed is meant to
+come from elsewhere, and that doesn't exist yet). `Exp` is lifetime and never resets. Stats stay
+*derived* from species + EXP, so anything written onto `CurrentStats` is overwritten on the next
+grant.
 
 Every mon the run owns is kept within 2 points of its most-experienced. Enemies are pitched by badge
 count, never by the player, on two dials — the tier they're drawn from (1 + badges, lifted for the
@@ -410,7 +420,8 @@ retired hub scene (ADR 0002, ADR 0003).*
 - ✅ Also done out of order: the EXP/growth model, duplicate combining, and evolution along real
   PokeAPI chains (ADR 0005).
 - ✅ The eight-badge run: the Region Hub between Locations, all nine Location types, and enemies and
-  encounter pools scaled to it (ADR 0007), now on tiers and a flat EXP count (ADR 0008).
+  encounter pools scaled to it (ADR 0007), now on tiers and a flat EXP count (ADR 0008, retuned in
+  ADR 0009).
 - Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), the full
   drag-and-drop catching system (Step-boundary throws, HP%/status-based odds) in place of the "pick
   1 from defeated" stub, Pokémon Center adoption and healing, type synergy bonuses, the
@@ -556,11 +567,14 @@ here, go there):
   Location pays about four points, so the opposition moves four points a badge). There is much less
   to fit, but also much less evidence behind it. `RunProgressionTests` pins the shape so retuning
   stays deliberate.
-- **Fights are about one Step per mon, and stay that way** (ADR 0008). Attack and Health grow in
-  lockstep, so the ratio between them never changes and an even matchup is always decided in one
-  exchange. That makes Speed and passives the things that decide a fight — a Speed-1 mon gets roughly
-  one passive off per fight — but it is untested in play, and it is the **first knob to look at** when
-  balancing starts.
+- **Fights should lengthen across a run, but by how much is untested** (ADR 0009). A point of EXP
+  buys Attack *or* Health, so a bulky species pulls away from its own Attack and its fights get
+  longer; a 50% grower stays close to its mirror. This replaced ADR 0008's flat one-Step-per-mon
+  problem, and how it actually feels is the **first thing to look at** in play.
+- **Speed 2 and Speed 3 are currently unreachable in play** (ADR 0009). An evolution ignores the new
+  species' stats, including its Speed, and encounters are drawn from base forms — so only the 20
+  already-fast base forms field anything above Speed 1. The planned fix is another source of Speed (an
+  item, a reward, a passive); until it exists the charge meter is a near-fixed three-Step cadence.
 - **Backend cost:** unchanged from before — pick a cheap/free tier when Phase 3 starts.
 - **Scope creep:** the phase boundaries exist specifically to prevent building PvP/backend
   infrastructure before the core solo loop is proven fun. Resist starting Phase 3+ work early.

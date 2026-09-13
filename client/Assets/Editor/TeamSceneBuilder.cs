@@ -132,7 +132,10 @@ namespace Pets.EditorTools
             AddHorizontalLayout(bottomBar, expandHeight: false,
                 padding: new RectOffset((int)SideMargin, (int)SideMargin, 10, 10), controlWidth: true);
 
-            var backButton = CreateButton(bottomBar, "BackButton", "Back to Menu", Theme.ButtonStyle.Secondary, useSprite: true);
+            // Just "Back": Team is reached from the Ingame Menu and from the Map's own Team button
+            // now, and SceneNavigator.ReturnFromTeam sends the player back to whichever it was, so
+            // naming one of them on the label would be wrong half the time.
+            var backButton = CreateButton(bottomBar, "BackButton", "Back", Theme.ButtonStyle.Secondary, useSprite: true);
             var swapButton = CreateButton(bottomBar, "SwapButton", "Swap Lead / Support", Theme.ButtonStyle.Primary, useSprite: true);
             // Dev entry into the Battle screen until map nodes start fights (PLAN.md §11 item 2).
             // Left clickable with no run: the Battle screen's own no-party redirect is the answer.
@@ -163,7 +166,7 @@ namespace Pets.EditorTools
             SetField(screen, "combineConfirmText", combineConfirmText);
             SetField(screen, "combineConfirmButton", combineConfirmButton);
 
-            UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.GoToIngameMenu);
+            UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.ReturnFromTeam);
             UnityEventTools.AddVoidPersistentListener(swapButton.onClick, screen.OnSwapLeadAndSupportClicked);
             UnityEventTools.AddVoidPersistentListener(devBattleButton.onClick, navigator.GoToBattle);
             UnityEventTools.AddVoidPersistentListener(releaseConfirmButton.onClick, screen.OnConfirmReleaseClicked);

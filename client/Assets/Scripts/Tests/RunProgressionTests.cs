@@ -196,17 +196,16 @@ namespace Pets.Tests
             Assert.IsNull(RunProgression.MaxTier(RunProgression.BadgesToWin - 1), "the final Location lifts the tier cap");
         }
 
-        /// <summary>A starter evolves for the first time in the second Location and reaches its
-        /// final form in the third. At one EXP a win and five to an evolution, that follows from how
-        /// many fights a Location holds rather than from a fitted curve — and it is *fast*: a
-        /// three-stage line is fully evolved by the third of eight badges, and the rest of the run
-        /// is flat growth. Pinned here so a change to either number is a decision rather than a
-        /// surprise (ADR 0008).</summary>
+        /// <summary>A starter evolves for the first time in the third Location and reaches its final
+        /// form in the sixth — the mainline rhythm, spread across an eight-badge run. At one EXP a
+        /// win and twelve to an evolution, that follows from how many fights a Location holds rather
+        /// than from a fitted curve. Pinned here so a change to either number is a decision rather
+        /// than a surprise (ADR 0009).</summary>
         [Test]
-        public void Evolutions_LandInTheSecondAndThirdLocations()
+        public void Evolutions_LandInTheThirdAndSixthLocations()
         {
-            AssertEvolutionFallsInLocation(1, expectedLocation: 2);
-            AssertEvolutionFallsInLocation(2, expectedLocation: 3);
+            AssertEvolutionFallsInLocation(1, expectedLocation: 3);
+            AssertEvolutionFallsInLocation(2, expectedLocation: 6);
         }
 
         private static void AssertEvolutionFallsInLocation(int evolutionNumber, int expectedLocation)

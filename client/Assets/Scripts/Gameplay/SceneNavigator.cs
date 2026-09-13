@@ -42,7 +42,28 @@ namespace Pets.Gameplay
 
         public void GoToIngameMenu() => ScreenFade.TransitionTo(SceneNames.IngameMenu);
 
-        public void GoToTeam() => ScreenFade.TransitionTo(SceneNames.Team);
+        /// <summary>Team, from wherever the player is — the Ingame Menu or, since the Map grew its
+        /// own Team button, the map itself. Records where it was opened from so
+        /// <see cref="ReturnFromTeam"/> can put the player back there; checking the party mid-walk
+        /// shouldn't cost a detour through the menu to get back to the node you were standing on.
+        /// Same shape as <see cref="GoToSettings"/>, and static for the same reason: the scene that
+        /// set it is gone by the time Back is pressed.</summary>
+        public void GoToTeam()
+        {
+            teamReturnScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            ScreenFade.TransitionTo(SceneNames.Team);
+        }
+
+        /// <summary>Team's Back button. The Ingame Menu when Team was opened directly (no scene to
+        /// return to), which is both the old behaviour and the safe answer if the recorded scene is
+        /// Team itself.</summary>
+        public void ReturnFromTeam()
+        {
+            string target = string.IsNullOrEmpty(teamReturnScene) || teamReturnScene == SceneNames.Team
+                ? SceneNames.IngameMenu
+                : teamReturnScene;
+            ScreenFade.TransitionTo(target);
+        }
 
         public void GoHome() => ScreenFade.TransitionTo(SceneNames.Home);
 
@@ -64,6 +85,9 @@ namespace Pets.Gameplay
         /// <summary>The scene Settings was opened from, so its Back button can go back there.
         /// Static for the same reason ActiveRun is: it has to outlive the scene that set it.</summary>
         private static string settingsReturnScene;
+
+        /// <summary>The same, for Team — see <see cref="GoToTeam"/>.</summary>
+        private static string teamReturnScene;
 
         /// <summary>Home's and the Ingame Menu's Settings button.</summary>
         public void GoToSettings()

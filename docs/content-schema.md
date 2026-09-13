@@ -40,7 +40,8 @@ Mirrors the design doc's `PokemonSpecies` interface (§9), authored in Unity:
 | `displayName` | `string` | Real Pokémon name (this project uses actual Pokémon names/species — see PLAN.md §9 scope note). |
 | `types` | `PokemonType` + optional second `PokemonType` | One or two of the 18 types (design doc §9's `PokemonType` union). |
 | `tier` | `int` | 1–6. Which power band the species sits in, **derived** by `Data/SpeciesTier` from the band its *real* base-stat total in `docs/pokemon_stats_unique.xlsx` falls in, then raised where needed so an evolution always lands at least one tier above what it came from (ADR 0008). Written by the roster importer, never authored. |
-| `baseAttack` / `baseHealth` / `baseSpeed` | `int` | The species' small tier line — a Charmander is 2/2/1. **Derived, not authored:** `SpeciesTier.Distribute` splits the tier's point budget (5 at tier 1, +10 a tier) using the species' real Attack:Health ratio, with Speed from its real Speed (2 at 80, 3 at 110, capped by what the tier can afford). The three must add up to `tier`'s total, and `baseSpeed` is capped at `SpeciesTier.MaxSpeed` (3); `ContentIntegrityTests` fails either. Edit the sheet and re-import — never these fields. |
+| `baseAttack` / `baseHealth` / `baseSpeed` | `int` | The species' small tier line — a Charmander is 3/4/1. **Derived, not authored:** `SpeciesTier.Distribute` splits the tier's point budget (8 at tier 1, +10 a tier) using the species' real Attack:Health ratio, capped so Health is always strictly greater than Attack, with Speed from its real Speed (2 at 80, 3 at 110, capped by what the tier can afford). The three must add up to `tier`'s total, and `baseSpeed` is capped at `SpeciesTier.MaxSpeed` (3); `ContentIntegrityTests` fails either. Edit the sheet and re-import — never these fields. |
+| `healthGrowthPercent` | `int` | How likely a point of EXP is to buy +1 Health rather than +1 Attack, 50–100 — and 0 for the one species the real games give a single hit point (ADR 0009). **Derived** by `SpeciesTier.HealthGrowthPercentFor` from the species' real Attack:Health ratio, rescaled onto the half of the range above the 50% floor so the value actually separates a wall from a glass cannon. A mon that evolves keeps growing on its *base form's* value. |
 | `passive` | `PassiveDefinition` reference | Always set — `ContentIntegrityTests` requires it. The source sheet's Ability column is blank, so only the original 28 curated species have a bespoke passive; the roster importer gives every other species one shared placeholder per primary type (`SpeciesRosterImporter.DefaultPassiveIdByType`). Hand-authoring one later simply overrides it (PLAN.md §8, ADR 0004). |
 | `evolvesInto` | `PokemonSpeciesDefinition` reference (nullable) | Object reference in the authoring asset, not a raw id (artist-friendly, same pattern the old schema used for `Summon`). Set by the roster importer from `docs/roster_evolution_chains.json` (real PokeAPI chains, restricted to the roster). Null for a final form **and** for the three branching lines — Eevee, Tyrogue, Nincada — which one reference can't express. |
 | `evolutionStage` | `int` | Chain depth: 0 for a base form, 1 for a first evolution. Counted against the *real* chain, so Pikachu is stage 1 (Pichu exists, it just isn't curated). Used only as the index into the passive's `magnitudeByStage` table (§1, §3) — **not** to decide when a mon evolves, which is counted per instance. |
@@ -156,23 +157,28 @@ The implementation splits it in two, because the two halves have different lifet
 simulator mutates its subject in place.
 
 It also **stores no level at all** (ADR 0008, which removed ADR 0007's curve). A mon stores its
-lifetime `Exp` — one point a win — and `CurrentStats` is **derived** from the species' tier line plus
-that EXP by `Data/StatGrowth`: +1 Attack and +1 Health a point, Speed untouched. Never accumulated
-into. Anything written to `CurrentStats` that doesn't follow from those two is overwritten on the
-next EXP grant, so a permanent modifier (an item, say) has to become an input to that calculation
-rather than a one-off addition.
+lifetime `Exp` — one point a win — and `CurrentStats` is **derived** from it by `Data/StatGrowth`.
+Never accumulated into. Anything written to `CurrentStats` that doesn't follow from the derivation is
+overwritten on the next EXP grant, so a permanent modifier (an item, say) has to become an input to
+that calculation rather than a one-off addition.
 
-`Exp` is lifetime and never resets. What resets on an evolution is the growth applied on top of the
-current species: each evolution charges `ExperienceResolver.ExpPerEvolution` (5) against the total,
-`TimesEvolved` counts them, and `ExperienceResolver.ExpSinceEvolution` is the difference — the EXP
-the current species has actually grown on.
+The derivation, as of ADR 0009, takes three things: the **base form** of the mon's evolution chain
+(`ExperienceResolver.BaseFormOf` — the species it *started* as, since an evolution ignores the stats
+of what it became), its lifetime `Exp`, and its `TimesEvolved`. Each point of EXP buys +1 Attack *or*
++1 Health, drawn deterministically from the mon's `InstanceId` and which point it is against the base
+form's `healthGrowthPercent`; each evolution adds a flat +3 to both. Speed is the base form's and
+never moves. Keying the draw to the instance rather than to a stored roll is what lets the whole stat
+line be rebuilt from scratch on every grant while still behaving like luck.
 
-Evolution is counted per instance rather than from the species' chain depth: any mon evolves on its
-fifth point, so a curated base form whose real pre-evolution isn't in the roster still evolves like
-anything else. A mon created at an amount of EXP (`ExperienceResolver.CreateAtExp`) is raised to at
-least what the evolutions before its species cost, so a Charmeleon can never claim to have earned
-nothing. There is deliberately no per-species threshold field — nothing in the roster sheet or
-PokeAPI supplies one.
+`Exp` is lifetime and never resets; the nth evolution lands the moment it reaches
+`n × ExperienceResolver.ExpPerEvolution` (12), and `TimesEvolved` counts them.
+
+Evolution is counted per instance rather than from the species' chain depth, so a curated base form
+whose real pre-evolution isn't in the roster evolves like anything else. `ExperienceResolver.CreateAtExp`
+builds every mon from the root of its chain and evolves it forward — asking for a Charmeleon gives a
+Charmander raised into one, with at least the EXP those evolutions cost, so a caught Charmeleon and a
+raised one are the same mon. There is deliberately no per-species threshold field — nothing in the
+roster sheet or PokeAPI supplies one.
 
 ```csharp
 // Persistent: what the run holds. A battle never touches one of these.
@@ -180,9 +186,9 @@ public class PokemonInstance {
     public string InstanceId;
     public int SpeciesId;
     public string Nickname;          // optional
-    public int Exp;                  // lifetime, one point a win; +1 Attack and +1 Health each (ADR 0008)
-    public int TimesEvolved;         // this instance's own count; each charged 5 EXP against Exp
-    public Stats CurrentStats;       // DERIVED: StatGrowth.AtExp(species, ExperienceResolver.ExpSinceEvolution(this))
+    public int Exp;                  // lifetime, one point a win; each buys +1 Attack OR +1 Health (ADR 0009)
+    public int TimesEvolved;         // this instance's own count; the nth lands at n * ExpPerEvolution
+    public Stats CurrentStats;       // DERIVED: StatGrowth.AtExp(baseFormOf(this), InstanceId, Exp, TimesEvolved)
     public int CurrentHP;            // HP it starts its next battle at
     public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
     public PassiveDefinition ResolvedPassive;
@@ -254,9 +260,10 @@ Analogous to the old schema's export, adapted to the new fields. A `PokemonSpeci
   "displayName": "Charmander",
   "types": ["Fire"],
   "tier": 1,
-  "baseAttack": 2,
-  "baseHealth": 2,
+  "baseAttack": 3,
+  "baseHealth": 4,
   "baseSpeed": 1,
+  "healthGrowthPercent": 72,
   "passiveId": "ember-burst",
   "evolvesInto": { "speciesId": 5 },
   "evolutionStage": 0,

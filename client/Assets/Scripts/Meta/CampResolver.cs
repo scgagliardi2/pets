@@ -3,7 +3,10 @@ using Pets.Data;
 namespace Pets.Meta
 {
     /// <summary>Camp / Pokémon Center node resolution (design doc §5.1): grants EXP to the active
-    /// line-up and a temporary Attack buff for the next fight.</summary>
+    /// line-up and a temporary Attack buff for the next fight.
+    ///
+    /// The line-up and nothing else, on the same rule a won fight follows (BattleRewardResolver): the
+    /// mons in the Box weren't there.</summary>
     public static class CampResolver
     {
         private const float NextBattleAttackBonusPercent = 0.2f;

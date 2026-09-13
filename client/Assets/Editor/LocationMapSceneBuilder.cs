@@ -20,7 +20,8 @@ namespace Pets.EditorTools
     /// Arriving at a node resolves it (NodeResolutionController): a PvE or Gym node leaves for the
     /// Battle scene, while the Pokémon Center and the Event/PvP stubs are handled here, by the two
     /// overlay prefabs this builder instantiates over the map. The title bar carries the run's
-    /// Morale/Money alongside the Menu button, since the map is the screen a run is spent on.
+    /// Morale/Money alongside the Menu and Team buttons, since the map is the screen a run is spent
+    /// on and the party is what the next node is judged against.
     ///
     /// Re-run via Pets &gt; Build Location Map Scene after changing LocationMapController's or
     /// NodeResolutionController's serialized fields — or Pets &gt; Build All Scenes after changing
@@ -44,6 +45,8 @@ namespace Pets.EditorTools
         private const float SideMargin = 20f;
         private const float ButtonHeight = 64f;
         private const float MenuButtonWidth = 150f;
+        private const float TeamButtonWidth = 150f;
+        private const float TitleBarButtonGap = 12f;
         private const float NewMapButtonWidth = 200f;
         private const float ResourceBarWidth = 460f;
 
@@ -89,6 +92,15 @@ namespace Pets.EditorTools
             // of the footer's map controls so "leave the run" can't be mistaken for "re-roll it".
             var menuButton = CreateButton(titleBar, "MenuButton", "Menu", Theme.ButtonStyle.Secondary, useSprite: true);
             AnchorInBar(menuButton, MenuButtonWidth, toRight: false);
+
+            // Team, straight from the map. Checking what the party looks like is the question a
+            // player asks between two nodes — which fight can this line-up take — and routing it
+            // through the Ingame Menu made the answer two screens away from where it's needed.
+            // Beside the Menu button rather than in the footer: both are "leave the map for a
+            // moment", where the footer is about the map itself.
+            var teamButton = CreateButton(titleBar, "TeamButton", "Team", Theme.ButtonStyle.Primary, useSprite: true);
+            AnchorInBar(teamButton, TeamButtonWidth, toRight: false,
+                inset: SideMargin + MenuButtonWidth + TitleBarButtonGap);
 
             // Morale is what a lost fight costs (design doc §4), so it belongs on the screen where
             // the player decides which fight to take. Right corner of the title bar, opposite the
@@ -163,6 +175,7 @@ namespace Pets.EditorTools
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
             UnityEventTools.AddVoidPersistentListener(menuButton.onClick, navigator.GoToIngameMenu);
+            UnityEventTools.AddVoidPersistentListener(teamButton.onClick, navigator.GoToTeam);
 
             // The Map is where a run starts once Character Select hands off, so this scene owns
             // the bootstrapper that turns the chosen pair into a RunState and publishes it to
@@ -211,12 +224,13 @@ namespace Pets.EditorTools
                 AssetDatabase.LoadAssetAtPath<PokemonSpeciesDefinitionAsset>("Assets/Content/Species/squirtle.asset"));
         }
 
-        /// <summary>Centers a fixed-size sprite button vertically in the bar it belongs to, a
-        /// SideMargin in from the bar's left or right edge. Anchored rather than laid out by a
-        /// group: each bar holds one button, so there's nothing to arrange, and it keeps the map's
-        /// chrome clear of ForceLayoutRebuild's bake-and-destroy behaviour — which is also why
-        /// this scene doesn't call it at all.</summary>
-        private static void AnchorInBar(Button button, float width, bool toRight)
+        /// <summary>Centers a fixed-size sprite button vertically in the bar it belongs to,
+        /// <paramref name="inset"/> (a SideMargin by default) in from the bar's left or right edge.
+        /// Anchored rather than laid out by a group: a bar holds one or two buttons at fixed
+        /// widths, so there's nothing to arrange, and it keeps the map's chrome clear of
+        /// ForceLayoutRebuild's bake-and-destroy behaviour — which is also why this scene doesn't
+        /// call it at all.</summary>
+        private static void AnchorInBar(Button button, float width, bool toRight, float inset = SideMargin)
         {
             var rect = button.GetComponent<RectTransform>();
             float x = toRight ? 1f : 0f;
@@ -224,7 +238,7 @@ namespace Pets.EditorTools
             rect.anchorMax = new Vector2(x, 0.5f);
             rect.pivot = new Vector2(x, 0.5f);
             rect.sizeDelta = new Vector2(width, ButtonHeight);
-            rect.anchoredPosition = new Vector2(toRight ? -SideMargin : SideMargin, 0f);
+            rect.anchoredPosition = new Vector2(toRight ? -inset : inset, 0f);
         }
 
         private static void PinToTop(RectTransform rect, float height)

@@ -47,9 +47,9 @@ namespace Pets.Meta
             Evolutions.AddRange(other.Evolutions);
         }
 
-        /// <summary>Player-facing lines: every stat gain on one line (a six-mon party would otherwise
-        /// push everything else off a result panel), then one line per evolution. Empty when nothing
-        /// changed.</summary>
+        /// <summary>The compact form: every stat gain on one line, then one line per evolution. For
+        /// somewhere with only a couple of lines to spare — the Pokémon Center overlay. Empty when
+        /// nothing changed.</summary>
         public string Describe()
         {
             var lines = new List<string>();
@@ -57,14 +57,50 @@ namespace Pets.Meta
             {
                 lines.Add("Grew: " + string.Join(", ", Gains.Select(g => $"{g.Name} {Line(g.To)}")));
             }
-            foreach (var evolution in Evolutions)
-            {
-                lines.Add($"{evolution.FromName} evolved into {evolution.ToName}!");
-            }
+            lines.AddRange(EvolutionLines());
             return string.Join("\n", lines);
+        }
+
+        /// <summary>The long form: one line per mon saying what it actually gained — "Charmander
+        /// 3/4/1 → 3/5/1  (+1 Health)" — then one line per evolution. Empty when nothing changed.
+        ///
+        /// Worth the extra lines wherever there's room for them (the battle result panel): a point of
+        /// EXP buys Attack *or* Health by a draw the player doesn't control (ADR 0009), so which one
+        /// it bought is the only part of a win that isn't already known before the fight starts. The
+        /// compact <see cref="Describe"/> shows the new stat line and leaves the player to diff it
+        /// against a number they no longer have in front of them.</summary>
+        public IReadOnlyList<string> GainLines()
+        {
+            var lines = Gains.Select(g => $"{g.Name}  {Line(g.From)} → {Line(g.To)}  ({Delta(g.From, g.To)})").ToList();
+            lines.AddRange(EvolutionLines());
+            return lines;
         }
 
         /// <summary>A stat line as the game writes it everywhere: Attack/Health/Speed.</summary>
         public static string Line(Stats stats) => $"{stats.Attack}/{stats.Health}/{stats.Speed}";
+
+        /// <summary>What changed between two stat lines, named: "+1 Health", or "+4 Attack, +3 Health"
+        /// for a grant that also paid for an evolution. "no change" is unreachable from a StatGain
+        /// (one is only recorded when something moved) but is the honest answer if a caller asks
+        /// anyway.</summary>
+        public static string Delta(Stats from, Stats to)
+        {
+            var parts = new List<string>();
+            Add(parts, "Attack", to.Attack - from.Attack);
+            Add(parts, "Health", to.Health - from.Health);
+            Add(parts, "Speed", to.Speed - from.Speed);
+            return parts.Count > 0 ? string.Join(", ", parts) : "no change";
+        }
+
+        private static void Add(List<string> parts, string name, int change)
+        {
+            if (change != 0)
+            {
+                parts.Add($"{(change > 0 ? "+" : "")}{change} {name}");
+            }
+        }
+
+        private IEnumerable<string> EvolutionLines() =>
+            Evolutions.Select(e => $"{e.FromName} evolved into {e.ToName}!");
     }
 }

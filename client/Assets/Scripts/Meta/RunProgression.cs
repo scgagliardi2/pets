@@ -18,11 +18,12 @@ namespace Pets.Meta
     /// Rubber-banding would make EXP worthless — a player who fights more should be ahead, and one
     /// who dodges fights should feel it.
     ///
-    /// The pacing target is unchanged from ADR 0007: a player wins most wild fights, takes a Gym on
-    /// the first try about two times in three, and sees a starter's first evolution around the second
-    /// Location. What changed is that the numbers are now countable by hand — a mon earns one EXP a
-    /// win, and a Location is about <see cref="ExpPerBadge"/> wins — rather than fitted to a curve.
-    /// RunProgressionTests pins the shape so a later tweak that breaks it fails a test.</summary>
+    /// The pacing target is ADR 0007's: a player wins most wild fights, takes a Gym on the first try
+    /// about two times in three, and sees a starter's first evolution in the third Location and its
+    /// last in the sixth. What changed is that the numbers are now countable by hand — a mon earns one
+    /// EXP a win, a Location is about <see cref="ExpPerBadge"/> wins, and an evolution costs
+    /// ExperienceResolver.ExpPerEvolution — rather than fitted to a curve. RunProgressionTests pins
+    /// the shape so a later tweak that breaks it fails a test.</summary>
     public static class RunProgression
     {
         /// <summary>Badges to win the run. Beating the eighth Gym ends it as a victory.</summary>

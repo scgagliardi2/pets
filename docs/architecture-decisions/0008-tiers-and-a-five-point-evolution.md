@@ -1,6 +1,9 @@
 # ADR 0008: Species Sit in Tiers, EXP Is a Count of Wins, and Five Points Is an Evolution
 
-**Status:** Accepted
+**Status:** Accepted; decisions 3 and 4 (growth of +1 Attack *and* +1 Health, five points to an
+evolution, an evolution rebasing onto the new species' tier line) and the 5-point tier-1 budget
+superseded by ADR 0009. The tier structure, the lifetime one-point-a-win EXP count, the flat rewards,
+the two-dial enemy scaling and the charge threshold all stand.
 **Date:** 2026-09-13
 **Supersedes:** ADR 0007 decisions 2, 3, 4, 5 and 7 (the level curve, proportional growth with a
 Health multiplier, evolution at Lv 8/17, catch-up in levels, and rewards scaled by foe level), and

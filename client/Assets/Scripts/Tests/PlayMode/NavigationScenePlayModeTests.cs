@@ -191,6 +191,43 @@ namespace Pets.Tests
             AssertNavigatesVia("MenuButton", nameof(SceneNavigator.GoToIngameMenu));
         }
 
+        /// <summary>Team is reachable from the map itself, not only through the Ingame Menu: "can
+        /// this line-up take that node" is a question asked mid-walk.</summary>
+        [UnityTest]
+        public IEnumerator LocationMapScene_TeamButton_OpensTheTeamScreen()
+        {
+            yield return LoadScene(LocationMapScenePath);
+
+            AssertNavigatesVia("TeamButton", nameof(SceneNavigator.GoToTeam));
+        }
+
+        /// <summary>And Back from Team returns to wherever Team was opened from, so checking the
+        /// party from the map doesn't cost a detour through the menu to get back onto it. Driven as
+        /// real clicks rather than asserted on the wiring alone, because the scene it goes back to
+        /// is decided at runtime, not baked into the button.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_BackButton_ReturnsToWhereTeamWasOpenedFrom()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+            AssertNavigatesVia("BackButton", nameof(SceneNavigator.ReturnFromTeam));
+
+            // From the Map (its own Team button) back to the Map.
+            yield return LoadScene(LocationMapScenePath);
+            FindButton("TeamButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Team);
+            FindButton("BackButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+
+            // From the Ingame Menu back to the Ingame Menu — the route that existed before.
+            yield return LoadScene(IngameMenuScenePath);
+            FindButton("TeamButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Team);
+            FindButton("BackButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.IngameMenu);
+        }
+
         /// <summary>Character Select hands off to the Region Hub now, but the Map keeps its own
         /// bootstrapper so the scene still works opened on its own — and it has to publish that run for
         /// the Team screen in the next scene.</summary>
@@ -519,16 +556,6 @@ namespace Pets.Tests
             yield return null;
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
-        }
-
-        [UnityTest]
-        public IEnumerator TeamScene_BackButton_ReturnsToTheIngameMenu()
-        {
-            ActiveRun.Begin(MakeRun(), MakeLibrary());
-
-            yield return LoadScene(TeamScenePath);
-
-            AssertNavigatesVia("BackButton", nameof(SceneNavigator.GoToIngameMenu));
         }
 
         /// <summary>The dev way into a fight until map nodes start one.</summary>

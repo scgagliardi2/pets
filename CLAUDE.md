@@ -19,8 +19,13 @@ records the six-Location version that merged first and was superseded;
 covers the eight-badge run and the Region Hub that replaced it, and the level curve that ran it; and
 [`0008-tiers-and-a-five-point-evolution.md`](docs/architecture-decisions/0008-tiers-and-a-five-point-evolution.md)
 replaces that curve with species tiers, a flat one-point-a-win EXP count and evolution every five
-points. Between them they list the deviations from the design doc
-that are still open questions.
+points; and [`0009-one-stat-per-point-and-a-slower-evolution.md`](docs/architecture-decisions/0009-one-stat-per-point-and-a-slower-evolution.md)
+retunes that — a point buys Attack *or* Health by the species' own growth value, an evolution costs
+twelve points and adds a flat +3/+3, and a mon grows off its base form for life; and
+[`0010-only-the-party-earns.md`](docs/architecture-decisions/0010-only-the-party-earns.md) narrows who
+that growth reaches — the line-up and nothing else, with the result panel and a Team button on the map
+added so the choice can be seen and judged. Between them they
+list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
 
@@ -51,19 +56,27 @@ exists — the phase list under it describes intent, and the build has deviated 
   a Gym, real Event/PvP nodes, and the Trailblazer minigame. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
 - **Growth runs on tiers and a small EXP count, and a run is eight badges** (ADR 0007 for the run,
-  ADR 0008 for the growth). Every species sits in one of six **tiers**, and every species in a tier
-  spends the same points across Attack/Health/Speed — Charmander is `2/2/1`, Charmeleon `7/6/2`. That
-  tier line is **derived from the roster sheet's real stats** by `Data/SpeciesTier` and written by
-  the importer; never hand-author it. On top of it, **one point of EXP is +1 Attack and +1 Health**,
-  everything pays exactly one point, and **five points is an evolution** — there are no levels, and
-  Speed only ever changes by evolving. `Exp` is lifetime and never resets; each evolution charges 5
-  against it (`TimesEvolved`), and `ExperienceResolver.ExpSinceEvolution` is what the current species
-  has grown on. The Region Hub sits between Locations, and enemies are pitched by badge count
-  (`Meta/RunProgression`) on two dials — the pool's tier and the EXP its mons carry — never by the
-  player. `PokemonInstance.CurrentStats` is **derived** by `ExperienceResolver.Recompute` — writing
-  stats onto a mon directly works until the next EXP grant silently recomputes them away, which is
-  the one trap in this area. Build a new mon with `ExperienceResolver.CreateAtExp` rather than the
-  bare factory, so an evolved species has its earlier evolutions paid for.
+  ADR 0008 + ADR 0009 for the growth). Every species sits in one of six **tiers**, and every species
+  in a tier spends the same points across Attack/Health/Speed — Charmander is `3/4/1`, Magikarp
+  `2/5/1`, and **Health always beats Attack**. That tier line and the species' `HealthGrowthPercent`
+  are both **derived from the roster sheet's real stats** by `Data/SpeciesTier` and written by the
+  importer; never hand-author either.
+- **One point of EXP is +1 Attack *or* +1 Health, never both** — which one is a deterministic draw
+  against the species' growth value, keyed to the mon's instance id, so two of the same species grow
+  differently but each is still rebuildable from its EXP alone. Everything pays exactly one point.
+  **Twelve points is an evolution**, worth a flat +3/+3, and **the species evolved into contributes
+  nothing to a mon's stats** — a mon grows off its base form's tier line for life, so an evolved
+  species' own line is only a Pokédex entry. Speed never changes at all (see ADR 0009: gaining Speed
+  is meant to come from elsewhere, and doesn't exist yet). The Region Hub sits between Locations, and
+  enemies are pitched by badge count (`Meta/RunProgression`) on two dials — the pool's tier and the
+  EXP its mons carry — never by the player. **Only the line-up earns** (ADR 0010): a win and a rest
+  pay every mon in the party and nothing in the Box, and `ApplyCatchUp`'s two-point floor applies to
+  the party only — a benched mon stops growing and is caught back up the next time it's fielded.
+  `PokemonInstance.CurrentStats` is **derived** by
+  `ExperienceResolver.Recompute` — writing stats onto a mon directly works until the next EXP grant
+  silently recomputes them away, which is the one trap in this area. Build a new mon with
+  `ExperienceResolver.CreateAtExp` rather than the bare factory: it roots the mon at its chain's base
+  form and evolves it forward, which is what keeps a caught Charmeleon and a raised one the same mon.
 - **Content is all 183 roster species** (ADR 0004), imported by
   `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx` — which still holds
   the *real* Pokémon stats; the importer is what turns them into tiers and tier lines. Two things that
@@ -94,10 +107,10 @@ exists — the phase list under it describes intent, and the build has deviated 
   `docs/content-schema.md`). Don't hardcode a new C# class per Pokémon or per passive — if the
   existing passive/effect vocabulary can't express something, extend the vocabulary, don't
   special-case it. Stats come from `docs/pokemon_stats_unique.xlsx` — never invented, and never
-  hand-tuned in the asset without updating the sheet. A species' `Tier` and its three small stats
-  are **derived** from the sheet's real numbers by `Data/SpeciesTier` (ADR 0008), so to change what
-  a species is worth, change the rule or the sheet — never the asset. **Species assets are generated from that
-  sheet**: edit the sheet, then re-run `Pets > Content > Import Species From Roster Sheet` (PLAN.md
+  hand-tuned in the asset without updating the sheet. A species' `Tier`, its three small stats and its
+  `HealthGrowthPercent` are all **derived** from the sheet's real numbers by `Data/SpeciesTier`
+  (ADR 0008, 0009), so to change what a species is worth, change the rule or the sheet — never the
+  asset. **Species assets are generated from that sheet**: edit the sheet, then re-run `Pets > Content > Import Species From Roster Sheet` (PLAN.md
   §8) rather than editing a species asset's stats or typing by hand — `RosterImportTests` fails if
   the two disagree. The importer is idempotent and leaves hand-authored passives and evolution links
   alone, so re-running it is always safe. Adding or editing a content asset means re-running
@@ -195,7 +208,8 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-13 (after the tier/EXP refactor, ADR 0008): **182 EditMode, 97 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-13 (after the tier/EXP refactor and its retune, ADR 0008 + ADR 0009, and the party-only
+  EXP change, ADR 0010): **191 EditMode, 98 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

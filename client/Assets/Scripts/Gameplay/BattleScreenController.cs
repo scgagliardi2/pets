@@ -74,6 +74,7 @@ namespace Pets.Gameplay
         [SerializeField] private Button backButton;
         [SerializeField] private GameObject resultPanel;
         [SerializeField] private Text resultText;
+        [SerializeField] private Text rewardText;
         [SerializeField] private UiButton battleAgainButton;
         [SerializeField] private UiButton resultBackButton;
         [SerializeField] private UiButton resultActionButton;
@@ -119,6 +120,13 @@ namespace Pets.Gameplay
         /// <summary>The node this fight belongs to, kept so a lost Gym can be re-rolled and
         /// refought (it's the one node with nowhere to walk on to).</summary>
         private string nodeId;
+
+        /// <summary>What the result panel says under its headline: the EXP a win paid, a line per mon
+        /// showing what that point bought it, the badge, or what a loss cost in Morale. Kept apart from
+        /// the headline because the two are different sizes on screen — the headline is one big word,
+        /// and this is a readable list under it (see rewardText, and BattleSceneBuilder's result
+        /// panel). Rebuilt from scratch each time the panel is shown.</summary>
+        private readonly List<string> resultLines = new List<string>();
 
         /// <summary>Every event of the whole fight, Step by Step — the record a catch reads to find
         /// what fainted on the wild side (Meta/CatchResolver). Bounded by BattleConfig's Step
@@ -355,6 +363,7 @@ namespace Pets.Gameplay
         private void ShowResult()
         {
             IsAutoplaying = false;
+            resultLines.Clear();
             var outcome = runner.Outcome ?? BattleOutcome.Draw;
             bool capped = outcome == BattleOutcome.Draw && runner.State.LineUpA.Count > 0 && runner.State.LineUpB.Count > 0;
             switch (outcome)
@@ -381,6 +390,8 @@ namespace Pets.Gameplay
             {
                 ApplyNodeFightResult(outcome);
             }
+            rewardText.text = string.Join("\n", resultLines);
+            rewardText.gameObject.SetActive(resultLines.Count > 0);
             UpdateResultButtons();
 
             resultPanel.SetActive(true);
@@ -403,9 +414,9 @@ namespace Pets.Gameplay
                 // onto, so a loss is paid for and the run moves on. The Gym is the exception, and
                 // it's handled by offering a retry rather than by blocking the map.
                 state.Morale--;
-                resultText.text += state.IsRunOver
-                    ? "\nThe team's morale is broken. The run ends here."
-                    : $"\nMorale {state.Morale} left.";
+                resultLines.Add(state.IsRunOver
+                    ? "The team's morale is broken. The run ends here."
+                    : $"Morale {state.Morale} left.");
                 return;
             }
 
@@ -418,20 +429,18 @@ namespace Pets.Gameplay
             // faints would otherwise never grow (see BattleRewardResolver).
             bool isGym = context == BattleContext.MapGym;
             var growth = BattleRewardResolver.GrantWinRewards(state, nodeEnemyLineUp, isGym, library);
-            resultText.text += $"\nThe team gains {growth.ExpGranted} EXP.";
-            string grew = growth.Describe();
-            if (grew.Length > 0)
-            {
-                resultText.text += "\n" + grew;
-            }
+            // The party, one mon a line, with what the point of EXP actually bought it — see
+            // GrowthReport.GainLines. The Box isn't listed because it isn't paid (BattleRewardResolver).
+            resultLines.Add($"Your party gains {growth.ExpGranted} EXP.");
+            resultLines.AddRange(growth.GainLines());
 
             if (isGym)
             {
                 // After the EXP, so the Location's last reward lands before the run leaves it.
                 state.EarnBadge();
-                resultText.text += state.IsRunWon
-                    ? $"\nAll {RunProgression.BadgesToWin} badges! You're the Champion."
-                    : $"\nBadges: {state.BadgeCount} of {RunProgression.BadgesToWin}.";
+                resultLines.Add(state.IsRunWon
+                    ? $"All {RunProgression.BadgesToWin} badges! You're the Champion."
+                    : $"Badges: {state.BadgeCount} of {RunProgression.BadgesToWin}.");
             }
 
             if (context == BattleContext.MapPvE)

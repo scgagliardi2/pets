@@ -46,6 +46,18 @@ namespace Pets.Data
         public int BaseHealth;
         public int BaseSpeed;
 
+        /// <summary>How likely a mon of this species is to put a point of EXP into Health rather
+        /// than Attack, in percent — a point is worth +1 of one or the other, never both (ADR 0009,
+        /// <see cref="Pets.Data.StatGrowth"/>). 50 or more for every species, because every mon
+        /// should out-last its own mirror rather than trade lethal blows with it; 0 for the one
+        /// species the real games give a single hit point.
+        ///
+        /// Derived from the species' real Attack:Health ratio by
+        /// <see cref="SpeciesTier.HealthGrowthPercentFor"/> and written by the roster importer, like
+        /// the tier line above it — never authored.</summary>
+        [Range(0, 100)]
+        public int HealthGrowthPercent = SpeciesTier.MinHealthGrowthPercent;
+
         /// <summary>The three base stats added up — which, because these are tier points rather
         /// than real Pokémon stats, is just <see cref="TierStatTotal"/> restated from the asset's
         /// own fields. Kept as the thing callers compare against, so a species whose stats were

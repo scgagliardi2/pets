@@ -121,9 +121,13 @@ namespace Pets.EditorTools
             /// roster at once, which is why it isn't filled in by ReadRoster's per-row loop.</summary>
             public int Tier;
 
-            /// <summary>The small stat line the game actually uses — a Charmander's 2/2/1 — derived
+            /// <summary>The small stat line the game actually uses — a Charmander's 3/4/1 — derived
             /// from the real stats above by <see cref="SpeciesTier.Distribute"/>.</summary>
             public Stats TierStats;
+
+            /// <summary>How likely a mon of this species is to spend a point of EXP on Health rather
+            /// than Attack, from <see cref="SpeciesTier.HealthGrowthPercentFor"/>.</summary>
+            public int HealthGrowthPercent;
 
             /// <summary>Chain depth from the cached PokeAPI evolution data, 0 for a base form.</summary>
             public int EvolutionStage;
@@ -255,6 +259,7 @@ namespace Pets.EditorTools
                 species.HasSecondType != entry.HasSecondType ||
                 (entry.HasSecondType && species.Type2 != entry.Type2) ||
                 species.Tier != entry.Tier ||
+                species.HealthGrowthPercent != entry.HealthGrowthPercent ||
                 species.BaseAttack != entry.TierStats.Attack ||
                 species.BaseHealth != entry.TierStats.Health ||
                 species.BaseSpeed != entry.TierStats.Speed ||
@@ -273,6 +278,7 @@ namespace Pets.EditorTools
                 species.Type2 = entry.Type2;
             }
             species.Tier = entry.Tier;
+            species.HealthGrowthPercent = entry.HealthGrowthPercent;
             species.BaseAttack = entry.TierStats.Attack;
             species.BaseHealth = entry.TierStats.Health;
             species.BaseSpeed = entry.TierStats.Speed;
@@ -585,6 +591,7 @@ namespace Pets.EditorTools
             {
                 var row = roster[i];
                 row.TierStats = SpeciesTier.Distribute(row.Attack, row.Health, row.Speed, row.Tier);
+                row.HealthGrowthPercent = SpeciesTier.HealthGrowthPercentFor(row.Attack, row.Health);
                 roster[i] = row;
             }
         }

@@ -21,7 +21,8 @@ namespace Pets.Tests
         /// exist to make arithmetic in a test legible (a Health of 50 survives long enough to assert
         /// on), and only the handful of tests that care about tiering pass a real one.</summary>
         private static PokemonSpeciesDefinitionAsset MakeSpecies(int id, string name, PokemonType type1,
-            int attack = 10, int health = 50, int speed = 10, int tier = SpeciesTier.MinTier)
+            int attack = 10, int health = 50, int speed = 10, int tier = SpeciesTier.MinTier,
+            int healthGrowthPercent = 100)
         {
             var species = ScriptableObject.CreateInstance<PokemonSpeciesDefinitionAsset>();
             species.Id = id;
@@ -31,6 +32,10 @@ namespace Pets.Tests
             species.BaseAttack = attack;
             species.BaseHealth = health;
             species.BaseSpeed = speed;
+            // 100 by default so a test that only cares *that* a mon grew can assert on Health without
+            // having to know which way the species' own draw fell (ADR 0009). Tests about the draw
+            // itself pass their own value.
+            species.HealthGrowthPercent = healthGrowthPercent;
             return species;
         }
 
@@ -301,7 +306,8 @@ namespace Pets.Tests
             Assert.Greater(late.Count, early.Count);
             Assert.IsTrue(early.All(m => m.Exp == RunProgression.WildExp(0, 1)));
             Assert.IsTrue(late.All(m => m.Exp == RunProgression.WildExp(5, 5)));
-            Assert.AreEqual(StatGrowth.AtExp(species, RunProgression.WildExp(5, 5)).Attack, late[0].CurrentStats.Attack);
+            Assert.AreEqual(StatGrowth.AtExp(species, late[0].InstanceId, RunProgression.WildExp(5, 5), 0).Attack,
+                late[0].CurrentStats.Attack);
         }
 
         /// <summary>The pool holds base forms only, but an encounter past a threshold is evolved — a
@@ -311,7 +317,7 @@ namespace Pets.Tests
         {
             var (basic, evolved, library) = MakeEvolutionLine();
             basic.Type1 = PokemonType.Grass;
-            int badges = 3;
+            int badges = 4;
             Assert.GreaterOrEqual(RunProgression.WildExp(badges, 1), ExperienceResolver.ExpPerEvolution, "precondition");
 
             var lineUp = EncounterGenerator.GenerateWildLineUp(library, Grass, badges, layer: 1, seed: 5, instanceIdPrefix: "wild");
@@ -406,11 +412,14 @@ namespace Pets.Tests
         [Test]
         public void ExperienceResolver_ExpSinceEvolution_ChargesEachEvolutionAgainstTheLifetimeTotal()
         {
-            var mon = new PokemonInstance { Exp = 7, TimesEvolved = 0 };
-            Assert.AreEqual(7, ExperienceResolver.ExpSinceEvolution(mon));
+            int perEvolution = ExperienceResolver.ExpPerEvolution;
+            var mon = new PokemonInstance { Exp = perEvolution + 3, TimesEvolved = 0 };
+            Assert.AreEqual(perEvolution + 3, ExperienceResolver.ExpSinceEvolution(mon));
+            Assert.AreEqual(perEvolution, ExperienceResolver.ExpAtNextEvolution(mon));
 
             mon.TimesEvolved = 1;
-            Assert.AreEqual(7 - ExperienceResolver.ExpPerEvolution, ExperienceResolver.ExpSinceEvolution(mon));
+            Assert.AreEqual(3, ExperienceResolver.ExpSinceEvolution(mon));
+            Assert.AreEqual(2 * perEvolution, ExperienceResolver.ExpAtNextEvolution(mon));
 
             // A mon can't owe EXP: a species handed out below the total its own evolutions cost
             // reads as freshly evolved rather than as a negative.
@@ -418,22 +427,108 @@ namespace Pets.Tests
             Assert.AreEqual(0, ExperienceResolver.ExpSinceEvolution(mon));
         }
 
-        /// <summary>The whole growth model: a point of EXP is +1 Attack and +1 Health, and Speed
-        /// never moves.</summary>
+        /// <summary>The whole growth model: a point of EXP is +1 Attack *or* +1 Health, never both,
+        /// and Speed never moves at all.</summary>
         [Test]
-        public void StatGrowth_AddsOneAttackAndHealthPerExp_AndLeavesSpeedAlone()
+        public void StatGrowth_AddsOneStatPerExp_AndNeverTouchesSpeed()
         {
-            var species = MakeSpecies(1, "Shape", PokemonType.Normal, attack: 7, health: 6, speed: 2, tier: 2);
+            var allHealth = MakeSpecies(1, "Wall", PokemonType.Normal, attack: 3, health: 5, speed: 2,
+                tier: 2, healthGrowthPercent: 100);
+            var allAttack = MakeSpecies(2, "Cannon", PokemonType.Normal, attack: 3, health: 5, speed: 2,
+                tier: 2, healthGrowthPercent: 0);
 
-            var fresh = StatGrowth.AtExp(species, 0);
-            Assert.AreEqual(7, fresh.Attack);
-            Assert.AreEqual(6, fresh.Health);
+            var fresh = StatGrowth.AtExp(allHealth, "mon", 0, 0);
+            Assert.AreEqual(3, fresh.Attack);
+            Assert.AreEqual(5, fresh.Health);
             Assert.AreEqual(2, fresh.Speed);
 
-            var grown = StatGrowth.AtExp(species, 4);
-            Assert.AreEqual(11, grown.Attack);
-            Assert.AreEqual(10, grown.Health);
-            Assert.AreEqual(2, grown.Speed, "Speed only ever changes by evolving");
+            var wall = StatGrowth.AtExp(allHealth, "mon", 4, 0);
+            Assert.AreEqual(3, wall.Attack, "a 100% Health grower never gains Attack");
+            Assert.AreEqual(9, wall.Health);
+
+            var cannon = StatGrowth.AtExp(allAttack, "mon", 4, 0);
+            Assert.AreEqual(7, cannon.Attack);
+            Assert.AreEqual(5, cannon.Health, "a 0% Health grower never gains Health");
+
+            Assert.AreEqual(2, wall.Speed);
+            Assert.AreEqual(2, cannon.Speed, "Speed doesn't move for EXP or for evolution");
+        }
+
+        /// <summary>Each point buys exactly one stat, whichever way the draw fell.</summary>
+        [Test]
+        public void StatGrowth_SpendsEveryPointExactlyOnce_AtAnyGrowthValue()
+        {
+            foreach (int percent in new[] { 0, 50, 72, 86, 100 })
+            {
+                var species = MakeSpecies(1, "Mon", PokemonType.Normal, attack: 3, health: 5, speed: 1,
+                    healthGrowthPercent: percent);
+                for (int exp = 0; exp <= 30; exp++)
+                {
+                    var stats = StatGrowth.AtExp(species, "mon-1", exp, 0);
+                    Assert.AreEqual(3 + 5 + exp, stats.Attack + stats.Health,
+                        $"{percent}% at {exp} EXP spent more or less than one point per EXP");
+                }
+            }
+        }
+
+        /// <summary>The draw is a chance, not a ratio: it follows the species' growth value over many
+        /// points, and it is keyed to the mon, so two of the same species don't grow the same way.</summary>
+        [Test]
+        public void StatGrowth_DrawsHealthAboutAsOftenAsTheGrowthValueSays_ButPerMon()
+        {
+            var species = MakeSpecies(1, "Mon", PokemonType.Normal, healthGrowthPercent: 70);
+
+            int health = StatGrowth.HealthGainsIn(species.HealthGrowthPercent, "sample", 1000);
+            Assert.That(health, Is.InRange(630, 770), "a 70% grower drew Health {0} times in 1000", health);
+
+            // Asserted point by point rather than on the totals: two mons can land on the same *count*
+            // of Health by coincidence, and a test that failed when they did would be flaky.
+            bool diverges = false;
+            for (int i = 0; i < 12 && !diverges; i++)
+            {
+                diverges = StatGrowth.GainsHealth(70, "twin-a", i) != StatGrowth.GainsHealth(70, "twin-b", i);
+            }
+            Assert.IsTrue(diverges, "two mons of the same species drew identically — the draw isn't per mon");
+
+            // And it isn't only these two: a spread of mons should not all reach the same stat line.
+            var lines = Enumerable.Range(0, 10)
+                .Select(i => StatGrowth.AtExp(species, $"mon-{i}", 12, 0).Health)
+                .Distinct()
+                .ToList();
+            Assert.Greater(lines.Count, 1, "ten mons of the same species all grew into the same Health");
+        }
+
+        /// <summary>Stats have to be rebuildable from scratch on every grant, so the draw must be a
+        /// pure function of the mon and which point it is — the same question asked twice, or out of
+        /// order, gives the same answer.</summary>
+        [Test]
+        public void StatGrowth_IsDeterministic_ForTheSameMonAndPoint()
+        {
+            var species = MakeSpecies(1, "Mon", PokemonType.Normal, healthGrowthPercent: 60);
+
+            for (int i = 0; i < 20; i++)
+            {
+                Assert.AreEqual(StatGrowth.GainsHealth(60, "mon-1", i), StatGrowth.GainsHealth(60, "mon-1", i));
+            }
+            Assert.AreEqual(StatGrowth.AtExp(species, "mon-1", 9, 1).Health,
+                StatGrowth.AtExp(species, "mon-1", 9, 1).Health);
+        }
+
+        /// <summary>An evolution is a flat bonus and the species evolved into contributes nothing —
+        /// growth keeps running off the base form for the mon's whole life.</summary>
+        [Test]
+        public void StatGrowth_AddsAFlatBonusPerEvolution()
+        {
+            var species = MakeSpecies(1, "Base", PokemonType.Normal, attack: 3, health: 5, speed: 1,
+                healthGrowthPercent: 100);
+
+            var once = StatGrowth.AtExp(species, "mon", 12, 1);
+            Assert.AreEqual(3 + StatGrowth.AttackPerEvolution, once.Attack);
+            Assert.AreEqual(5 + 12 + StatGrowth.HealthPerEvolution, once.Health);
+
+            var twice = StatGrowth.AtExp(species, "mon", 24, 2);
+            Assert.AreEqual(3 + 2 * StatGrowth.AttackPerEvolution, twice.Attack);
+            Assert.AreEqual(5 + 24 + 2 * StatGrowth.HealthPerEvolution, twice.Health);
         }
 
         [Test]
@@ -445,7 +540,7 @@ namespace Pets.Tests
             ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution - 1, library);
 
             Assert.AreEqual(ExperienceResolver.ExpPerEvolution - 1, mon.Exp);
-            var expected = StatGrowth.AtExp(species, ExperienceResolver.ExpPerEvolution - 1);
+            var expected = StatGrowth.AtExp(species, "mon-1", ExperienceResolver.ExpPerEvolution - 1, 0);
             Assert.AreEqual(expected.Attack, mon.CurrentStats.Attack);
             Assert.AreEqual(expected.Health, mon.CurrentStats.Health);
             Assert.AreEqual(expected.Speed, mon.CurrentStats.Speed);
@@ -458,8 +553,11 @@ namespace Pets.Tests
         public void ExperienceResolver_StatsDependOnTotalExpOnly_NotOnHowItArrived()
         {
             var (species, _, library) = MakeEvolutionLine();
-            var atOnce = PokemonInstanceFactory.Create(species, "at-once");
-            var piecemeal = PokemonInstanceFactory.Create(species, "piecemeal");
+            // The same instance id on both: which stat a point buys is drawn from the mon's identity
+            // (ADR 0009), so two *different* mons are supposed to diverge. What this test is about is
+            // that one mon's stats don't depend on how its EXP arrived.
+            var atOnce = PokemonInstanceFactory.Create(species, "mon-1");
+            var piecemeal = PokemonInstanceFactory.Create(species, "mon-1");
 
             ExperienceResolver.GrantExp(atOnce, 30, library);
             for (int i = 0; i < 30; i++)
@@ -488,8 +586,10 @@ namespace Pets.Tests
             Assert.AreEqual(1, report.Evolutions.Count);
             Assert.AreEqual(evolved.Id, mon.SpeciesId);
             Assert.AreEqual(1, mon.TimesEvolved);
-            Assert.AreEqual(StatGrowth.AtExp(evolved, 0).Attack, mon.CurrentStats.Attack,
-                "an evolution starts again from the new species' tier line, keeping none of the old growth");
+            Assert.AreEqual(StatGrowth.AtExp(species, "mon-1", ExperienceResolver.ExpPerEvolution, 1).Attack,
+                mon.CurrentStats.Attack,
+                "an evolution is a flat bonus on top of the base form's growth — the new species' own " +
+                "stats contribute nothing");
             Assert.AreEqual(1, report.Gains.Count);
             StringAssert.Contains("Basic evolved into Evolved!", report.Describe());
         }
@@ -529,7 +629,7 @@ namespace Pets.Tests
             Assert.AreEqual(0, mon.TimesEvolved);
             Assert.IsFalse(ExperienceResolver.CanEverEvolve(mon, library));
             Assert.IsNull(ExperienceResolver.ExpToNextEvolution(mon, library));
-            Assert.AreEqual(StatGrowth.AtExp(species, 30).Attack, mon.CurrentStats.Attack,
+            Assert.AreEqual(StatGrowth.AtExp(species, "mon-1", 30, 0).Health, mon.CurrentStats.Health,
                 "a final form keeps growing; EXP never caps");
         }
 
@@ -572,15 +672,18 @@ namespace Pets.Tests
             var cheap = ExperienceResolver.CreateAtExp(second, "c", 0, library);
             Assert.AreEqual(second.Id, cheap.SpeciesId, "asking for a Charmeleon at 0 EXP can't produce a Charmander");
             Assert.AreEqual(perEvolution, cheap.Exp, "it costs what getting there costs");
+            Assert.AreEqual(StatGrowth.AtExp(first, "c", perEvolution, 1).Health, cheap.CurrentStats.Health,
+                "a mon asked for as a middle stage is still built from the base form it grew out of");
 
             var late = ExperienceResolver.CreateAtExp(first, "d", 2 * perEvolution, library);
             Assert.AreEqual(third.Id, late.SpeciesId);
         }
 
-        /// <summary>The fairness rule: nobody the run owns sits more than CatchUpExpGap below its
-        /// most-experienced mon, and catching up never takes EXP away from anyone.</summary>
+        /// <summary>The fairness rule, and its limit: nobody *in the party* sits more than
+        /// CatchUpExpGap below the run's most-experienced mon, catching up never takes EXP away from
+        /// anyone, and the Box is not part of it — a mon that didn't fight doesn't grow.</summary>
         [Test]
-        public void ExperienceResolver_ApplyCatchUp_RaisesStragglers_AndNeverLowersAnyone()
+        public void ExperienceResolver_ApplyCatchUp_RaisesPartyStragglers_LeavesTheBoxAlone()
         {
             var species = MakeSpecies(1, "Mon", PokemonType.Normal);
             var library = MakeLibrary(species);
@@ -588,17 +691,28 @@ namespace Pets.Tests
             var veteran = ExperienceResolver.CreateAtExp(species, "veteran", 12, library);
             var rookie = PokemonInstanceFactory.Create(species, "rookie");
             var boxed = ExperienceResolver.CreateAtExp(species, "boxed", 11, library);
+            var boxedStraggler = PokemonInstanceFactory.Create(species, "boxed-straggler");
             state.LineUp.Add(veteran);
             state.LineUp.Add(rookie);
             state.Box.Add(boxed);
+            state.Box.Add(boxedStraggler);
 
             ExperienceResolver.ApplyCatchUp(state, library);
 
             int floor = 12 - ExperienceResolver.CatchUpExpGap;
             Assert.AreEqual(12, veteran.Exp);
             Assert.AreEqual(floor, rookie.Exp);
-            Assert.AreEqual(StatGrowth.AtExp(species, floor).Health, rookie.CurrentHP);
+            Assert.AreEqual(StatGrowth.AtExp(species, "rookie", floor, 0).Health, rookie.CurrentHP);
             Assert.AreEqual(11, boxed.Exp, "a mon already above the floor is left alone");
+            Assert.AreEqual(0, boxedStraggler.Exp,
+                "the Box is not caught up — only the party earns, however far behind storage falls");
+
+            // ...and the moment it is fielded, the next grant brings it back within the gap, so
+            // leaving a mon in the Box costs nothing permanent.
+            state.Box.Remove(boxedStraggler);
+            state.LineUp.Add(boxedStraggler);
+            ExperienceResolver.ApplyCatchUp(state, library);
+            Assert.AreEqual(floor, boxedStraggler.Exp);
         }
 
         // ---- Camp -----------------------------------------------------------------------------
@@ -694,25 +808,76 @@ namespace Pets.Tests
         }
 
         /// <summary>Every mon in the line-up is paid, not just whoever was left standing — a
-        /// Reserve behind a Lead that never faints would otherwise never grow. The Box isn't paid;
-        /// it only catches up.</summary>
+        /// Reserve behind a Lead that never faints would otherwise never grow — and nothing outside
+        /// the line-up is paid at all, catch-up included. The Box wasn't at the fight.</summary>
         [Test]
-        public void BattleRewardResolver_PaysEveryMonInTheLineUp_ButNotTheBox()
+        public void BattleRewardResolver_PaysEveryMonInTheLineUp_AndNothingInTheBox()
         {
             var species = MakeSpecies(1, "Winner", PokemonType.Normal);
             var library = MakeLibrary(species);
             var state = new RunState();
-            state.LineUp.Add(PokemonInstanceFactory.Create(species, "lead"));
-            state.LineUp.Add(PokemonInstanceFactory.Create(species, "reserve"));
-            state.Box.Add(PokemonInstanceFactory.Create(species, "boxed"));
+            var lead = ExperienceResolver.CreateAtExp(species, "lead", 6, library);
+            var reserve = ExperienceResolver.CreateAtExp(species, "reserve", 6, library);
+            // Far enough behind that the old whole-run catch-up would have dragged it up with the
+            // party — which is exactly the free growth this test exists to rule out.
+            var boxed = PokemonInstanceFactory.Create(species, "boxed");
+            state.LineUp.Add(lead);
+            state.LineUp.Add(reserve);
+            state.Box.Add(boxed);
             var foes = new List<PokemonInstance> { PokemonInstanceFactory.Create(species, "foe") };
             int expected = BattleRewardResolver.ExpForWin(foes, isGym: false);
 
             var report = BattleRewardResolver.GrantWinRewards(state, foes, isGym: false, library);
 
             Assert.AreEqual(expected, report.ExpGranted);
-            Assert.IsTrue(state.LineUp.All(m => m.Exp == expected));
-            Assert.AreEqual(0, state.Box[0].Exp, "a mon sitting in the Box didn't fight");
+            Assert.IsTrue(state.LineUp.All(m => m.Exp == 6 + expected));
+            Assert.AreEqual(0, boxed.Exp, "a mon sitting in the Box didn't fight, so it didn't grow");
+            Assert.IsFalse(report.Gains.Any(g => g.Mon == boxed),
+                "and the result screen has nothing to say about it");
+        }
+
+        /// <summary>What the result panel reads off a win: one line per mon naming the stat its
+        /// point of EXP actually bought, since that's the half of a win the player doesn't already
+        /// know (ADR 0009 — a point buys Attack *or* Health by a draw they don't control).</summary>
+        [Test]
+        public void GrowthReport_GainLines_NameTheStatEachMonGained()
+        {
+            var species = MakeSpecies(1, "Winner", PokemonType.Normal);
+            var library = MakeLibrary(species);
+            var state = new RunState();
+            var lead = PokemonInstanceFactory.Create(species, "lead");
+            state.LineUp.Add(lead);
+            var before = lead.CurrentStats;
+            var foes = new List<PokemonInstance> { PokemonInstanceFactory.Create(species, "foe") };
+
+            var lines = BattleRewardResolver.GrantWinRewards(state, foes, isGym: false, library).GainLines();
+
+            Assert.AreEqual(1, lines.Count);
+            StringAssert.Contains(species.DisplayName, lines[0]);
+            StringAssert.Contains(GrowthReport.Line(before), lines[0], "the line it grew from");
+            StringAssert.Contains(GrowthReport.Line(lead.CurrentStats), lines[0], "and the line it grew to");
+            StringAssert.Contains(GrowthReport.Delta(before, lead.CurrentStats), lines[0]);
+            // A point is one stat or the other, never both, and never Speed.
+            Assert.That(GrowthReport.Delta(before, lead.CurrentStats),
+                Is.EqualTo("+1 Attack").Or.EqualTo("+1 Health"));
+        }
+
+        /// <summary>An evolution shows up in the same list, after the stat lines, so a win that set
+        /// one off reads in the order it happened.</summary>
+        [Test]
+        public void GrowthReport_GainLines_EndWithAnyEvolution()
+        {
+            var (species, _, library) = MakeEvolutionLine();
+            var report = new GrowthReport();
+            var mon = PokemonInstanceFactory.Create(species, "mon-1");
+            mon.Exp = ExperienceResolver.ExpPerEvolution - 1;
+            report.Merge(ExperienceResolver.GrantExp(mon, 1, library));
+
+            var lines = report.GainLines();
+
+            Assert.AreEqual(2, lines.Count);
+            StringAssert.Contains("→", lines[0]);
+            StringAssert.Contains("evolved into", lines[1]);
         }
 
         [Test]
@@ -753,7 +918,7 @@ namespace Pets.Tests
             Assert.IsEmpty(state.Box, "the duplicate should be consumed");
             Assert.AreEqual(1, state.LineUp.Count);
             Assert.AreEqual(4, state.LineUp[0].Exp, "one point, not the duplicate's two on top");
-            Assert.AreEqual(StatGrowth.AtExp(species, 4).Attack, state.LineUp[0].CurrentStats.Attack);
+            Assert.AreEqual(StatGrowth.AtExp(species, "keeper", 4, 0).Attack, state.LineUp[0].CurrentStats.Attack);
             Assert.AreEqual("keeper", state.LineUp[0].InstanceId, "the mon dropped onto is the one that survives");
         }
 
@@ -869,7 +1034,8 @@ namespace Pets.Tests
             Assert.AreEqual(1, state.Box.Count);
             int expectedExp = 12 - ExperienceResolver.CatchUpExpGap;
             Assert.AreEqual(expectedExp, state.Box[0].Exp);
-            Assert.AreEqual(StatGrowth.AtExp(species, expectedExp).Health, state.Box[0].CurrentHP);
+            Assert.AreEqual(StatGrowth.AtExp(species, state.Box[0].InstanceId, expectedExp, 0).Health,
+                state.Box[0].CurrentHP);
         }
 
         [Test]

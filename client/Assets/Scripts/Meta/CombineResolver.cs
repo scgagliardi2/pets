@@ -14,8 +14,8 @@ namespace Pets.Meta
     /// - The mon that **survives is the target** (the one dropped onto); the one dragged is
     ///   consumed. It gains **one point of EXP** (<see cref="ExpFor"/>) — the same as winning a fight,
     ///   and whatever the duplicate had earned is *not* carried over: a combine is a dupe sink, not a
-    ///   way to launder a second mon's growth. Two fresh Charmanders make a 3/3/1 with one point,
-    ///   five of them make a Charmeleon.
+    ///   way to launder a second mon's growth. Two fresh Charmanders make a 3/5/1 or a 4/4/1,
+    ///   depending on the species' growth draw.
     /// - A combine can't empty the line-up, the same rule every other way of losing a mon obeys
     ///   (RunState.CanReleaseMon).
     ///
@@ -71,20 +71,24 @@ namespace Pets.Meta
                 return new Eligibility(false, $"{name} is the last mon in your party.\nYou can't be left with none.");
             }
 
-            // What the survivor will actually be afterwards — which is a different species if this
-            // point is the fifth, so the preview has to follow the evolution rather than quote a stat
-            // line the mon will never wear.
-            int expAfter = ExperienceResolver.ExpSinceEvolution(survivor) + ExpFor(survivor);
+            // What the survivor will actually be afterwards. The preview has to follow the
+            // evolution when this point is the one that earns it, rather than quote a stat line the
+            // mon will never wear — and it can't just say "+1 Attack", since which stat the point
+            // buys is the species' own draw (Pets.Data.StatGrowth).
+            int expAfter = survivor.Exp + ExpFor(survivor);
             var evolvesInto = ExperienceResolver.NextEvolution(survivor, library);
-            string outcome = expAfter >= ExperienceResolver.ExpPerEvolution && evolvesInto != null
-                ? $"the other evolves into {evolvesInto.DisplayName}"
-                : $"the other grows to {GrowthReport.Line(Pets.Data.StatGrowth.AtExp(species, expAfter))}";
+            bool evolves = expAfter >= ExperienceResolver.ExpAtNextEvolution(survivor) && evolvesInto != null;
+            var statsAfter = ExperienceResolver.StatsFor(survivor, expAfter,
+                survivor.TimesEvolved + (evolves ? 1 : 0), library);
+            string outcome = evolves
+                ? $"the other evolves into {evolvesInto.DisplayName} at {GrowthReport.Line(statsAfter)}"
+                : $"the other grows to {GrowthReport.Line(statsAfter)}";
             return new Eligibility(true,
                 $"Combine two {name}?\nOne is consumed; {outcome}. This cannot be undone.");
         }
 
         /// <summary>Consumes the mon at <paramref name="fromIndex"/> into the one at
-        /// <paramref name="toIndex"/>, raising it a level. Returns what grew. Does nothing and returns
+        /// <paramref name="toIndex"/>, paying it a point of EXP. Returns what grew. Does nothing and returns
         /// an empty report if <see cref="CanCombine"/> wouldn't allow it.</summary>
         public static GrowthReport Combine(RunState state, RosterGroup fromGroup, int fromIndex,
             RosterGroup toGroup, int toIndex, PokemonSpeciesLibrary library)

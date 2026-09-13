@@ -96,6 +96,33 @@ namespace Pets.Tests
                 .Select(s => $"{s.DisplayName} ({s.BaseAttack}/{s.BaseHealth})");
             CollectionAssert.IsEmpty(nonPositive.ToArray(),
                 "a 0-Attack mon can never win and a 0-Health mon is already dead");
+
+            var frail = library.AllSpecies
+                .Where(s => s.BaseHealth <= s.BaseAttack)
+                .Select(s => $"{s.DisplayName} ({s.BaseAttack}/{s.BaseHealth})");
+            CollectionAssert.IsEmpty(frail.ToArray(),
+                "every species starts with more Health than Attack — one that doesn't trades a lethal " +
+                "blow with its own mirror on the first Step, leaving nothing for a passive to decide");
+        }
+
+        /// <summary>A point of EXP buys Attack or Health, never both, and which one is the species'
+        /// own draw (ADR 0009). Every species has to favour Health at least evenly — except the one
+        /// the real games give a single hit point, which never gains any.</summary>
+        [Test]
+        public void EverySpecies_HasAUsableHealthGrowthPercent()
+        {
+            var library = LoadSingle<PokemonSpeciesLibrary>();
+
+            var outOfRange = library.AllSpecies
+                .Where(s => s.HealthGrowthPercent != 0
+                    && (s.HealthGrowthPercent < SpeciesTier.MinHealthGrowthPercent || s.HealthGrowthPercent > 100))
+                .Select(s => $"{s.DisplayName} ({s.HealthGrowthPercent}%)");
+            CollectionAssert.IsEmpty(outOfRange.ToArray(),
+                $"HealthGrowthPercent must be 0 or {SpeciesTier.MinHealthGrowthPercent}..100 — re-run " +
+                "Pets > Content > Import Species From Roster Sheet");
+
+            Assert.Greater(library.AllSpecies.Select(s => s.HealthGrowthPercent).Distinct().Count(), 10,
+                "growth values that are all the same say nothing about a species");
         }
 
         /// <summary>An evolution has to be worth having: a tier is exactly what five EXP buys

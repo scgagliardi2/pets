@@ -296,8 +296,13 @@ namespace Pets.Tests
             yield return null;
 
             Assert.AreEqual(BattleOutcome.SideAWins, Controller().Outcome);
-            StringAssert.StartsWith("Victory!", ResultText());
-            StringAssert.Contains($"gains {expected} EXP", ResultText());
+            Assert.AreEqual("Victory!", ResultText());
+            StringAssert.Contains($"gains {expected} EXP", RewardText());
+            foreach (var mon in run.LineUp)
+            {
+                StringAssert.Contains(GrowthReport.Line(mon.CurrentStats), RewardText(),
+                    "every party mon's new stat line is on the result panel — that's what the win bought");
+            }
             Assert.AreEqual(RunState.StartingMorale, run.Morale, "winning costs no Morale");
             Assert.IsTrue(run.LineUp.TrueForAll(m => m.Exp == expected),
                 "every mon in the line-up is paid in EXP, not just whoever was left standing");
@@ -350,7 +355,7 @@ namespace Pets.Tests
             yield return null;
 
             Assert.IsTrue(run.IsRunOver);
-            StringAssert.Contains("run ends here", ResultText());
+            StringAssert.Contains("run ends here", RewardText());
 
             FindButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
@@ -371,7 +376,7 @@ namespace Pets.Tests
             yield return null;
 
             StringAssert.Contains("Badge earned", ResultText());
-            StringAssert.Contains($"Badges: 1 of {RunProgression.BadgesToWin}", ResultText());
+            StringAssert.Contains($"Badges: 1 of {RunProgression.BadgesToWin}", RewardText());
             Assert.AreEqual(ExpForBeatingOneLevelOneFoe(isGym: true), run.LineUp[0].Exp, "a Gym pays more than a wild fight");
             Assert.IsNull(FindCatchButton(), "a Gym Leader's team isn't wildlife to catch");
             Assert.AreEqual(1, run.BadgeCount);
@@ -399,7 +404,7 @@ namespace Pets.Tests
             yield return null;
 
             Assert.IsTrue(run.IsRunWon);
-            StringAssert.Contains("Champion", ResultText());
+            StringAssert.Contains("Champion", RewardText());
 
             FindButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
@@ -435,7 +440,18 @@ namespace Pets.Tests
             return controller;
         }
 
+        /// <summary>The result panel's headline — one word about how the fight went.</summary>
         private static string ResultText() => GameObject.Find("ResultText").GetComponent<Text>().text;
+
+        /// <summary>The rewards list under it: EXP, a line per party mon, the badge, the Morale a
+        /// loss cost. Found including inactive, since a fight that pays nothing hides it.</summary>
+        private static string RewardText()
+        {
+            var text = Object.FindObjectsByType<Text>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(t => t.name == "RewardText");
+            Assert.IsNotNull(text, "the result panel should have a RewardText");
+            return text.text;
+        }
 
         private static BattleStatsBoxView Stats(string name)
         {

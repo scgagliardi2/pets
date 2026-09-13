@@ -73,7 +73,8 @@ namespace Pets.Gameplay
 
             detailText.text = $"#{species.Id} {species.DisplayName}   {types}   Tier {species.Tier}   " +
                 $"ATK {species.BaseAttack}  HP {species.BaseHealth}  SPD {species.BaseSpeed}  " +
-                $"(total {species.BaseStatTotal})   {passive}   {note}";
+                $"(total {species.BaseStatTotal})   grows HP {species.HealthGrowthPercent}%   " +
+                $"{passive}   {note}";
         }
     }
 }

@@ -58,7 +58,20 @@ namespace Pets.EditorTools
         private const float ThrowGap = 24f;
         private static readonly Vector2 ThrowSize = new Vector2(150f, 150f);
 
-        private static readonly Vector2 ResultPanelSize = new Vector2(460f, 220f);
+        // Tall and wide enough for the rewards list under the headline: a six-mon party is six
+        // "Charmander  3/4/1 -> 3/5/1  (+1 Health)" lines, plus the EXP line and a badge or an
+        // evolution. Unity's Text truncates what doesn't fit its rect with no warning, which is
+        // exactly how the old 460x220 panel showed a 48pt "Victory!" and silently swallowed every
+        // reward line appended after it.
+        private static readonly Vector2 ResultPanelSize = new Vector2(560f, 420f);
+        private const float ResultHeadlineHeight = 88f;
+        private const float ResultTextPadding = 20f;
+
+        // The panel's offset from the centre of the screen. Lower than the 60 the short panel sat
+        // at: the catch row hangs above the panel, and a 420-tall panel at 60 pushed those buttons
+        // into the top edge of the screen. At 30 the row clears the top and the panel still clears
+        // the party strip below it.
+        private const float ResultPanelOffsetY = 30f;
         private static readonly Vector2 ResultButtonSize = new Vector2(200f, 64f);
         private const float ResultButtonInset = 20f;
         private const float CatchRowHeight = 64f;
@@ -126,7 +139,7 @@ namespace Pets.EditorTools
             var throwButton = CreateThrowButton(strip,
                 new Rect(rowLeft + PartySlotCount * (slotSize.x + SlotGap) - SlotGap + ThrowGap, rowTop, ThrowSize.x, ThrowSize.y));
 
-            var (resultPanel, resultText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
+            var (resultPanel, resultText, rewardText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
             var controller = new GameObject("BattleScreen").AddComponent<BattleScreenController>();
@@ -154,6 +167,7 @@ namespace Pets.EditorTools
             SetField(controller, "backButton", backButton);
             SetField(controller, "resultPanel", resultPanel.gameObject);
             SetField(controller, "resultText", resultText);
+            SetField(controller, "rewardText", rewardText);
             SetField(controller, "battleAgainButton", battleAgainButton.GetComponent<UiButton>());
             SetField(controller, "resultBackButton", resultBackButton.GetComponent<UiButton>());
             SetField(controller, "resultActionButton", resultActionButton.GetComponent<UiButton>());
@@ -355,12 +369,12 @@ namespace Pets.EditorTools
             return button;
         }
 
-        private static (RectTransform panel, Text result, Button battleAgain, Button back, Button action, RectTransform catchRow) CreateResultPanel(RectTransform board)
+        private static (RectTransform panel, Text result, Text reward, Button battleAgain, Button back, Button action, RectTransform catchRow) CreateResultPanel(RectTransform board)
         {
             var panel = CreateFrame(board, "ResultPanel", Theme.TextBoxSprite);
             panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
             panel.sizeDelta = ResultPanelSize;
-            panel.anchoredPosition = new Vector2(0f, 60f);
+            panel.anchoredPosition = new Vector2(0f, ResultPanelOffsetY);
 
             var result = CreatePlainText(panel, "ResultText", "Victory!", 48, TextAnchor.MiddleCenter, Theme.TextDark);
             result.fontStyle = FontStyle.Bold;
@@ -368,8 +382,19 @@ namespace Pets.EditorTools
             resultRect.anchorMin = new Vector2(0f, 1f);
             resultRect.anchorMax = new Vector2(1f, 1f);
             resultRect.pivot = new Vector2(0.5f, 1f);
-            resultRect.offsetMin = new Vector2(20f, -120f);
-            resultRect.offsetMax = new Vector2(-20f, -20f);
+            resultRect.offsetMin = new Vector2(ResultTextPadding, -(ResultTextPadding + ResultHeadlineHeight));
+            resultRect.offsetMax = new Vector2(-ResultTextPadding, -ResultTextPadding);
+
+            // What the fight was worth, under the headline and filling everything down to the
+            // buttons: the EXP, a line per party mon showing which stat its point bought, the badge,
+            // or the Morale a loss cost. Left inactive for a fight that pays nothing (the dev random
+            // battle) — see BattleScreenController.ShowResult.
+            var reward = CreatePlainText(panel, "RewardText", string.Empty, Theme.FontSizeHeading, TextAnchor.UpperCenter, Theme.TextDark);
+            var rewardRect = reward.rectTransform;
+            rewardRect.anchorMin = Vector2.zero;
+            rewardRect.anchorMax = Vector2.one;
+            rewardRect.offsetMin = new Vector2(ResultTextPadding, ResultButtonInset + ResultButtonSize.y + 12f);
+            rewardRect.offsetMax = new Vector2(-ResultTextPadding, -(ResultTextPadding + ResultHeadlineHeight));
 
             // The dev battle's pair, side by side. A node fight hides both and shows the single
             // centred action below instead — see BattleScreenController.UpdateResultButtons.
@@ -384,7 +409,7 @@ namespace Pets.EditorTools
             actionRect.sizeDelta = ResultButtonSize;
             actionRect.anchoredPosition = new Vector2(0f, ResultButtonInset);
 
-            return (panel, result, battleAgain, back, action, CreateCatchRow(panel));
+            return (panel, result, reward, battleAgain, back, action, CreateCatchRow(panel));
         }
 
         /// <summary>The row a won PvE node's catch offers appear in (BattleScreenController fills it

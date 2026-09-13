@@ -47,7 +47,7 @@ namespace Pets.Tests
             foreach (var species in library.AllSpecies)
             {
                 var instance = PokemonInstanceFactory.Create(species, $"{species.DisplayName}#1");
-                var expected = StatGrowth.AtExp(species, 0);
+                var expected = StatGrowth.AtExp(species, instance.InstanceId, 0, 0);
 
                 // A fresh mon wears its species' tier line exactly — growth is what EXP adds on top.
                 Assert.AreEqual(species.BaseAttack, instance.CurrentStats.Attack);

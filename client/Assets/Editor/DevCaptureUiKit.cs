@@ -90,6 +90,41 @@ namespace Pets.EditorTools
             CapturePlaying(BattleSceneBuilder.ScenePath);
         }
 
+        /// <summary>The result panel of a *won node fight* — the one state of the Battle screen
+        /// that reports what the run just earned, and the only way to look at the rewards list
+        /// (BattleScreenController's rewardText) without walking a map by hand. A four-mon party
+        /// against one weak foe, skipped straight to the end.</summary>
+        [MenuItem("Pets/Dev/Capture Battle Result Scene (Playing)")]
+        public static void CaptureBattleResultScenePlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState { RunSeed = 12345 };
+            for (int i = 0; i < 4 && i < library.AllSpecies.Count; i++)
+            {
+                run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[i], $"capture-{i}", 3, library));
+            }
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+
+            // A single 0-EXP foe, so the fight is a win however the party's stats fell out.
+            var foe = Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-foe", 0, library);
+            Pets.Gameplay.PendingBattle.Set(
+                new System.Collections.Generic.List<Pets.Simulation.PokemonInstance> { foe },
+                "capture-node", isGym: false, seed: 12345);
+
+            CapturePlaying(BattleSceneBuilder.ScenePath, SkipToBattleResult);
+        }
+
+        private static void SkipToBattleResult()
+        {
+            var controller = Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>();
+            if (controller == null)
+            {
+                Debug.LogError("[Capture] Battle scene has no BattleScreenController.");
+                return;
+            }
+            controller.OnSkipClicked();
+        }
+
         /// <summary>Run once in Play mode, a few frames before the shot is taken — for a screen
         /// whose interesting state is behind a gesture rather than in its resting layout.</summary>
         private static System.Action afterStart;
