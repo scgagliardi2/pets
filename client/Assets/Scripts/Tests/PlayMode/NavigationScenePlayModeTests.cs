@@ -29,7 +29,7 @@ namespace Pets.Tests
     {
         private const string HomeScenePath = "Assets/Scenes/Home.unity";
         private const string IngameMenuScenePath = "Assets/Scenes/IngameMenu.unity";
-        private const string RegionMapScenePath = "Assets/Scenes/RegionMap.unity";
+        private const string LocationMapScenePath = "Assets/Scenes/LocationMap.unity";
         private const string TeamScenePath = "Assets/Scenes/Team.unity";
         private const string HistoryScenePath = "Assets/Scenes/History.unity";
         private const string CreditsScenePath = "Assets/Scenes/Credits.unity";
@@ -184,9 +184,9 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator RegionMapScene_MenuButton_OpensTheIngameMenu()
+        public IEnumerator LocationMapScene_MenuButton_OpensTheIngameMenu()
         {
-            yield return LoadScene(RegionMapScenePath);
+            yield return LoadScene(LocationMapScenePath);
 
             AssertNavigatesVia("MenuButton", nameof(SceneNavigator.GoToIngameMenu));
         }
@@ -194,9 +194,9 @@ namespace Pets.Tests
         /// <summary>The Map is where a run is created now that Character Select hands off to it,
         /// so its bootstrapper has to publish that run for the Team screen in the next scene.</summary>
         [UnityTest]
-        public IEnumerator RegionMapScene_BootstrapsARunAndPublishesItToActiveRun()
+        public IEnumerator LocationMapScene_BootstrapsARunAndPublishesItToActiveRun()
         {
-            yield return LoadScene(RegionMapScenePath);
+            yield return LoadScene(LocationMapScenePath);
 
             Assert.IsTrue(ActiveRun.HasRun, "Loading the Map should start a run");
             Assert.AreEqual(2, ActiveRun.State.LineUp.Count);

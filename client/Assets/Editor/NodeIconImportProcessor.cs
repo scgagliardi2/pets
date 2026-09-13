@@ -9,7 +9,7 @@ namespace Pets.EditorTools
     ///
     /// These arrived as ~1312x1199 renders and were importing at full size and uncompressed —
     /// about 6 MB of texture each, ~31 MB for the five of them, for art that
-    /// RegionMapController draws into a 52-unit node (78 for the Gym's 1.5x scale). Capping the
+    /// LocationMapController draws into a 52-unit node (78 for the Gym's 1.5x scale). Capping the
     /// imported size is the entire point of this processor: 256 leaves headroom for a high-DPI
     /// screen, where the CanvasScaler's ~1.9x factor puts the Gym icon at roughly 146 real pixels,
     /// and still cuts each texture to well under a tenth of a megabyte.
@@ -21,7 +21,7 @@ namespace Pets.EditorTools
         private const string FolderPrefix = "Assets/Resources/Sprites/Nodes/";
 
         /// <summary>Biggest the node art is ever drawn, plus headroom for a high-DPI canvas scale
-        /// — see RegionMapController.NodeSize/GymNodeScale.</summary>
+        /// — see LocationMapController.NodeSize/GymNodeScale.</summary>
         private const int MaxSize = 256;
 
         private void OnPreprocessTexture()

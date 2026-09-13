@@ -27,11 +27,11 @@ namespace Pets.Meta
 
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —
-        /// RegionMapTraversal.ForRun binds a traversal to these.</summary>
-        public RegionMap LocationMap;
+        /// LocationMapTraversal.ForRun binds a traversal to these.</summary>
+        public LocationMap LocationMap;
 
         /// <summary>The nodes walked so far, oldest first. The last entry is where the player
-        /// stands — RegionMapTraversal derives its position from this rather than storing it
+        /// stands — LocationMapTraversal derives its position from this rather than storing it
         /// twice.</summary>
         public List<string> VisitedMapNodeIds = new List<string>();
 

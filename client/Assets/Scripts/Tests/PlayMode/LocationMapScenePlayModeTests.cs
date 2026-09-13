@@ -16,9 +16,9 @@ using Pets.Simulation;
 
 namespace Pets.Tests
 {
-    /// <summary>Drives the real Region Map scene the way a player does — clicking actual node
+    /// <summary>Drives the real Location Map scene the way a player does — clicking actual node
     /// Buttons — to verify the scene's own wiring, not just the graph logic underneath it (that's
-    /// RegionMapGeneratorTests / RegionMapTraversalTests).
+    /// LocationMapGeneratorTests / LocationMapTraversalTests).
     ///
     /// Two fixtures, because arriving at a node now resolves it (NodeResolutionController):
     /// - **Movement** tests run with no species library behind the run, which is the case a Map
@@ -26,9 +26,9 @@ namespace Pets.Tests
     /// - **Resolution** tests run a real run on a *seeded* map, so the node type under test is
     ///   reachable on purpose rather than by luck, with a party nothing in the roster can beat so a
     ///   fight's outcome is never in question. The map seed is reported on failure either way.</summary>
-    public class RegionMapScenePlayModeTests
+    public class LocationMapScenePlayModeTests
     {
-        private const string ScenePath = "Assets/Scenes/RegionMap.unity";
+        private const string ScenePath = "Assets/Scenes/LocationMap.unity";
         private const string NodesPath = "MapScroll/Viewport/Content/Nodes";
         // Headless batchmode runs frames uncapped (no vsync/target frame rate), so a
         // wall-clock MoveDuration of real seconds can take several thousand frames of
@@ -48,14 +48,14 @@ namespace Pets.Tests
 
         private const int MapSeedSearchLimit = 500;
 
-        private RegionMapController controller;
+        private LocationMapController controller;
         private Transform nodeRoot;
 
         [UnitySetUp]
         public IEnumerator SetUp()
         {
             // Each test needs a map at its start node. The screen shows the *run's* map and walked
-            // path rather than generating its own (RegionMapTraversal.ForRun), which is the point —
+            // path rather than generating its own (LocationMapTraversal.ForRun), which is the point —
             // re-entering the scene resumes the walk instead of rerolling it. That also means a run
             // left in the static ActiveRun by an earlier fixture, or by the previous test in this
             // one, would carry its half-walked map into the next test.
@@ -83,8 +83,8 @@ namespace Pets.Tests
 
         private void ResolveHandles()
         {
-            controller = Object.FindFirstObjectByType<RegionMapController>();
-            Assert.IsNotNull(controller, "scene has no RegionMapController");
+            controller = Object.FindFirstObjectByType<LocationMapController>();
+            Assert.IsNotNull(controller, "scene has no LocationMapController");
             Assert.IsNotNull(controller.Traversal, "controller should have generated a map by its first frame");
 
             nodeRoot = GameObject.Find("Canvas").transform.Find(NodesPath);
@@ -145,7 +145,7 @@ namespace Pets.Tests
                 .Where(b => b != null && b.interactable)
                 .ToList();
 
-            Assert.AreEqual(RegionMapGenerator.StartingOptionCount, interactable.Count, Seed());
+            Assert.AreEqual(LocationMapGenerator.StartingOptionCount, interactable.Count, Seed());
             foreach (var node in controller.Traversal.AvailableNextNodes)
             {
                 Assert.IsTrue(ButtonFor(node.Id).interactable, $"{node.Id} should be clickable. {Seed()}");
@@ -183,7 +183,7 @@ namespace Pets.Tests
 
         /// <summary>Against the actual scene: walking a step, then reloading the Map the way
         /// returning from the Ingame Menu or Team does, resumes the same map at the same node. The
-        /// map and walked path live on RunState (RegionMapTraversal.ForRun); before that, the
+        /// map and walked path live on RunState (LocationMapTraversal.ForRun); before that, the
         /// controller owned them and re-entry silently rerolled the map.</summary>
         [UnityTest]
         public IEnumerator ReEnteringTheScene_ResumesTheRunsMapAndPosition()
@@ -316,7 +316,7 @@ namespace Pets.Tests
             Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, "the player stays where they walked to");
         }
 
-        /// <summary>The Pokémon Center only ever lands mid-run (RegionMapGenerator keeps it to one
+        /// <summary>The Pokémon Center only ever lands mid-run (LocationMapGenerator keeps it to one
         /// fixed layer or the one before the Gym), so this walks to it, fighting whatever is in the
         /// way — which is also the closest thing here to playing a stretch of a real run.</summary>
         [UnityTest]
@@ -422,7 +422,7 @@ namespace Pets.Tests
             var library = ActiveRun.Library;
             Assert.IsNotNull(library, "the Map scene's RunBootstrapper should have published the curated library");
 
-            var run = new RunState { RunSeed = 4242, LocationMap = RegionMapGenerator.Generate(mapSeed) };
+            var run = new RunState { RunSeed = 4242, LocationMap = LocationMapGenerator.Generate(mapSeed) };
             var mon = PokemonInstanceFactory.Create(library.AllSpecies[0], "test-lead");
             mon.Exp = UnbeatableExp;
             ExperienceResolver.Recompute(mon, library);
@@ -475,7 +475,7 @@ namespace Pets.Tests
         {
             for (int seed = 1; seed < MapSeedSearchLimit; seed++)
             {
-                if (RegionMapGenerator.Generate(seed).NodesInLayer(1).Any(n => n.Type == type))
+                if (LocationMapGenerator.Generate(seed).NodesInLayer(1).Any(n => n.Type == type))
                 {
                     return seed;
                 }
@@ -486,11 +486,11 @@ namespace Pets.Tests
 
         /// <summary>The first map seed containing this node type anywhere, with the node itself —
         /// for a type the generator never puts in the opening layer (the Pokémon Center).</summary>
-        private static (int seed, RegionMapNode node) SeedWithNode(NodeType type)
+        private static (int seed, LocationMapNode node) SeedWithNode(NodeType type)
         {
             for (int seed = 1; seed < MapSeedSearchLimit; seed++)
             {
-                var match = RegionMapGenerator.Generate(seed).Nodes.FirstOrDefault(n => n.Type == type);
+                var match = LocationMapGenerator.Generate(seed).Nodes.FirstOrDefault(n => n.Type == type);
                 if (match != null)
                 {
                     return (seed, match);
@@ -500,7 +500,7 @@ namespace Pets.Tests
             return (0, null);
         }
 
-        private RegionMapNode OpeningNodeOfType(NodeType type)
+        private LocationMapNode OpeningNodeOfType(NodeType type)
         {
             var node = controller.Traversal.AvailableNextNodes.FirstOrDefault(n => n.Type == type);
             Assert.IsNotNull(node, $"the seeded map should offer a {type} node from the start. {Seed()}");
@@ -510,7 +510,7 @@ namespace Pets.Tests
         /// <summary>The node ids to click, in order, to get from where the player stands to
         /// <paramref name="targetId"/> — a breadth-first walk of the map's forward edges, excluding
         /// the node they're already on.</summary>
-        private static List<string> PathTo(RegionMap map, string targetId)
+        private static List<string> PathTo(LocationMap map, string targetId)
         {
             var cameFrom = new Dictionary<string, string>();
             var queue = new Queue<string>();

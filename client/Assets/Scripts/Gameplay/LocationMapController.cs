@@ -20,7 +20,7 @@ namespace Pets.Gameplay
     /// What a node *does* on arrival isn't this class's job either: it raises
     /// <see cref="NodeArrived"/> once the token settles and NodeResolutionController turns that into
     /// a fight, a Camp visit or an Event. This stays the map and the movement on it.</summary>
-    public sealed class RegionMapController : MonoBehaviour
+    public sealed class LocationMapController : MonoBehaviour
     {
         /// <summary>Gap between one layer and the next, along the map's left-to-right flow.</summary>
         private const float LayerSpacing = 120f;
@@ -102,7 +102,7 @@ namespace Pets.Gameplay
         [SerializeField] private int seed;
 
         [Tooltip("Counts the start layer and the Gym layer, so 7 = start + 5 choice layers + Gym.")]
-        [SerializeField] private int layerCount = RegionMapGenerator.DefaultLayerCount;
+        [SerializeField] private int layerCount = LocationMapGenerator.DefaultLayerCount;
 
         private readonly Dictionary<string, NodeView> nodeViews = new Dictionary<string, NodeView>();
         private readonly List<EdgeView> edgeViews = new List<EdgeView>();
@@ -120,16 +120,16 @@ namespace Pets.Gameplay
         /// scene, or re-rolling with New Map): re-entering the Map from a resolved node would
         /// otherwise resolve it a second time.
         ///
-        /// The walk is forward-only (RegionMapTraversal), so a node is reached exactly once per
+        /// The walk is forward-only (LocationMapTraversal), so a node is reached exactly once per
         /// run and "visited" already means "resolved" — there's no separate cleared flag to
         /// keep.</summary>
-        public event Action<RegionMapNode> NodeArrived;
+        public event Action<LocationMapNode> NodeArrived;
 
         /// <summary>The walk state over the currently displayed map — a view over the run's own
         /// map and walked path (see <see cref="Show"/>), not state this screen owns.</summary>
-        public RegionMapTraversal Traversal { get; private set; }
+        public LocationMapTraversal Traversal { get; private set; }
 
-        public IReadOnlyList<RegionMapNode> LastGeneratedNodes => Traversal?.Map.Nodes;
+        public IReadOnlyList<LocationMapNode> LastGeneratedNodes => Traversal?.Map.Nodes;
 
         /// <summary>True while the player token is sliding between two nodes; input is ignored
         /// until it lands so a fast double-click can't skip a layer.</summary>
@@ -152,7 +152,7 @@ namespace Pets.Gameplay
         private void Show()
         {
             StopWalking();
-            Build(RegionMapTraversal.ForRun(Run, SeedForNewMap(), layerCount));
+            Build(LocationMapTraversal.ForRun(Run, SeedForNewMap(), layerCount));
         }
 
         /// <summary>Throws the run's map away and walks a brand new one — the "New Map" button.
@@ -161,7 +161,7 @@ namespace Pets.Gameplay
         public void Regenerate()
         {
             StopWalking();
-            Build(RegionMapTraversal.RegenerateForRun(Run, SeedForNewMap(), layerCount));
+            Build(LocationMapTraversal.RegenerateForRun(Run, SeedForNewMap(), layerCount));
         }
 
         // Qualified: this file has `using System`, for the NodeArrived event's Action.
@@ -186,7 +186,7 @@ namespace Pets.Gameplay
         public RunState Run =>
             standaloneRun ?? (ActiveRun.HasRun ? ActiveRun.State : standaloneRun = new RunState());
 
-        private void Build(RegionMapTraversal traversal)
+        private void Build(LocationMapTraversal traversal)
         {
             Traversal = traversal;
             var map = traversal.Map;
@@ -241,7 +241,7 @@ namespace Pets.Gameplay
         /// journey across the Location and a whole run's worth of layers fits on screen at once
         /// (the scroll view still exists for a longer map or a narrower window, and starts where
         /// the player starts).</summary>
-        private Dictionary<string, Vector2> LayOutNodes(RegionMap map)
+        private Dictionary<string, Vector2> LayOutNodes(LocationMap map)
         {
             // Seeded separately from the generator so nudging the layout can never change which
             // graph a given seed produces.
@@ -330,7 +330,7 @@ namespace Pets.Gameplay
             return new EdgeView { FromId = fromId, ToId = toId, Rect = rect, Image = image };
         }
 
-        private NodeView CreateNode(RegionMapNode node, Vector2 position)
+        private NodeView CreateNode(LocationMapNode node, Vector2 position)
         {
             float size = node.Type == NodeType.Gym ? NodeSize * GymNodeScale : NodeSize;
 
@@ -389,7 +389,7 @@ namespace Pets.Gameplay
         /// node's flavor name (Battle/Encounter/Mystery Trainer/Pokémon Center/Gym). Kept as its own
         /// object below the icon, rather than overlaid on top of it, so real artwork isn't covered
         /// by text.</summary>
-        private Text CreateCaption(RegionMapNode node, Vector2 nodePosition, float nodeSize)
+        private Text CreateCaption(LocationMapNode node, Vector2 nodePosition, float nodeSize)
         {
             var go = new GameObject($"Caption_{node.Id}", typeof(RectTransform));
             go.transform.SetParent(nodeRoot, false);
@@ -626,7 +626,7 @@ namespace Pets.Gameplay
 
         private sealed class NodeView
         {
-            public RegionMapNode Node;
+            public LocationMapNode Node;
             public RectTransform Rect;
             public Image Image;
             public Button Button;

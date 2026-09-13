@@ -12,7 +12,7 @@ namespace Pets.EditorTools
     /// junction between the run's scenes: back to the Map, across to Team, into the dev roster
     /// screen, or out to Home.
     /// Replaces the old Forest Location Hub that used to occupy Game.unity (its tabbed
-    /// Team/Map/Shop/Center screen predates the Region Map being the run's actual map; the hub's
+    /// Team/Map/Shop/Center screen predates the Location Map being the run's actual map; the hub's
     /// controllers are still in Gameplay for the Shop/Center work they'll be reused for).
     ///
     /// Re-run via Pets &gt; Build Ingame Menu Scene (or Pets &gt; Build All Scenes).</summary>

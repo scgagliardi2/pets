@@ -46,7 +46,7 @@ namespace Pets.EditorTools
         /// every screen was when it was turned on globally.
         ///
         /// Pass false for a screen that animates. Snapping to whole pixels quantizes continuous
-        /// motion, so anything lerping a position steps instead of gliding — the Region Map's
+        /// motion, so anything lerping a position steps instead of gliding — the Location Map's
         /// player token and its scroll are the reason this is a parameter rather than always
         /// on.</param>
         public static RectTransform CreateCanvas(Vector2? referenceResolution = null, bool pixelPerfect = true)

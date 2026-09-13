@@ -10,7 +10,7 @@ using static Pets.EditorTools.SceneBuilderUtils;
 
 namespace Pets.EditorTools
 {
-    /// <summary>Builds the Region Map scene (design doc §5): a randomly generated branching
+    /// <summary>Builds the Location Map scene (design doc §5): a randomly generated branching
     /// node-map the player walks from a start node, through five layers of choices, to the
     /// mandatory Gym, over a placeholder solid-color background (real background art is a later
     /// pass). Each node shows its own icon — Battle/Encounter/Mystery Trainer/Pokémon Center/Gym,
@@ -22,10 +22,10 @@ namespace Pets.EditorTools
     /// overlay prefabs this builder instantiates over the map. The title bar carries the run's
     /// Morale/Money alongside the Menu button, since the map is the screen a run is spent on.
     ///
-    /// Re-run via Pets &gt; Build Region Map Scene after changing RegionMapController's or
+    /// Re-run via Pets &gt; Build Location Map Scene after changing LocationMapController's or
     /// NodeResolutionController's serialized fields — or Pets &gt; Build All Scenes after changing
     /// either overlay prefab, which is what rebuilds those first.</summary>
-    public static class RegionMapSceneBuilder
+    public static class LocationMapSceneBuilder
     {
         /// <summary>Matches every other scene builder. Leaving this to CreateCanvas's own default
         /// (960x720) is what made the Map's chrome ~33% bigger than the rest of the game and
@@ -47,7 +47,7 @@ namespace Pets.EditorTools
         private const float NewMapButtonWidth = 200f;
         private const float ResourceBarWidth = 280f;
 
-        [MenuItem("Pets/Build Region Map Scene")]
+        [MenuItem("Pets/Build Location Map Scene")]
         public static void Build()
         {
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -61,7 +61,7 @@ namespace Pets.EditorTools
 
             var titleBar = CreatePanel(canvasRect, "TitleBar", Theme.ChromeBg, new Vector2(0f, 1f), Vector2.one);
             PinToTop(titleBar, TitleHeight);
-            var titleText = CreatePlainText(canvasRect, "TitleText", "Region Map", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
+            var titleText = CreatePlainText(canvasRect, "TitleText", "Location Map", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextLight);
             titleText.fontStyle = FontStyle.Bold;
             // The title label stretches the whole bar, including over the Menu button in its left
             // corner — as a raycast target it would quietly swallow that button's clicks.
@@ -104,7 +104,7 @@ namespace Pets.EditorTools
 
             // Vertical scrolling as well as horizontal: the taller chrome these sprite buttons
             // need leaves the map area 560 units high, and the widest map the generator can
-            // produce (4 branches in a layer — RegionMapGenerator.MaxNodesPerLayer) lays out 572
+            // produce (4 branches in a layer — LocationMapGenerator.MaxNodesPerLayer) lays out 572
             // units tall, so the top and bottom node of such a column would otherwise be clipped
             // by a few units with no way to reach them. With ScrollRect.movementType Clamped a map
             // that does fit can't be dragged off-centre, so this costs nothing in the common case.
@@ -119,10 +119,10 @@ namespace Pets.EditorTools
 
             // Left-anchored, vertically centered content: layer 0 sits at the left edge and the
             // Gym at the right, so the map reads left to right and each layer's branches stack
-            // into a column around the middle. At RegionMapController's spacings a default
+            // into a column around the middle. At LocationMapController's spacings a default
             // seven-layer map fits the viewport end to end; the scroll axis is there for a longer
             // map or a narrower window, and it follows the player when it's needed.
-            // (RegionMapController recomputes this size per generated map — see LayOutNodes.)
+            // (LocationMapController recomputes this size per generated map — see LayOutNodes.)
             content.anchorMin = content.anchorMax = new Vector2(0f, 0.5f);
             content.pivot = new Vector2(0f, 0.5f);
             content.sizeDelta = new Vector2(860, 560);
@@ -141,7 +141,7 @@ namespace Pets.EditorTools
             background.raycastTarget = false;
             StretchTo(backgroundGO.GetComponent<RectTransform>(), Vector2.zero, Vector2.one);
 
-            var controller = new GameObject("RegionMap").AddComponent<RegionMapController>();
+            var controller = new GameObject("LocationMap").AddComponent<LocationMapController>();
             SetField(controller, "content", content);
             SetField(controller, "scrollRect", scrollRect);
             SetField(controller, "statusText", statusText);
@@ -173,7 +173,7 @@ namespace Pets.EditorTools
 
             SceneCatalog.EnsureBuildScenes();
 
-            Debug.Log($"Region Map scene rebuilt at {ScenePath}");
+            Debug.Log($"Location Map scene rebuilt at {ScenePath}");
         }
 
         /// <summary>Instantiates a node-resolution overlay prefab stretched over the whole canvas
@@ -184,7 +184,7 @@ namespace Pets.EditorTools
             if (prefab == null)
             {
                 throw new System.InvalidOperationException(
-                    $"Region Map scene build failed: no prefab at {prefabPath}. Run Pets > Build All Scenes, which builds the overlay prefabs first.");
+                    $"Location Map scene build failed: no prefab at {prefabPath}. Run Pets > Build All Scenes, which builds the overlay prefabs first.");
             }
 
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, canvasRect);

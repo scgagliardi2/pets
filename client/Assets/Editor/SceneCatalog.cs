@@ -16,7 +16,7 @@ namespace Pets.EditorTools
         {
             HomeSceneBuilder.ScenePath,
             CharacterSelectSceneBuilder.ScenePath,
-            RegionMapSceneBuilder.ScenePath,
+            LocationMapSceneBuilder.ScenePath,
             IngameMenuSceneBuilder.ScenePath,
             TeamSceneBuilder.ScenePath,
             HistorySceneBuilder.ScenePath,
@@ -52,7 +52,7 @@ namespace Pets.EditorTools
             NodeEventOverlayPrefabBuilder.Build();
             HomeSceneBuilder.Build();
             CharacterSelectSceneBuilder.Build();
-            RegionMapSceneBuilder.Build();
+            LocationMapSceneBuilder.Build();
             IngameMenuSceneBuilder.Build();
             TeamSceneBuilder.Build();
             HistorySceneBuilder.Build();

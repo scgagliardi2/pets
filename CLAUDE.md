@@ -54,8 +54,8 @@ exists — the phase list under it describes intent, and the build has deviated 
   a bespoke passive (the rest share one placeholder per primary type), and the encounter/Gym/random
   -battle pools still draw from the *whole* library unfiltered, so a Forest wild encounter can be a
   Legendary. See PLAN.md §11 item 9.
-- `RegionMap*` is misnamed: it's the **Location** node-map (design doc §5), not the Region tier
-  (§4/§5.2), which isn't built. See PLAN.md §6 "Known naming debt" before adding to it.
+- `LocationMap*` (formerly `RegionMap*`) is the **Location** node-map (design doc §5). "Region" means
+  the tier above it (§4/§5.2).
 - There is **no save/load layer** (so "Continue Run" only resumes a run still in memory, and
   History has nothing to list) and **no content-import pipeline** (the 28 curated species were
   hand-authored asset by asset). Both are still in the plan; neither is built.

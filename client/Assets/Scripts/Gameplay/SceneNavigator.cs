@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Pets.Gameplay
 {
     /// <summary>The one component every menu button's onClick points at. The Home, Ingame Menu,
-    /// Team and Region Map scenes are all wired by the Editor scene builders through
+    /// Team and Location Map scenes are all wired by the Editor scene builders through
     /// UnityEventTools.AddVoidPersistentListener, which needs a real no-argument method on a real
     /// component — so plain navigation lives here rather than as a per-screen controller class
     /// that would otherwise hold nothing but LoadScene calls.

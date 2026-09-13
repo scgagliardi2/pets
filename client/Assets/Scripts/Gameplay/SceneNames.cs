@@ -9,7 +9,7 @@ namespace Pets.Gameplay
     {
         public const string Home = "Home";
         public const string CharacterSelect = "CharacterSelect";
-        public const string Map = "RegionMap";
+        public const string Map = "LocationMap";
         public const string IngameMenu = "IngameMenu";
         public const string Team = "Team";
         public const string History = "History";

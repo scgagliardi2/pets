@@ -337,13 +337,11 @@ and PvP nodes show an honest "not built yet" modal; catching is still the "pick 
 stub; and money is never awarded, since there's no Shop to spend it in.
 
 **Known naming debt** (noted rather than fixed, so nobody assumes the names are meaningful):
-- `RegionMap*` (`Meta/RegionMap.cs`, `RegionMapNode`, `RegionMapGenerator`, `RegionMapTraversal`,
-  `RegionMapController`, `RegionMapSceneBuilder`, `RegionMap.unity`, `SceneNames.Map`) is really
-  the **Location** node-map from design doc §5 — branching PvE/Event/PvP/Camp converging on a
-  mandatory Gym. The *Region* in the design doc (§4, §5.2) is the tier above it: the pool of
-  candidate Locations and the Region Hub that offers 3 of them. That screen doesn't exist yet, so
-  when it's built the current `RegionMap*` names should become `LocationMap*` first, or the two
-  tiers will be permanently confusing.
+- ~~`RegionMap*` is really the Location node-map~~ — renamed to `LocationMap*` (`Meta/LocationMap.cs`,
+  `LocationMapNode`, `LocationMapGenerator`, `LocationMapTraversal`, `LocationMapController`,
+  `LocationMapSceneBuilder`, `LocationMap.unity`; `SceneNames.Map` now resolves to "LocationMap")
+  before the Region Hub was built, so "Region" is free to mean the tier above it (design doc §4,
+  §5.2).
 - ~~`NodeType.Camp` labelled "Pokémon Center"~~ — settled with node resolution (ADR 0003): the node
   *is* the Pokémon Center (its map art and caption always were), and design doc §5.1's Camp effect
   (EXP + a next-fight Attack buff) is what resting there currently does. §5.2's adoption, and
@@ -554,11 +552,7 @@ there's finally a run worth persisting, and a finished run with nothing to recor
 5. **The real drag-and-drop catching system** (Step-boundary ball throws, HP%/status-based odds,
    design doc §12.1) in place of the "pick 1 from defeated" stub now offered on the result panel.
    The Throw button is already drawn and disabled on `Battle.unity`, waiting for it.
-6. **Rename `RegionMap*` → `LocationMap*`** before building the actual Region Hub / Location
-   selection tier (§6 naming debt). Still open, and now slightly wider than before —
-   `RunState.LocationMap` is already correctly named and holds a `RegionMap`, which reads oddly.
-   Mechanical, but touches ~8 files plus a scene regeneration, so do it as its own commit, not
-   folded into feature work.
+6. ~~**Rename `RegionMap*` → `LocationMap*`**~~ Done, as its own commit, ahead of the Region Hub.
 7. Evolution (via PokeAPI evolution chains), the Trailblazer minigame, Pokémon Center adoption,
    and a real Shop economy.
 8. Narrow Character Select toward design doc §3's actual flow (fixed/chosen starter + a 3-option

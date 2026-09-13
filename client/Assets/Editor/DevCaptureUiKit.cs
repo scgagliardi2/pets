@@ -53,12 +53,12 @@ namespace Pets.EditorTools
         public static void CapturePokedexScenePlaying() =>
             CapturePlaying(PokedexSceneBuilder.ScenePath);
 
-        /// <summary>The Region Map's nodes, edges, captions and player token are all built in
-        /// RegionMapController.Build at runtime, so like Character Select it only shows anything
+        /// <summary>The Location Map's nodes, edges, captions and player token are all built in
+        /// LocationMapController.Build at runtime, so like Character Select it only shows anything
         /// worth looking at in Play mode.</summary>
-        [MenuItem("Pets/Dev/Capture Region Map Scene (Playing)")]
-        public static void CaptureRegionMapScenePlaying() =>
-            CapturePlaying(RegionMapSceneBuilder.ScenePath);
+        [MenuItem("Pets/Dev/Capture Location Map Scene (Playing)")]
+        public static void CaptureLocationMapScenePlaying() =>
+            CapturePlaying(LocationMapSceneBuilder.ScenePath);
 
         /// <summary>The Battle screen redirects to Character Select without a party, so a
         /// three-mon run from the library's first species is seeded first — before Play mode is
