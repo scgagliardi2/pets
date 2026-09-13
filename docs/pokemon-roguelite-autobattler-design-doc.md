@@ -91,6 +91,8 @@ Every Location's node-map branches through PvE/Event/PvP/Camp nodes but always f
 | **Event** | Narrative screen | Choose an outcome (branching text choice) | EXP / mon / item, per choice | Possible negative outcome, per choice |
 | **PvP** | Line-up menu (see opponent's saved team) | Step-through or autoplay; no catching — it's a trainer battle | Bonus EXP + money | Morale -1 (TBD) |
 | **Camp** | Special team management screen | N/A | Grants EXP to current mons + a temporary buff for the next fight (e.g., bonus typing, stat boost) | — |
+
+EXP per node, as built (ADR 0006): a won PvE fight pays 3, PvP 4, a Gym 8, and a Pokémon Center rest 2 — against level costs of 7 (level 2) rising to 17 (level 12). The whole line-up is paid, not just the survivors.
 | **Gym** (mandatory finale of every Location) | Line-up menu (see Gym Leader's team, reorder your line-up) | Step-through or autoplay; no catching — it's a trainer battle | Badge (permanent run-wide passive, like a Slay the Spire relic) + money; unlocks next Location choice | Morale -1 (TBD) |
 
 **Design intent:** PvE nodes are the "trash mobs" — fast, low prep, but now with a real skill layer (when to throw a ball). Gym and PvP nodes are the higher-stakes fights, so you get to scout the enemy and rearrange your line-up first, and there's nothing to catch.
@@ -152,6 +154,8 @@ It ties directly into stats you already track (Speed, Type), reuses your existin
   | Rock | 14 | | | | |
 
 - **Stats are explicit placeholders.** Attack/HP/Speed are given directly per evolution stage in the sheet (not derived from anything) and are called out as very subject to change — treat every number as a first draft to be rebalanced once real battles are played.
+- **What the sheet's numbers mean in a fight** (as built, ADR 0006): they are a species at **level 1**. A mon's stats are `StatGrowth.StatsFor(sheet stats, level)` — Attack and Health grow by 10% of the sheet value plus a flat 3 per level, Speed does not grow at all (it drives the charge meter against a fixed threshold, §10.3), and every Health number is multiplied by 3 because the sheet's raw Health is roughly one hit and fights were ending in two Steps. Levels run 1–12 across a six-Location run.
+- **A Location's opposition is built at the run's level too** (`RegionTier`), a few levels below the party, and drawn only from evolution stages the run has reached — base forms early, everything by the last Location, with the 7 Legendaries reserved for the final Gym. That is what makes §4's difficulty tiers mean anything.
 - **Abilities are intentionally blank for now** — the sheet's Ability column is empty across all 183 rows; passives will be added later. Whenever they are, they should follow §10.3's framework (triggers when the mon's own charge meter fills, regardless of Lead/Support role) and lean on the Type-flavor seeds in §11 (Fire→burn, Water→shield/heal, Electric→paralyze/speed, and so on).
 - **Open assumption:** the 7 Legendaries above are folded into the same flat list/format as everything else here, with no rarity flag. Carrying forward §4's earlier design (Legendaries as ultra-rare, PvE-only, full-party-wipe-risk encounters), this doc still treats those 7 as Legendary-tier unless told otherwise.
 - Evolution throughline rule still applies once abilities exist: a passive should persist through a Pokémon's evolutions, with only its magnitude scaling by stage/level, not a different passive per stage.
@@ -328,7 +332,7 @@ Every Location has exactly one Gym — its mandatory final/boss node. Beating it
 
 ## 15. Morale, Win & Loss
 
-- Morale starts at some fixed value (TBD) and decrements on a lost battle node.
+- Morale starts at some fixed value and decrements on a lost battle node. **As built:** 5, sized against a six-Location run's ~27 fights at the win rates `RegionTier` aims for, which expects about three losses (ADR 0006).
 - `Morale <= 0` → run over, "Better luck next time" screen, achievements recorded regardless.
 - The run's win condition, **as built** (ADR 0006): eight badges. Morale starts at 3 and refills with each badge.
 
@@ -418,6 +422,6 @@ Modeled on Super Auto Pets:
 - Can multiple balls be thrown at the same target across one fight (retry after a failed catch), or is it one attempt per encounter?
 - Pokémon Center exact economy: adoption cost and refresh cadence per Location visit.
 - Does the Shop still sell mons directly, now that catching and Pokémon Center adoption both exist as acquisition paths?
-- What does the starting badge actually do, if anything, before you've earned real ones?
+- What does the starting badge actually do, if anything, before you've earned real ones? (And what does an *earned* badge do — as built they are counted but inert, §14.)
 - Item equip slot count per mon, and whether items are consumable, permanent, or removable-but-lockable.
 - PvP fairness: rating bands, snapshot refresh cadence, daily challenge caps.

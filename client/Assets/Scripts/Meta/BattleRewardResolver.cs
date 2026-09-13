@@ -56,5 +56,12 @@ namespace Pets.Meta
             ExperienceResolver.ApplyCatchUp(state, library);
             return report;
         }
+
+        /// <summary>Pays the run's line-up for a win at <paramref name="nodeType"/> and returns the
+        /// evolutions it set off, so the caller can tell the player about them — an evolution is the
+        /// one thing here worth more than a number ticking up.</summary>
+        public static List<ExperienceResolver.Evolution> GrantWinRewards(
+            RunState state, PokemonSpeciesLibrary library, NodeType nodeType) =>
+            RunProgression.GrantToLineUp(state, ExpForWin(nodeType), library);
     }
 }

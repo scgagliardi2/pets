@@ -363,6 +363,7 @@ namespace Pets.Gameplay
                     resultText.text = context == BattleContext.MapGym
                         ? "Badge earned!"
                         : "Victory!";
+
                     resultText.color = Theme.Positive;
                     break;
                 case BattleOutcome.SideBWins:
@@ -436,6 +437,17 @@ namespace Pets.Gameplay
             if (context == BattleContext.MapPvE)
             {
                 OfferCatches();
+            }
+
+            if (context == BattleContext.MapGym)
+            {
+                // Banks the badge and clears the map, which is what sends the player to the Region
+                // Hub to pick the next Location (RunState.CompleteLocation). Done here rather than
+                // on the Continue button so the result panel can say what the badge was worth.
+                state.CompleteLocation();
+                resultText.text += state.IsRunWon
+                    ? $"\n{state.Badges} badges. The run is won."
+                    : $"\nBadge {state.Badges} of {RegionTier.RegionsPerRun}.";
             }
         }
 

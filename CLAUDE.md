@@ -30,7 +30,7 @@ Pets–style Lead/Support auto-battler, themed with Pokémon species/types/asset
 
 **Current state: read PLAN.md §6's Status block first.** It is the only accurate account of what
 exists — the phase list under it describes intent, and the build has deviated from that order
-(ADR 0002). The short version, as of 2026-09-12:
+(ADR 0002). The short version, as of 2026-09-13:
 - Everything in the tree is **post-pivot**. The old 5-slot code and `Gameplay/ShopEconomy` were
   deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
   extend, not replace.

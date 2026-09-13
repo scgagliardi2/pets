@@ -366,7 +366,7 @@ namespace Pets.Tests
             yield return FinishFightAndReturnToMap();
 
             Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, "the fight left the player where it found them");
-            Assert.AreEqual(3, run.Morale, "a won fight costs no Morale");
+            Assert.AreEqual(new RunState().Morale, run.Morale, "a won fight costs no Morale");
             Assert.Greater(run.LineUp[0].Exp, 0, "a won fight pays EXP");
         }
 

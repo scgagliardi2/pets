@@ -346,6 +346,18 @@ player's levels, and draw from filtered pools (base forms, a rising stat cap, Le
 final Gym). 92 of the 183 species have a real PokeAPI evolution link; the three branching lines
 (Eevee, Tyrogue, Nincada) deliberately have none, so they can't evolve until a branch picker exists.
 
+**The run's floor level** (`RunState.FloorLevel`, `RunProgression`) holds every mon the run owns —
+line-up *and* Box — one level below what the run has earned. A mon caught or adopted in Location 5
+is therefore immediately playable and evolves on arrival, and a Box mon doesn't rot while the
+line-up fights. Personal EXP only matters above the floor, which makes combining duplicates the one
+way to push a single mon ahead of the run.
+
+**Difficulty scales with the run** (`RegionTier`): wild encounters are built 3 levels below the
+party, trainers 2, a Gym 1, all through the same growth rule — and the pool they're drawn from opens
+up by Location (base forms for 1–2, first evolutions for 3–4, everything for 5–6, Legendaries only
+at the final Gym). Morale starts at **5**, and a run is **six Locations and six badges**, won on the
+last one.
+
 **What the loop still doesn't do** (deliberate, see ADR 0003): a lost non-Gym fight costs Morale and
 nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; Event
 and PvP nodes show an honest "not built yet" modal and pay nothing; catching is still the "pick 1 from defeated"

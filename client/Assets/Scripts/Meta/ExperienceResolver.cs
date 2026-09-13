@@ -208,8 +208,12 @@ namespace Pets.Meta
 
         /// <summary>Rebuilds CurrentStats (and tops HP back up) from the mon's species and level.
         ///
-        /// HP goes back to full because nothing carries damage between fights today (ADR 0003) —
-        /// when that changes, this needs to preserve the damage taken rather than the HP value, or
+        /// Anything written onto CurrentStats that doesn't follow from species + level is transient
+        /// — the next grant overwrites it. A permanent modifier (an item) has to become an input to
+        /// StatGrowth rather than a one-off addition here.
+        ///
+        /// HP goes back to full because nothing carries damage between fights (ADR 0003) — when
+        /// that changes, this needs to preserve the damage taken rather than the HP value, or
         /// growing will quietly heal.</summary>
         public static void Recompute(PokemonInstance mon, PokemonSpeciesLibrary library)
         {

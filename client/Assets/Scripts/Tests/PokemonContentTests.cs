@@ -36,6 +36,9 @@ namespace Pets.Tests
             }
         }
 
+        /// <summary>A fresh instance is its species' sheet stats at level 1, with Health scaled by
+        /// Data/StatGrowth — the one place the roster sheet's numbers are transformed on the way
+        /// into a fight.</summary>
         [Test]
         public void EverySpecies_ConvertsToAPokemonInstance_WithItsLevelOneStats()
         {
