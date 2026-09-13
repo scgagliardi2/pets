@@ -1,6 +1,6 @@
 # ADR 0003: Node Resolution Runs on the Battle Scene, and a Gym Win Ends the Run
 
-**Status:** Accepted; decision 2 (a Gym win ends the run) superseded by ADR 0006
+**Status:** Accepted; decision 2 (a Gym win ends the run) superseded by ADR 0007
 **Date:** 2026-09-12
 
 ## Context

@@ -4,7 +4,7 @@ using Pets.Simulation;
 namespace Pets.Data
 {
     /// <summary>What a species' stats are at a given level — the one formula every PokemonInstance's
-    /// CurrentStats comes from (ADR 0006). Lives in Data rather than next to the EXP curve in
+    /// CurrentStats comes from (ADR 0007). Lives in Data rather than next to the EXP curve in
     /// Pets.Meta.ExperienceResolver because PokemonInstanceFactory has to build a level-1 mon with it,
     /// and Data can't see Meta.
     ///

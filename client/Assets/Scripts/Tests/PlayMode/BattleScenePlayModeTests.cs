@@ -32,7 +32,7 @@ namespace Pets.Tests
         private const int TestAttack = 10;
 
         /// <summary>The test species' *sheet* Health. What a mon actually fights with is this times
-        /// StatGrowth.HealthScalar — see TestFullHealth.</summary>
+        /// StatGrowth.HealthMultiplier — see TestMaxHealth.</summary>
         private const int TestHealth = 200;
 
         /// <summary>A level-1 test mon's actual HP — base Health through StatGrowth.</summary>
@@ -44,7 +44,7 @@ namespace Pets.Tests
         private const string WildName = "Wild";
         private const int WeakFoeAttack = 1;
         private const int WeakFoeHealth = 1;
-        private const int StrongFoeAttack = TestFullHealth;
+        private const int StrongFoeAttack = TestMaxHealth;
         private const int StrongFoeHealth = TestHealth * 10;
 
         private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta" };
@@ -321,7 +321,6 @@ namespace Pets.Tests
         public IEnumerator NodeFight_Lost_CostsMorale_AndLeavesTheRunGoing()
         {
             var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth);
-            int startingMorale = run.Morale;
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();
@@ -358,7 +357,7 @@ namespace Pets.Tests
         }
 
         /// <summary>Beating a Gym earns a badge and returns to the Region Hub to pick the next
-        /// Location (ADR 0006) — it no longer ends the run.</summary>
+        /// Location (ADR 0007) — it no longer ends the run.</summary>
         [UnityTest]
         public IEnumerator GymFight_Won_EarnsABadge_AndContinuesToTheRegionHub()
         {
@@ -412,7 +411,6 @@ namespace Pets.Tests
         public IEnumerator GymFight_Lost_OffersTheFightAgain()
         {
             var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth, isGym: true);
-            int startingMorale = run.Morale;
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();

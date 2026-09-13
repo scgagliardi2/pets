@@ -7,7 +7,7 @@ using Pets.Simulation;
 
 namespace Pets.Tests
 {
-    /// <summary>EditMode coverage for the run as a whole (ADR 0006): the Region Hub's Locations and
+    /// <summary>EditMode coverage for the run as a whole (ADR 0007): the Region Hub's Locations and
     /// offers, earning badges toward an eight-badge win, and the shape of the difficulty curve.
     ///
     /// The curve tests pin *shape*, not exact numbers: that enemies climb every badge, that the

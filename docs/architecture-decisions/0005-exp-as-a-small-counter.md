@@ -1,6 +1,6 @@
 # ADR 0005: EXP Is a Small Counter, Stats Are Derived From It, and Evolution Runs Off It
 
-**Status:** Accepted; decisions 1, 3 and 5 (the flat counter, evolution every 3 EXP, flat rewards) superseded by ADR 0006
+**Status:** Accepted; decisions 1, 3 and 5 (the flat counter, evolution every 3 EXP, flat rewards) superseded by ADR 0007
 **Date:** 2026-09-12
 
 ## Context

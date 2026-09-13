@@ -73,7 +73,7 @@ namespace Pets.Gameplay
             {
                 case NodeType.PvE:
                     // Built at the Location's tier, not at base stats: what a wild fight is drawn
-                    // from and how strong it is both follow the run's progress (RegionTier).
+                    // from and how strong it is both follow the run's progress (RunProgression).
                     StartBattle(EncounterGenerator.GenerateWildLineUp(
                         library, typeBias, run.BadgeCount, node.Layer, SeedFor(run, node), $"wild-{node.Id}"), node, isGym: false);
                     break;

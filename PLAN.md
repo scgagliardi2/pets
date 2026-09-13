@@ -189,7 +189,7 @@ jumped ahead of the phase order too: the roster is **all 183 species**, imported
 xlsx→asset pipeline, with a Pokédex screen to browse them and a stat-total cap keeping Character
 Select to starter-shaped mons (ADR 0004). On top of that the **EXP/growth/evolution loop now
 works** — a won fight pays the line-up, mons grow, duplicates combine, and species evolve along
-their real chains (ADR 0005) — and since ADR 0006 that growth runs on a level curve fitted to an
+their real chains (ADR 0005) — and since ADR 0007 that growth runs on a level curve fitted to an
 eight-badge run, with a Region Hub between Locations. "What's built" still
 doesn't map cleanly onto phase boundaries. The honest summary:
 
@@ -200,12 +200,12 @@ and **arriving at a node resolves it**: a Battle node fights a seeded wild encou
 with passives on, the Pokémon Center rests the team, the Gym fights the Location's Gym Leader, and
 Event/PvP show an honest "not built yet" modal. A won fight pays EXP and offers the stubbed catch;
 a lost one costs Morale, and at 0 Morale the run ends at Home. **Beating a Gym earns a badge and
-returns to the Region Hub** for the next Location; the eighth badge wins the run (ADR 0006).
+returns to the Region Hub** for the next Location; the eighth badge wins the run (ADR 0007).
 `IngameMenu` → `Team` (drag to rearrange/release) /
 `DevRoster` (stuff mons into the run) still hang off the map, plus `History` and `Credits` off Home,
 and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run nothing.
 
-*Verified green as of this writing:* 178 EditMode and 95 PlayMode tests pass (see CLAUDE.md for
+*Verified green as of this writing:* 178 EditMode and 97 PlayMode tests pass (see CLAUDE.md for
 the CLI commands).
 
 **Built and covered by tests:**
@@ -227,7 +227,7 @@ the CLI commands).
   (`RunProgression`), the nine Location types and the Region Hub's offers (`LocationCatalog`),
   filtered encounter pools (`EncounterPool`), seeded wild encounters and the Gym Leader's team
   pitched by badge count, the level/EXP/evolution model with catch-up (`ExperienceResolver`, with
-  stats from `Data/StatGrowth` — ADR 0006), per-win EXP scaled by foe level
+  stats from `Data/StatGrowth` — ADR 0007), per-win EXP scaled by foe level
   (`BattleRewardResolver`), duplicate combining (`CombineResolver`), Camp's EXP+buff grant, the
   stubbed "pick 1 from defeated" catch, and a branching map generator + traversal model
   (`LocationMapGenerator`, `LocationMapTraversal`) that produces no dead ends, no unreachable nodes
@@ -255,7 +255,7 @@ the CLI commands).
     total, passive, and whether Character Select would let a run start on it) rather than picking
     anything. It's where the ~115 species the starter cap hides are visible at all, and the only
     place a passive is readable in-game (ADR 0004).
-  - `RegionHub.unity` — shown after Character Select and after every Gym (ADR 0006): three Location
+  - `RegionHub.unity` — shown after Character Select and after every Gym (ADR 0007): three Location
     cards (name, flavor, the Location's Pokémon types as icons, Travel), a header saying which of the
     eight Gyms is next and what levels to expect, and Morale/Money/Badges plus a Menu button in the
     title bar. Owns a `RunBootstrapper`, since Character Select hands off here. Travel is instant —
@@ -336,7 +336,7 @@ rest of this file was written against their absence:
    forward-only, so a node is reached exactly once and "visited" already means "resolved" — there is
    no separate cleared flag.
 
-**Growth, as of ADR 0006:** EXP buys levels on a rising curve (level L→L+1 costs 2 + 2L). A won
+**Growth, as of ADR 0007:** EXP buys levels on a rising curve (level L→L+1 costs 2 + 2L). A won
 fight pays the whole line-up 2 + the foes' average level (doubled for a Gym), a Pokémon Center pays
 about a fight's worth, and a combine is worth exactly one level. Stats are *derived* from species +
 level (`Data/StatGrowth`: +10% of base and +2 per level, Health ×3), so anything written onto
@@ -345,18 +345,6 @@ owns is kept within 2 levels of its strongest. Enemies are pitched by badge coun
 player's levels, and draw from filtered pools (base forms, a rising stat cap, Legendaries only on the
 final Gym). 92 of the 183 species have a real PokeAPI evolution link; the three branching lines
 (Eevee, Tyrogue, Nincada) deliberately have none, so they can't evolve until a branch picker exists.
-
-**The run's floor level** (`RunState.FloorLevel`, `RunProgression`) holds every mon the run owns —
-line-up *and* Box — one level below what the run has earned. A mon caught or adopted in Location 5
-is therefore immediately playable and evolves on arrival, and a Box mon doesn't rot while the
-line-up fights. Personal EXP only matters above the floor, which makes combining duplicates the one
-way to push a single mon ahead of the run.
-
-**Difficulty scales with the run** (`RegionTier`): wild encounters are built 3 levels below the
-party, trainers 2, a Gym 1, all through the same growth rule — and the pool they're drawn from opens
-up by Location (base forms for 1–2, first evolutions for 3–4, everything for 5–6, Legendaries only
-at the final Gym). Morale starts at **5**, and a run is **six Locations and six badges**, won on the
-last one.
 
 **What the loop still doesn't do** (deliberate, see ADR 0003): a lost non-Gym fight costs Morale and
 nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; Event
@@ -412,7 +400,7 @@ retired hub scene (ADR 0002, ADR 0003).*
 - ✅ Also done out of order: the EXP/growth model, duplicate combining, and evolution along real
   PokeAPI chains (ADR 0005).
 - ✅ The eight-badge run: the Region Hub between Locations, all nine Location types, and a level curve
-  with enemies and encounter pools scaled to it (ADR 0006).
+  with enemies and encounter pools scaled to it (ADR 0007).
 - Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), the full
   drag-and-drop catching system (Step-boundary throws, HP%/status-based odds) in place of the "pick
   1 from defeated" stub, Pokémon Center adoption and healing, type synergy bonuses, the
@@ -422,7 +410,7 @@ retired hub scene (ADR 0002, ADR 0003).*
 
 **Phase 2 — Content & breadth**
 - Events (narrative branches), Location content beyond a name and a type bias (all nine §4 types
-  are offered as a table since ADR 0006), hand-authored passives for the 183-species roster.
+  are offered as a table since ADR 0007), hand-authored passives for the 183-species roster.
 
 **Phase 3 — Backend + async PvP**
 - Node/TS + Postgres: accounts (or anonymous device-id), PvP snapshot storage, matchmaking query.
@@ -553,7 +541,7 @@ here, go there):
 - **Content balance:** 183 species, all-placeholder stats, no abilities yet — this is a large
   tuning surface. Don't try to hand-balance all 183 before Phase 0's exit criteria; balance the
   first slice, ship it, iterate.
-- **The difficulty curve was fitted to a model, not to play.** ADR 0006's constants came from
+- **The difficulty curve was fitted to a model, not to play.** ADR 0007's constants came from
   simulating whole runs against the real roster with passives off and a naive path-picker; passives,
   real path choices and better catching will move the numbers. `RunProgressionTests` pins the curve's
   shape so retuning stays deliberate.
@@ -575,7 +563,7 @@ there's finally a run worth persisting, and a finished run with nothing to recor
    `PendingBattle`, the Pokémon Center and the Event/PvP stubs resolving as modals on the map, and
    the Camp-vs-Center question settled in the Center's favor.
 3. **Gym/Badge node:** the fight, badges, the Region Hub between Locations and the eight-badge win
-   are in (ADR 0006). Still open: the **Line-Up menu** (scout the opponent and reorder before the
+   are in (ADR 0007). Still open: the **Line-Up menu** (scout the opponent and reorder before the
    fight starts) and the **badge-as-relic reward** — a badge is only a count so far.
 4. **Save/load.** Listed under Phase 2 below, but it's what "Continue Run", History, and any
    meta-progression all actually wait on — worth pulling forward now that a run can be played to a
@@ -590,7 +578,7 @@ there's finally a run worth persisting, and a finished run with nothing to recor
    secondary pick + cosmetics) if that distinction ends up mattering in play.
 9. ~~**Expand curated content past 28 species.**~~ Done — all 183 are imported (ADR 0004). What the
    expansion left behind, in rough priority order:
-   - ~~**Filter the encounter pools.**~~ Done (ADR 0006): wild and Gym pools are base forms under a
+   - ~~**Filter the encounter pools.**~~ Done (ADR 0007): wild and Gym pools are base forms under a
      badge-scaled stat cap, with Legendaries only on the final Gym. The dev random battle still rolls
      from the whole roster, at the party's level.
    - **Real passives for the 155 imported species**, replacing the per-type placeholder.

@@ -40,8 +40,6 @@ namespace Pets.Gameplay
         public static string MapOrHubFor(Pets.Meta.RunState state) =>
             state != null && state.NeedsLocationChoice ? SceneNames.RegionHub : SceneNames.Map;
 
-        public void GoToRegionHub() => ScreenFade.TransitionTo(SceneNames.RegionHub);
-
         public void GoToIngameMenu() => ScreenFade.TransitionTo(SceneNames.IngameMenu);
 
         public void GoToTeam() => ScreenFade.TransitionTo(SceneNames.Team);
@@ -87,7 +85,7 @@ namespace Pets.Gameplay
         /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
         /// the Ingame Menu rather than straight on the Map so the player sees where they are
         /// before moving — unless the run is *between* Locations (its Gym is beaten and its map is
-        /// gone, RunState.IsBetweenLocations), in which case the only thing left to do is pick the
+        /// gone, RunState.NeedsLocationChoice), in which case the only thing left to do is pick the
         /// next Location, so it resumes at the Region Hub. Without that, the Ingame Menu's "Back to
         /// Map" would quietly generate a fresh map and skip the choice the hub exists to offer.
         ///
@@ -101,7 +99,7 @@ namespace Pets.Gameplay
                 return;
             }
             ScreenFade.TransitionTo(
-                ActiveRun.State.IsBetweenLocations ? SceneNames.RegionHub : SceneNames.IngameMenu);
+                ActiveRun.State.NeedsLocationChoice ? SceneNames.RegionHub : SceneNames.IngameMenu);
         }
 
         /// <summary>Application.Quit is a no-op in the Editor (it only ends a real player

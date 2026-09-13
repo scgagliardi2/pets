@@ -10,7 +10,7 @@ namespace Pets.Meta
     ///
     /// A static table rather than LocationTypeDefinition assets (content-schema.md §9): nine fixed
     /// rows straight out of the design doc, no art, and nothing an asset pipeline would buy yet.
-    /// Replaces ForestLocationFactory, which held the one row that existed. Recorded in ADR 0006 as a
+    /// Replaces ForestLocationFactory, which held the one row that existed. Recorded in ADR 0007 as a
     /// deviation to revisit when Locations gain content of their own.</summary>
     public static class LocationCatalog
     {

@@ -7,7 +7,7 @@ using Pets.Simulation;
 namespace Pets.Meta
 {
     /// <summary>EXP, levels, growth and evolution (design doc §7 "grow them via EXP/level", §12.3)
-    /// — the one place a mon's stats change outside a battle. See ADR 0006, which replaces ADR 0005's
+    /// — the one place a mon's stats change outside a battle. See ADR 0007, which replaces ADR 0005's
     /// flat counter with this.
     ///
     /// **EXP buys levels on a rising curve.** Going from level L to L+1 costs
@@ -133,11 +133,6 @@ namespace Pets.Meta
             Grow(mon, levelBefore, nameBefore, library, report);
             return report;
         }
-
-        /// <summary>Raises <paramref name="mon"/> to at least <paramref name="level"/> and returns
-        /// only the evolutions that happened while doing so.</summary>
-        public static List<Evolution> SetMinLevel(PokemonInstance mon, int level, PokemonSpeciesLibrary library) =>
-            RaiseToLevel(mon, level, library).Evolutions;
 
         /// <summary>A mon of <paramref name="species"/> at <paramref name="level"/>, already evolved as
         /// far as that level allows — what a wild encounter, a Gym Leader's team, a catch and a new run

@@ -17,10 +17,6 @@ namespace Pets.Meta
     /// (ExperienceResolver.ApplyCatchUp), so the Box isn't left behind either.</summary>
     public static class BattleRewardResolver
     {
-        public const int ExpPerPvEWin = 3;
-        public const int ExpPerPvPWin = 4;
-        public const int ExpPerGymWin = 8;
-
         /// <summary>EXP a win pays on top of the foes' average level.</summary>
         public const int BaseExpPerWin = 2;
 
@@ -38,16 +34,6 @@ namespace Pets.Meta
             }
             int averageLevel = count > 0 ? (int)Math.Round((double)total / count, MidpointRounding.AwayFromZero) : 1;
             return (BaseExpPerWin + averageLevel) * (isGym ? GymExpMultiplier : 1);
-        }
-
-        public static int ExpForWin(NodeType nodeType)
-        {
-            switch (nodeType)
-            {
-                case NodeType.Gym: return ExpPerGymWin;
-                case NodeType.PvP: return ExpPerPvPWin;
-                default: return ExpPerPvEWin;
-            }
         }
 
         /// <summary>Pays the run's line-up for a win and reports what grew. Box mons the catch-up
@@ -70,12 +56,5 @@ namespace Pets.Meta
             ExperienceResolver.ApplyCatchUp(state, library);
             return report;
         }
-
-        /// <summary>Pays the run's line-up for a win at <paramref name="nodeType"/> and returns the
-        /// evolutions it set off, so the caller can tell the player about them — an evolution is the
-        /// one thing here worth more than a number ticking up.</summary>
-        public static List<ExperienceResolver.Evolution> GrantWinRewards(
-            RunState state, PokemonSpeciesLibrary library, NodeType nodeType) =>
-            RunProgression.GrantToLineUp(state, ExpForWin(nodeType), library);
     }
 }

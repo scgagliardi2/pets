@@ -16,13 +16,14 @@ using Pets.Simulation;
 
 namespace Pets.Tests
 {
-    /// <summary>The saved Region Hub scene against RegionHubController (design doc §5.2, ADR 0006):
+    /// <summary>The saved Region Hub scene against RegionHubController (design doc §5.2, ADR 0007):
     /// it bootstraps a run from Character Select's pair, offers three Locations, sends the run to the
     /// one picked, and is where "Back to Map" lands while the run is between Locations.</summary>
     public class RegionHubScenePlayModeTests
     {
         private const string ScenePath = "Assets/Scenes/RegionHub.unity";
         private const string IngameMenuScenePath = "Assets/Scenes/IngameMenu.unity";
+        private const string HomeScenePath = "Assets/Scenes/Home.unity";
 
         [SetUp]
         public void SetUp() => ResetRunState();
@@ -163,6 +164,32 @@ namespace Pets.Tests
             Object.FindFirstObjectByType<SceneNavigator>().GoToMap();
 
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+        }
+
+        /// <summary>Home's Continue Run resumes where the run actually is: between Locations that's the
+        /// Region Hub, since the Ingame Menu's map would have no map to show.</summary>
+        [UnityTest]
+        public IEnumerator ContinueRun_BetweenLocations_ResumesAtTheRegionHub()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+            yield return LoadScene(HomeScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().ContinueRun();
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.RegionHub);
+        }
+
+        [UnityTest]
+        public IEnumerator ContinueRun_InsideALocation_ResumesAtTheIngameMenu()
+        {
+            var run = MakeRun();
+            run.TravelTo(LocationType.Sea);
+            ActiveRun.Begin(run, MakeLibrary());
+            yield return LoadScene(HomeScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().ContinueRun();
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.IngameMenu);
         }
 
         private static RegionHubController Hub()

@@ -486,7 +486,7 @@ namespace Pets.Gameplay
 
         /// <summary>A node fight's one way on from the result panel — the whole win-loss loop. A
         /// broken run, and a run that has just won its eighth badge, end at Home; any other beaten Gym
-        /// returns to the Region Hub to pick the next Location (ADR 0006); a Gym still standing is
+        /// returns to the Region Hub to pick the next Location (ADR 0007); a Gym still standing is
         /// fought again; and anything else returns to the map to keep walking.
         ///
         /// The dev battle's own two buttons go straight to the navigator and never reach here.</summary>

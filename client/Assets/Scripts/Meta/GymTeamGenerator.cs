@@ -14,7 +14,7 @@ namespace Pets.Meta
     /// Legendary.
     ///
     /// There's no extra Health bonus any more: with the team matched to the player's line-up, the old
-    /// +25% made every Gym a coin flip in the run simulations (ADR 0006).</summary>
+    /// +25% made every Gym a coin flip in the run simulations (ADR 0007).</summary>
     public static class GymTeamGenerator
     {
         /// <summary>Instance-id prefix for Gym members, so an event about one can't be mistaken for

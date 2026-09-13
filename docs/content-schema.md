@@ -154,7 +154,7 @@ Design doc §9 describes a single `PokemonInstance` carrying both run-level and 
 The implementation splits it in two, because the two halves have different lifetimes and the
 simulator mutates its subject in place.
 
-It also **stores no `level` / `expToNextLevel`** (ADR 0006). A mon stores only its total `Exp`; its
+It also **stores no `level` / `expToNextLevel`** (ADR 0007). A mon stores only its total `Exp`; its
 level is read off `ExperienceResolver`'s rising curve, and `CurrentStats` is **derived** from the
 species and that level by `Data/StatGrowth` (+10% of base and +2 per level, Health ×3), never
 accumulated into. Anything written to `CurrentStats` that doesn't follow from those two is
@@ -174,7 +174,7 @@ public class PokemonInstance {
     public string InstanceId;
     public int SpeciesId;
     public string Nickname;          // optional
-    public int Exp;                  // total ever earned; the level is derived from it (ADR 0006)
+    public int Exp;                  // total ever earned; the level is derived from it (ADR 0007)
     public int TimesEvolved;         // this instance's own count — see below
     public Stats CurrentStats;       // DERIVED: StatGrowth.AtLevel(species, ExperienceResolver.LevelOf(this))
     public int CurrentHP;            // HP it starts its next battle at
@@ -231,7 +231,7 @@ Expand this section once Phase 1/2 (PLAN.md §6) actually builds Location/Gym co
 it's listed here now mainly so `EffectDefinition` reuse is established as the pattern from the
 start, rather than inventing a second effect shape later.
 
-**As built** (ADR 0006), a deviation from the above: there is no `LocationTypeDefinition` asset yet.
+**As built** (ADR 0007), a deviation from the above: there is no `LocationTypeDefinition` asset yet.
 The nine §4 Location types are a static table in `Meta/LocationCatalog` (name, flavor, type bias),
 since nine fixed rows with no art didn't justify an asset pipeline. There is no `GymDefinition`
 either: Gym teams are generated from the Location's type bias and the run's badge count

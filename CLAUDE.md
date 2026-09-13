@@ -12,8 +12,10 @@ carries; [`0004-full-roster-import-and-pokedex.md`](docs/architecture-decisions/
 covers the jump from 28 hand-authored species to all 183, the content-import pipeline that did it,
 and what that expansion left unfinished; and
 [`0005-exp-as-a-small-counter.md`](docs/architecture-decisions/0005-exp-as-a-small-counter.md)
-covers the original EXP counter and the duplicate-combining gesture; and
-[`0006-levels-and-the-region-hub.md`](docs/architecture-decisions/0006-levels-and-the-region-hub.md)
+covers the original EXP counter and the duplicate-combining gesture;
+[`0006-leveling-across-a-six-location-run.md`](docs/architecture-decisions/0006-leveling-across-a-six-location-run.md)
+records the six-Location version that merged first and was superseded; and
+[`0007-levels-and-the-region-hub.md`](docs/architecture-decisions/0007-levels-and-the-region-hub.md)
 covers the level curve, the eight-badge run and the Region Hub that replaced it. Between them they list the deviations from the design doc
 that are still open questions.
 
@@ -45,7 +47,7 @@ exists — the phase list under it describes intent, and the build has deviated 
   Center adoption/healing, a Shop, type synergy, the badge-as-relic reward, the Line-Up menu before
   a Gym, real Event/PvP nodes, and the Trailblazer minigame. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
-- **Growth runs on levels, and a run is eight badges** (ADR 0006): EXP buys levels on a rising
+- **Growth runs on levels, and a run is eight badges** (ADR 0007): EXP buys levels on a rising
   curve, stats come from species + level via `Data/StatGrowth` (Health ×3), mons evolve at Lv 8 and
   17, and every owned mon is kept within 2 levels of the strongest. The Region Hub sits between
   Locations, and enemies are pitched by badge count (`Meta/RunProgression`), never by the player's
@@ -182,8 +184,8 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the level curve, eight-badge run and Region Hub, ADR 0006): **178 EditMode,
-  95 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-12 (after the level curve, eight-badge run and Region Hub, ADR 0007): **178 EditMode,
+  97 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

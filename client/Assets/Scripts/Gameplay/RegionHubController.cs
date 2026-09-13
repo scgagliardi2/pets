@@ -12,7 +12,7 @@ namespace Pets.Gameplay
     /// picks. Each card names the Location, gives its flavor line and shows the Pokémon types it
     /// leans toward; the header says which Gym this will be and what levels to expect.
     ///
-    /// Adapted to the game as built (ADR 0006): the Trailblazer travel minigame (§6) isn't built, so
+    /// Adapted to the game as built (ADR 0007): the Trailblazer travel minigame (§6) isn't built, so
     /// travel is instant; and every offer shares the run's difficulty tier — it's the badge count that
     /// sets how hard a Location is, not which one is chosen.
     ///

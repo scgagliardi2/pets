@@ -1,8 +1,9 @@
-# ADR 0006: Levels on a Run-Scale Curve, an Eight-Badge Run, and the Region Hub
+# ADR 0007: Levels on a Run-Scale Curve, an Eight-Badge Run, and the Region Hub
 
 **Status:** Accepted
 **Date:** 2026-09-12
-**Supersedes:** ADR 0005 decisions 1, 3 and 5 (the flat EXP counter, evolution every 3 EXP, flat
+**Supersedes:** ADR 0006 (the six-Location run merged to main in PR #8 while this was in progress —
+see "Reconciling with ADR 0006" at the end), and ADR 0005 decisions 1, 3 and 5 (the flat EXP counter, evolution every 3 EXP, flat
 rewards) and ADR 0003 decision 2 (a Gym win ends the run). ADR 0005's derived-stats rule (decision 2)
 and the combine gesture (decision 6) stand.
 
@@ -170,3 +171,35 @@ player two to four levels up at every badge.
   fights, and when it does, `Recompute` has to preserve damage taken (noted on the method).
 - **The `RegionMap*` → `LocationMap*` rename** landed as its own commit first, as PLAN.md §11 asked,
   so "Region" now means the tier this ADR builds.
+
+## Reconciling with ADR 0006
+
+ADR 0006 and this ADR were written in parallel from the same review, and ADR 0006's six-Location
+version merged to main first. Merging main back into this branch left both systems in the tree:
+`LevelCurve`, `RegionTier`, `RegionHubGenerator`, a run-wide floor (`RunState.RunExp`/`FloorLevel`,
+`PokemonInstance.MinLevel`) and flat per-node EXP awards sat beside this ADR's classes, the map's
+status line counted Locations out of six, and the docs described both runs at once.
+
+This ADR's design is the one kept, because the run was asked to be eight Gyms and the game already ran
+on it. The six-Location classes, their tests and the six-Location doc text were removed rather than
+left half-alive. Where the two differ:
+
+| | ADR 0006 | ADR 0007 (kept) |
+|---|---|---|
+| Run length | 6 badges | 8 badges |
+| Level curve | cap 12, level L costs 6 + L | uncapped (100), level L costs 2 + 2L |
+| Evolution | Lv 4 and 9 | Lv 8 and 17 |
+| Enemy level | the party's own level minus 3 / 2 / 1 | pitched by badge count; ignores the party |
+| Pools | by evolution stage | base forms under a rising stat cap, evolving by level |
+| Rewards | flat 3 / 4 / 8 / 2 per node | scaled by foe level |
+| Catch-up | run-wide floor from total EXP paid | within 2 levels of the strongest mon |
+| Morale | starts at 5 | starts at 3, refilled per badge |
+| Speed | doesn't grow with level | grows with level |
+
+Kept from ADR 0006: Home's "Continue Run" resumes at the Region Hub when the run is between
+Locations, rather than at the Ingame Menu.
+
+Still open, and worth deciding: ADR 0006's case for **not growing Speed** is sound — Speed drives the
+charge meter against a fixed threshold, so growing it makes every mon fire its passive more often late
+in a run and flattens the fast/slow distinction. This ADR grows Speed; switching is one line in
+`Data/StatGrowth` plus a re-run of the calibration.

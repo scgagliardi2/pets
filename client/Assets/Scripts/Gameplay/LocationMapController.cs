@@ -586,16 +586,9 @@ namespace Pets.Gameplay
             }
 
             var map = Traversal.Map;
-            // Which Location this is, and which of the run's six — the map is the one screen a
-            // player spends a whole Location on, so it's where that belongs (RegionTier). Run is
-            // never null: opened standalone it stands up a throwaway one (see the property).
-            string progress = Run.IsRunWon
-                ? "Complete"
-                : $"{Math.Min(Run.RegionIndex, RegionTier.RegionsPerRun)}/{RegionTier.RegionsPerRun}";
-            string where = $"{LocationCatalog.DisplayNameFor(Run.CurrentLocation)} ({progress})   ";
             statusText.text = Traversal.IsComplete
-                ? $"{where}Gym reached — the Location's mandatory finale.   (seed {map.Seed})"
-                : $"{where}Step {Traversal.CurrentNode.Layer} / {map.LayerCount - 1} — pick one of {Traversal.AvailableNextNodes.Count} paths.   (seed {map.Seed})";
+                ? $"Gym reached — the Location's mandatory finale.   (seed {map.Seed})"
+                : $"Step {Traversal.CurrentNode.Layer} / {map.LayerCount - 1} — pick one of {Traversal.AvailableNextNodes.Count} paths.   (seed {map.Seed})";
         }
 
         private float ScrollPositionFor(float nodeX)

@@ -20,23 +20,8 @@ namespace Pets.Simulation
 
         /// <summary>Total EXP this mon has ever earned. It never resets, and it's the only growth
         /// state stored: the mon's level is read off Pets.Meta.ExperienceResolver's curve from it, and
-        /// its stats off the level (Pets.Data.StatGrowth) — see ADR 0006.</summary>
+        /// its stats off the level (Pets.Data.StatGrowth) — see ADR 0007.</summary>
         public int Exp;
-
-        /// <summary>A level this mon is held at regardless of its own EXP — the floor under
-        /// everything a run owns (ADR 0006).
-        ///
-        /// Two things set it. A mon *created* at a level (a wild encounter built for a region, a
-        /// Gym team) has earned no EXP and is simply that strong. And a mon that *joins* a run in
-        /// progress — caught, adopted, handed over by an Event — is raised to the run's floor level,
-        /// one below what the run has paid out, so it is immediately worth playing instead of
-        /// arriving a whole run's growth behind. The floor also keeps Box mons from rotting while
-        /// they sit out fights.
-        ///
-        /// It only ever rises. Personal EXP is what puts a mon *above* the floor — which, since
-        /// every mon in the line-up is paid the same, means combining duplicates is what a player
-        /// does to get ahead of it.</summary>
-        public int MinLevel;
 
         /// <summary>How many times this particular mon has evolved. Counted per instance rather
         /// than read off the species' chain depth, because the two disagree for a curated base form
