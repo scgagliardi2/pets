@@ -154,18 +154,19 @@ Design doc §9 describes a single `PokemonInstance` carrying both run-level and 
 The implementation splits it in two, because the two halves have different lifetimes and the
 simulator mutates its subject in place.
 
-It also **drops §9's `level` / `expToNextLevel` pair** (ADR 0005). EXP is a small counter rather
-than a points pool — one per battle won, two per duplicate combined in — and every point is worth a
-flat `ExperienceResolver.StatGainPerExp` on all three stats, so a level would have been a second
-name for the same number. `CurrentStats` is **derived** from species + EXP by
-`ExperienceResolver.Recompute`, not accumulated into: anything written there that doesn't follow
-from those two is overwritten on the next EXP grant, so a permanent modifier (an item, say) has to
-become an input to that calculation rather than a one-off addition.
+It also **stores no `level` / `expToNextLevel`** (ADR 0006). A mon stores only its total `Exp`; its
+level is read off `ExperienceResolver`'s rising curve, and `CurrentStats` is **derived** from the
+species and that level by `Data/StatGrowth` (+10% of base and +2 per level, Health ×3), never
+accumulated into. Anything written to `CurrentStats` that doesn't follow from those two is
+overwritten on the next EXP grant, so a permanent modifier (an item, say) has to become an input to
+that calculation rather than a one-off addition.
 
 Evolution is counted per instance (`TimesEvolved`) rather than from the species' chain depth: a mon
-evolves every `ExperienceResolver.ExpPerEvolution` points, so a curated base form whose real
-pre-evolution isn't in the roster still evolves on its first threshold. There is deliberately no
-per-species EXP threshold field — nothing in the roster sheet or PokeAPI supplies one.
+evolves at `ExperienceResolver.EvolutionLevels` (8, then 17), so a curated base form whose real
+pre-evolution isn't in the roster still evolves at the first threshold. A mon created at a level
+(`ExperienceResolver.CreateAtLevel`) starts with the roster evolutions before its species already
+counted. There is deliberately no per-species threshold field — nothing in the roster sheet or
+PokeAPI supplies one.
 
 ```csharp
 // Persistent: what the run holds. A battle never touches one of these.
@@ -173,9 +174,9 @@ public class PokemonInstance {
     public string InstanceId;
     public int SpeciesId;
     public string Nickname;          // optional
-    public int Exp;                  // total ever earned; 1 per battle won, 2 per duplicate combined in
+    public int Exp;                  // total ever earned; the level is derived from it (ADR 0006)
     public int TimesEvolved;         // this instance's own count — see below
-    public Stats CurrentStats;       // DERIVED: species base + ExperienceResolver.StatGainPerExp * Exp
+    public Stats CurrentStats;       // DERIVED: StatGrowth.AtLevel(species, ExperienceResolver.LevelOf(this))
     public int CurrentHP;            // HP it starts its next battle at
     public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
     public PassiveDefinition ResolvedPassive;
@@ -229,6 +230,13 @@ mostly out of this battle-focused doc's scope:
 Expand this section once Phase 1/2 (PLAN.md §6) actually builds Location/Gym content generation —
 it's listed here now mainly so `EffectDefinition` reuse is established as the pattern from the
 start, rather than inventing a second effect shape later.
+
+**As built** (ADR 0006), a deviation from the above: there is no `LocationTypeDefinition` asset yet.
+The nine §4 Location types are a static table in `Meta/LocationCatalog` (name, flavor, type bias),
+since nine fixed rows with no art didn't justify an asset pipeline. There is no `GymDefinition`
+either: Gym teams are generated from the Location's type bias and the run's badge count
+(`Meta/GymTeamGenerator`, `Meta/RunProgression`). Revisit both when Locations or Gyms gain authored
+content of their own.
 
 ## 10. JSON export shape
 

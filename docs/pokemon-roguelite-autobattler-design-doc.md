@@ -56,7 +56,7 @@ Every Location's node-map branches through PvE/Event/PvP/Camp nodes but always f
 
 ## 4. Meta Layer: Regions & Locations
 
-- A **Region** is procedurally generated at run start: a pool of available Locations, each with a terrain type, a difficulty tier, an assigned Gym Leader (whose badge is that Location's clear condition), and a chance of a Legendary encounter.
+- A **Region** is procedurally generated at run start: a pool of available Locations, each with a terrain type, a difficulty tier, an assigned Gym Leader (whose badge is that Location's clear condition), and a chance of a Legendary encounter. **As built** (ADR 0006): a run is one Region of eight Locations. The Region Hub offers three of the nine types below at a time, never the one just completed. Difficulty is set by badge count rather than by which Location is picked, each Gym Leader specialises in its Location's types, and Legendaries appear only on the final Gym Leader's team.
 - **Location types** and the Pokémon types they bias toward (tune freely — this is a starting mapping):
 
 | Location Type | Biased Pokémon Types | Flavor |
@@ -74,9 +74,9 @@ Every Location's node-map branches through PvE/Event/PvP/Camp nodes but always f
   Every Location, regardless of type, includes a Pokémon Center (§12.2) — it's a standard option everywhere now, not a Town/City-specific feature.
 
 - Each Location has its own **node-graph map** (Slay the Spire style — branching paths through PvE/Event/PvP/Camp, converging on a mandatory Gym boss node).
-- **Morale** = the run's life total. Decrements on a lost battle (Gym or otherwise — TBD exactly which). Hitting 0 ends the run.
+- **Morale** = the run's life total. Decrements on a lost battle (Gym or otherwise — TBD exactly which). Hitting 0 ends the run. **As built** (ADR 0006), each badge refills it to its starting value, so it budgets losses per Location.
 - Beating a Location's Gym awards a badge and returns you to the **Region Hub** to pick the next Location.
-- Run-ending "finale" condition (fixed number of badges? an Elite-Four/Champion-style capstone Location? endless until Morale runs out?) is intentionally left open — see Open Questions.
+- Run-ending "finale" condition: **as built** (ADR 0006), eight badges wins the run. Whether an Elite-Four/Champion-style capstone should follow the eighth Gym is still open — see Open Questions.
 - On run end (win or lose), record meta-progression: achievements, badges earned, highest-level/maxed mons, etc. This persists across runs even though the run itself is lost.
 
 ---
@@ -98,7 +98,7 @@ Every Location's node-map branches through PvE/Event/PvP/Camp nodes but always f
 ### 5.2 The Hub Screens
 
 Two tiers of "hub":
-- **Region Hub:** shown between Locations. Presents **3 candidate next Locations**, each previewing its likely Pokémon type pool (§4 table), for the player to choose from — picking one launches the Trailblazer minigame (§6).
+- **Region Hub:** shown between Locations. Presents **3 candidate next Locations**, each previewing its likely Pokémon type pool (§4 table), for the player to choose from — picking one launches the Trailblazer minigame (§6). **As built** (ADR 0006): shown after Character Select and after every Gym; each card shows the Location's type pool as icons, and the header says which Gym is next and what levels to expect. Travel is instant until the Trailblazer minigame exists. **As built** (ADR 0006): shown after Character Select and after every Gym; each card shows the Location's type pool as icons, and the header says which Gym is next and what levels to expect. Travel is instant until the Trailblazer minigame exists.
 - **Location Hub:** a tabbed screen (Team Management / Location Map / Shop / Pokémon Center) used *within* a Location while you work through its node-map toward the Gym. All four tabs are present in every Location now.
 
 ---
@@ -180,8 +180,8 @@ interface PokemonInstance {
   instanceId: string;
   speciesId: number;
   nickname?: string;
-  exp: number;               // small counter: 1 per battle won, 2 per duplicate combined in
-  timesEvolved: number;      // ADR 0005 - level/expToNextLevel were dropped; exp is the only growth counter
+  exp: number;               // total EXP; the level is derived from it on a rising curve (ADR 0006)
+  timesEvolved: number;      // evolutions this mon has made; indexes the evolution levels (8, 17)
 
   currentStats: { attack: number; health: number; speed: number };
   currentHP: number;
@@ -302,8 +302,8 @@ Initial directional ideas for the rest of the types — these double as the pass
 
 ### 12.3 Evolution
 
-- Evolution triggers automatically once a mon crosses its EXP threshold (reuse real Pokémon evolution chains via PokeAPI, restricted to your curated Gen 1–3 roster). **As built** (ADR 0005): every `ExperienceResolver.ExpPerEvolution` points of EXP, counted from how many times that mon has already evolved, so a three-stage line evolves at 3 EXP and again at 6. The three branching lines in the roster — Eevee, Tyrogue, Nincada — don't evolve at all yet: picking a branch needs a choice the player makes, which isn't built.
-- **Combine 2 of the same mon** to instantly grant EXP to one of them (consumes the duplicate) — a sacrifice/fusion mechanic for dupes. **As built:** dragging one onto another of the same species on the Team screen, which asks whether that meant combine or reorder; the mon dropped onto survives and gains `CombineResolver.ExpGranted`, and the duplicate's own EXP is not carried over.
+- Evolution triggers automatically once a mon crosses its EXP threshold (reuse real Pokémon evolution chains via PokeAPI, restricted to your curated Gen 1–3 roster). **As built** (ADR 0006): at level 8 and again at level 17, counted from how many times that mon has already evolved. A mon's level comes from its EXP on a rising curve, stats grow in proportion to the species, and every mon the run owns is kept within 2 levels of its strongest. The three branching lines in the roster — Eevee, Tyrogue, Nincada — don't evolve at all yet: picking a branch needs a choice the player makes, which isn't built.
+- **Combine 2 of the same mon** to instantly grant EXP to one of them (consumes the duplicate) — a sacrifice/fusion mechanic for dupes. **As built:** dragging one onto another of the same species on the Team screen, which asks whether that meant combine or reorder; the mon dropped onto survives and gains exactly one level, and the duplicate's own EXP is not carried over.
 
 ---
 
@@ -322,13 +322,15 @@ Every Location has exactly one Gym — its mandatory final/boss node. Beating it
 1. Grants a **permanent, run-wide passive bonus** (like a Slay the Spire relic) that applies for the rest of the run.
 2. Unlocks the choice of your **next Location** at the Region Hub (shown as 3 options, §5.2).
 
+**As built** (ADR 0006): a badge counts toward the eight that win the run and refills Morale; the relic-style passive bonus isn't built yet.
+
 ---
 
 ## 15. Morale, Win & Loss
 
 - Morale starts at some fixed value (TBD) and decrements on a lost battle node.
 - `Morale <= 0` → run over, "Better luck next time" screen, achievements recorded regardless.
-- The run's ultimate win condition (fixed badge count, a Champion/Elite-Four-style capstone Location, or just "keep going until Morale runs out") is open — see Open Questions.
+- The run's win condition, **as built** (ADR 0006): eight badges. Morale starts at 3 and refills with each badge.
 
 ---
 
@@ -403,7 +405,8 @@ Modeled on Super Auto Pets:
 
 ## 20. Open Design Questions (explicitly TBD)
 
-- The run's ultimate win condition: a fixed badge count, a Champion/Elite-Four-style capstone Location, or endless until Morale runs out?
+- ~~The run's ultimate win condition~~ — settled as eight badges (ADR 0006). Still open: whether a Champion/Elite-Four capstone should follow the eighth Gym.
+- **What should Event and PvP nodes pay?** Both are still stubs and grant no EXP, so a path through them earns less. The level curve (ADR 0006) assumes a typical path of about 2.5 wild wins per Location.
 - Should players be able to retreat from a Location before beating its Gym (abandoning progress), and if so, at what cost?
 - Exact passive magnitudes for the curated roster — the mechanism (charge meter fills → ability fires, type-flavored) is now fixed, but values are yours to tune.
 - Exact type-synergy bonus values and whether synergy counts the full roster or just the active line-up.

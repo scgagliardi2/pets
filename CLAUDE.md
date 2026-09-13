@@ -12,7 +12,9 @@ carries; [`0004-full-roster-import-and-pokedex.md`](docs/architecture-decisions/
 covers the jump from 28 hand-authored species to all 183, the content-import pipeline that did it,
 and what that expansion left unfinished; and
 [`0005-exp-as-a-small-counter.md`](docs/architecture-decisions/0005-exp-as-a-small-counter.md)
-covers the EXP/growth/evolution model and the duplicate-combining gesture. Between them they list the deviations from the design doc
+covers the original EXP counter and the duplicate-combining gesture; and
+[`0006-levels-and-the-region-hub.md`](docs/architecture-decisions/0006-levels-and-the-region-hub.md)
+covers the level curve, the eight-badge run and the Region Hub that replaced it. Between them they list the deviations from the design doc
 that are still open questions.
 
 ## Project snapshot
@@ -32,28 +34,32 @@ exists — the phase list under it describes intent, and the build has deviated 
 - Everything in the tree is **post-pivot**. The old 5-slot code and `Gameplay/ShopEconomy` were
   deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
   extend, not replace.
-- The game's **shell** is built and playable (Home → Character Select → a walkable Location map,
+- The game's **shell** is built and playable (Home → Character Select → Region Hub → a walkable Location map,
   plus an in-run menu, Team, History, Credits, Settings, a Pokédex, a dev roster screen), and the
   **core run loop inside it now works**: arriving at a map node resolves it (ADR 0003). Battle/Gym nodes hand
   an encounter to `Battle.unity` through `PendingBattle` and it writes the result back to the run
-  (Morale, EXP, the stubbed catch, Location complete); the Pokémon Center and the Event/PvP stubs
+  (Morale, EXP, the stubbed catch, a badge); the Pokémon Center and the Event/PvP stubs
   resolve as modals on the map. Team's dev button still opens the old throwaway random battle,
   which strips passives and costs the run nothing — don't mistake one for the other.
-- The systems hanging off that loop are **not** built: evolution, the real drag-and-drop catching,
-  Pokémon Center adoption/healing, a Shop, type synergy, the badge reward, real Event/PvP nodes,
-  the Trailblazer minigame, and the Region Hub. See PLAN.md §6 for the deliberate simplifications
+- The systems hanging off that loop are **not** built: the real drag-and-drop catching, Pokémon
+  Center adoption/healing, a Shop, type synergy, the badge-as-relic reward, the Line-Up menu before
+  a Gym, real Event/PvP nodes, and the Trailblazer minigame. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
-- **Growth runs on a small EXP counter** (ADR 0005): 1 per battle won, 2 per duplicate combined,
-  each point a flat +10 to all three stats, evolution every 3 points. `PokemonInstance.CurrentStats`
-  is **derived** by `ExperienceResolver.Recompute` from species + EXP — writing stats onto a mon
-  directly works until the next EXP grant silently recomputes them away, which is the one trap in
-  this area. There is no `Level` any more.
+- **Growth runs on levels, and a run is eight badges** (ADR 0006): EXP buys levels on a rising
+  curve, stats come from species + level via `Data/StatGrowth` (Health ×3), mons evolve at Lv 8 and
+  17, and every owned mon is kept within 2 levels of the strongest. The Region Hub sits between
+  Locations, and enemies are pitched by badge count (`Meta/RunProgression`), never by the player's
+  levels. `PokemonInstance.CurrentStats` is **derived** by `ExperienceResolver.Recompute` — writing
+  stats onto a mon directly works until the next EXP grant silently recomputes them away, which is
+  the one trap in this area. The level is derived from `Exp`, never stored. Build a new mon with
+  `ExperienceResolver.CreateAtLevel` rather than the bare factory, so an evolved species has its
+  earlier evolutions counted.
 - **Content is all 183 roster species** (ADR 0004), imported by
   `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx`. Two things that
   expansion left open and that it's easy to mistake for finished: only the original 28 species have
-  a bespoke passive (the rest share one placeholder per primary type), and the encounter/Gym/random
-  -battle pools still draw from the *whole* library unfiltered, so a Forest wild encounter can be a
-  Legendary. See PLAN.md §11 item 9.
+  a bespoke passive (the rest share one placeholder per primary type), and the dev random battle
+  still draws from the *whole* library (wild and Gym pools are filtered by `Meta/EncounterPool`).
+  See PLAN.md §11 item 9.
 - `LocationMap*` (formerly `RegionMap*`) is the **Location** node-map (design doc §5). "Region" means
   the tier above it (§4/§5.2).
 - There is **no save/load layer** (so "Continue Run" only resumes a run still in memory, and
@@ -176,8 +182,8 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the EXP/evolution model and combining, ADR 0005): **156 EditMode, 87 PlayMode,
-  all passing**. The same binary runs any Editor entry
+  2026-09-12 (after the level curve, eight-badge run and Region Hub, ADR 0006): **178 EditMode,
+  95 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.
