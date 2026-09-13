@@ -69,12 +69,16 @@ namespace Pets.Gameplay
             switch (node.Type)
             {
                 case NodeType.PvE:
+                    // Built at the Location's tier, not at base stats: what a wild fight is drawn
+                    // from and how strong it is both follow the run's progress (RegionTier).
                     StartBattle(EncounterGenerator.GenerateWildLineUp(
-                        library, ForestLocationFactory.TypeBias, SeedFor(run, node), $"wild-{node.Id}"), node, isGym: false);
+                        library, ForestLocationFactory.TypeBias, SeedFor(run, node), $"wild-{node.Id}",
+                        RegionTier.For(run, NodeType.PvE)), node, isGym: false);
                     break;
                 case NodeType.Gym:
                     StartBattle(GymTeamGenerator.Generate(
-                        library, run.LineUp.Count, SeedFor(run, node)), node, isGym: true);
+                        library, run.LineUp.Count, SeedFor(run, node),
+                        RegionTier.For(run, NodeType.Gym)), node, isGym: true);
                     break;
                 case NodeType.Camp:
                     campOverlay.gameObject.SetActive(true);

@@ -243,7 +243,8 @@ namespace Pets.Tests
             var fire = MakeSpecies(2, "Firey", PokemonType.Fire);
             var library = MakeLibrary(grass, fire);
 
-            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Grass }, seed: 42, instanceIdPrefix: "wild");
+            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Grass }, seed: 42,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(2, lineUp.Count);
             Assert.IsTrue(lineUp.All(m => m.SpeciesId == grass.Id));
@@ -257,8 +258,10 @@ namespace Pets.Tests
                 MakeSpecies(2, "B", PokemonType.Bug),
                 MakeSpecies(3, "C", PokemonType.Flying));
 
-            var a = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99, instanceIdPrefix: "wild");
-            var b = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99, instanceIdPrefix: "wild");
+            var a = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
+            var b = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));
         }
@@ -268,7 +271,8 @@ namespace Pets.Tests
         {
             var library = MakeLibrary(MakeSpecies(1, "Rocky", PokemonType.Rock));
 
-            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Water }, seed: 1, instanceIdPrefix: "wild");
+            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Water }, seed: 1,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(2, lineUp.Count);
             Assert.IsTrue(lineUp.All(m => m.SpeciesId == 1));
@@ -382,7 +386,7 @@ namespace Pets.Tests
             var rock = MakeSpecies(2, "Rocky", PokemonType.Rock, health: 100);
             var library = MakeLibrary(grass, rock);
 
-            var team = GymTeamGenerator.Generate(library, count: 2, seed: 7);
+            var team = GymTeamGenerator.Generate(library, count: 2, seed: 7, RegionTier.Encounter.Default);
 
             Assert.AreEqual(2, team.Count);
             foreach (var mon in team)
@@ -404,8 +408,8 @@ namespace Pets.Tests
                 MakeSpecies(2, "B", PokemonType.Rock),
                 MakeSpecies(3, "C", PokemonType.Water));
 
-            var a = GymTeamGenerator.Generate(library, count: 3, seed: 123);
-            var b = GymTeamGenerator.Generate(library, count: 3, seed: 123);
+            var a = GymTeamGenerator.Generate(library, count: 3, seed: 123, RegionTier.Encounter.Default);
+            var b = GymTeamGenerator.Generate(library, count: 3, seed: 123, RegionTier.Encounter.Default);
 
             Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));
         }

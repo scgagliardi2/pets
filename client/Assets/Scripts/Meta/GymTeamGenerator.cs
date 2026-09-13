@@ -7,12 +7,13 @@ namespace Pets.Meta
 {
     /// <summary>Builds the Gym Leader's team for a Location's mandatory finale (design doc §4, §14).
     ///
-    /// Two things make it a boss rather than one more wild encounter: it's drawn from the whole
+    /// Three things make it a boss rather than one more wild encounter: it's drawn from the whole
     /// curated roster instead of the Location's type bias (a Leader's team isn't local wildlife —
-    /// EncounterGenerator is what a PvE node uses), and every member carries
-    /// <see cref="HealthBonusPercent"/> more HP, so the fight lasts longer than the ones leading up
-    /// to it. That percentage is a placeholder balance knob in exactly the sense CampResolver's buff
-    /// is — the real pass over stats and difficulty is Phase 4 (PLAN.md).</summary>
+    /// EncounterGenerator is what a PvE node uses), it's built at a higher level than the wildlife
+    /// on the way to it (RegionTier.GymLevelDelta — nearly the party's own), and every member
+    /// carries <see cref="HealthBonusPercent"/> more HP on top, so the fight lasts longer. That
+    /// percentage is a placeholder balance knob in exactly the sense CampResolver's buff is — the
+    /// real pass over stats and difficulty is Phase 4 (PLAN.md).</summary>
     public static class GymTeamGenerator
     {
         /// <summary>Extra HP each Gym member gets over its authored base, as a fraction.</summary>
@@ -22,7 +23,8 @@ namespace Pets.Meta
         /// one about a player's mon or a wild encounter.</summary>
         public const string InstanceIdPrefix = "gym-";
 
-        public static List<PokemonInstance> Generate(PokemonSpeciesLibrary library, int count, int seed)
+        public static List<PokemonInstance> Generate(PokemonSpeciesLibrary library, int count, int seed,
+            RegionTier.Encounter tier)
         {
             if (library == null || library.AllSpecies.Count == 0)
             {
@@ -33,12 +35,13 @@ namespace Pets.Meta
                 throw new ArgumentOutOfRangeException(nameof(count), "A Gym team needs at least one mon.");
             }
 
+            var pool = RegionTier.Filter(library.AllSpecies, tier);
             var rng = new DeterministicRandom(seed);
             var team = new List<PokemonInstance>(count);
             for (int i = 0; i < count; i++)
             {
-                var species = library.AllSpecies[rng.NextInt(library.AllSpecies.Count)];
-                var mon = PokemonInstanceFactory.Create(species, $"{InstanceIdPrefix}{i}");
+                var species = pool[rng.NextInt(pool.Count)];
+                var mon = PokemonInstanceFactory.Create(species, $"{InstanceIdPrefix}{i}", tier.Level);
                 mon.CurrentStats.Health += (int)(mon.CurrentStats.Health * HealthBonusPercent);
                 mon.CurrentHP = mon.CurrentStats.Health;
                 team.Add(mon);

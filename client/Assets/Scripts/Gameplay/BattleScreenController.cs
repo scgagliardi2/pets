@@ -487,7 +487,9 @@ namespace Pets.Gameplay
                 // played out again.
                 int seed = Random.Range(int.MinValue, int.MaxValue);
                 PendingBattle.Set(
-                    GymTeamGenerator.Generate(library, ActiveRun.State.LineUp.Count, seed), nodeId, isGym: true, seed);
+                    GymTeamGenerator.Generate(library, ActiveRun.State.LineUp.Count, seed,
+                        RegionTier.For(ActiveRun.State, NodeType.Gym)),
+                    nodeId, isGym: true, seed);
                 ScreenFade.TransitionTo(SceneNames.Battle);
                 return;
             }
