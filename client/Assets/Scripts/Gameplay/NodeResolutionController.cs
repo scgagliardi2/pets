@@ -7,8 +7,8 @@ namespace Pets.Gameplay
 {
     /// <summary>Turns arriving at a map node into the thing that node is (design doc §5.1) — the
     /// piece that was missing while the map was walkable but inert. Lives on the Map scene alongside
-    /// RegionMapController, which owns the graph and the walk and raises
-    /// <see cref="RegionMapController.NodeArrived"/>; this owns what happens next.
+    /// LocationMapController, which owns the graph and the walk and raises
+    /// <see cref="LocationMapController.NodeArrived"/>; this owns what happens next.
     ///
     /// Where each node type is resolved:
     /// - PvE and Gym leave for the Battle scene, handing it the encounter through PendingBattle.
@@ -25,7 +25,7 @@ namespace Pets.Gameplay
     /// building the scene.</summary>
     public sealed class NodeResolutionController : MonoBehaviour
     {
-        [SerializeField] private RegionMapController map;
+        [SerializeField] private LocationMapController map;
         [SerializeField] private ResourceBarController resourceBar;
         [SerializeField] private CampPanelController campOverlay;
         [SerializeField] private NodeEventOverlayController eventOverlay;
@@ -57,7 +57,7 @@ namespace Pets.Gameplay
             }
         }
 
-        private void OnNodeArrived(RegionMapNode node)
+        private void OnNodeArrived(LocationMapNode node)
         {
             var library = ActiveRun.Library;
             if (library == null)
@@ -66,19 +66,20 @@ namespace Pets.Gameplay
             }
 
             var run = map.Run;
+            // A Map opened on its own has no Location behind it; LocationCatalog falls back to the
+            // Forest so there's still something to fight.
+            var typeBias = LocationCatalog.CurrentFor(run).TypeBias;
             switch (node.Type)
             {
                 case NodeType.PvE:
                     // Built at the Location's tier, not at base stats: what a wild fight is drawn
-                    // from and how strong it is both follow the run's progress (RegionTier).
+                    // from and how strong it is both follow the run's progress (RunProgression).
                     StartBattle(EncounterGenerator.GenerateWildLineUp(
-                        library, LocationCatalog.TypeBiasFor(run.CurrentLocation), SeedFor(run, node), $"wild-{node.Id}",
-                        RegionTier.For(run, NodeType.PvE)), node, isGym: false);
+                        library, typeBias, run.BadgeCount, node.Layer, SeedFor(run, node), $"wild-{node.Id}"), node, isGym: false);
                     break;
                 case NodeType.Gym:
                     StartBattle(GymTeamGenerator.Generate(
-                        library, run.LineUp.Count, SeedFor(run, node),
-                        RegionTier.For(run, NodeType.Gym)), node, isGym: true);
+                        library, typeBias, run.BadgeCount, run.LineUp.Count, SeedFor(run, node)), node, isGym: true);
                     break;
                 case NodeType.Camp:
                     campOverlay.gameObject.SetActive(true);
@@ -95,11 +96,12 @@ namespace Pets.Gameplay
         ///
         /// Built from the node's position rather than its id: string.GetHashCode isn't guaranteed to
         /// be the same value in the next process, so once runs are saved and resumed, hashing the id
-        /// would quietly re-roll the encounter a saved run was carrying.</summary>
-        private static int SeedFor(RunState run, RegionMapNode node) =>
-            run.RunSeed ^ (node.Layer * 397 + node.IndexInLayer);
+        /// would quietly re-roll the encounter a saved run was carrying. The badge count is folded in
+        /// so the same map position in two Locations isn't the same fight.</summary>
+        private static int SeedFor(RunState run, LocationMapNode node) =>
+            run.RunSeed ^ (node.Layer * 397 + node.IndexInLayer) ^ (run.BadgeCount * 7919);
 
-        private void StartBattle(List<PokemonInstance> enemyLineUp, RegionMapNode node, bool isGym)
+        private void StartBattle(List<PokemonInstance> enemyLineUp, LocationMapNode node, bool isGym)
         {
             PendingBattle.Set(enemyLineUp, node.Id, isGym, SeedFor(map.Run, node));
             ScreenFade.TransitionTo(SceneNames.Battle);

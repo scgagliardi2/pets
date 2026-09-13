@@ -29,7 +29,7 @@ namespace Pets.Tests
     {
         private const string HomeScenePath = "Assets/Scenes/Home.unity";
         private const string IngameMenuScenePath = "Assets/Scenes/IngameMenu.unity";
-        private const string RegionMapScenePath = "Assets/Scenes/RegionMap.unity";
+        private const string LocationMapScenePath = "Assets/Scenes/LocationMap.unity";
         private const string TeamScenePath = "Assets/Scenes/Team.unity";
         private const string HistoryScenePath = "Assets/Scenes/History.unity";
         private const string CreditsScenePath = "Assets/Scenes/Credits.unity";
@@ -184,19 +184,20 @@ namespace Pets.Tests
         }
 
         [UnityTest]
-        public IEnumerator RegionMapScene_MenuButton_OpensTheIngameMenu()
+        public IEnumerator LocationMapScene_MenuButton_OpensTheIngameMenu()
         {
-            yield return LoadScene(RegionMapScenePath);
+            yield return LoadScene(LocationMapScenePath);
 
             AssertNavigatesVia("MenuButton", nameof(SceneNavigator.GoToIngameMenu));
         }
 
-        /// <summary>The Map is where a run is created now that Character Select hands off to it,
-        /// so its bootstrapper has to publish that run for the Team screen in the next scene.</summary>
+        /// <summary>Character Select hands off to the Region Hub now, but the Map keeps its own
+        /// bootstrapper so the scene still works opened on its own — and it has to publish that run for
+        /// the Team screen in the next scene.</summary>
         [UnityTest]
-        public IEnumerator RegionMapScene_BootstrapsARunAndPublishesItToActiveRun()
+        public IEnumerator LocationMapScene_BootstrapsARunAndPublishesItToActiveRun()
         {
-            yield return LoadScene(RegionMapScenePath);
+            yield return LoadScene(LocationMapScenePath);
 
             Assert.IsTrue(ActiveRun.HasRun, "Loading the Map should start a run");
             Assert.AreEqual(2, ActiveRun.State.LineUp.Count);
@@ -405,7 +406,7 @@ namespace Pets.Tests
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the dragged duplicate should be consumed");
             Assert.AreEqual("mon-0", ActiveRun.State.LineUp[0].InstanceId, "the mon dropped onto is the survivor");
-            Assert.AreEqual(CombineResolver.ExpGranted, ActiveRun.State.LineUp[0].Exp);
+            Assert.AreEqual(2, ExperienceResolver.LevelOf(ActiveRun.State.LineUp[0]), "a combine raises the survivor one level");
             Assert.IsNull(GameObject.Find("CombineConfirm"), "the dialog should be closed again");
         }
 

@@ -26,12 +26,13 @@ namespace Pets.Gameplay
 
         public void Begin(RunState state)
         {
-            var evolutions = CampResolver.Resolve(state, ActiveRun.Library);
-            resultText.text = $"Your team rests at the Pokémon Center and gains {CampResolver.ExpGranted} EXP.\n" +
+            var growth = CampResolver.Resolve(state, ActiveRun.Library);
+            resultText.text = $"Your team rests at the Pokémon Center and gains {growth.ExpGranted} EXP.\n" +
                 "Attack is boosted for the next fight.";
-            foreach (var evolution in evolutions)
+            string grew = growth.Describe();
+            if (grew.Length > 0)
             {
-                resultText.text += $"\n{evolution.FromName} evolved into {evolution.ToName}!";
+                resultText.text += "\n" + grew;
             }
         }
 

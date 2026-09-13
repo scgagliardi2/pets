@@ -1,31 +1,27 @@
-using System;
 using System.Collections.Generic;
+using System.Linq;
 using Pets.Simulation;
 
 namespace Pets.Meta
 {
-    /// <summary>Design doc §4's Location table as data: what each kind of Location is called, what
-    /// it says about itself, and which Pokémon types its wild encounters lean toward.
+    /// <summary>Design doc §4's Location table — what each LocationType is called, which Pokémon
+    /// types its wild encounters and Gym Leader lean toward, and its one-line flavor — plus the Region
+    /// Hub's offer of three Locations to choose between (§5.2).
     ///
-    /// This replaces ForestLocationFactory, which held exactly one Location's type bias back when a
-    /// run was one hand-authored Forest. A run is six Locations now (RegionTier.RegionsPerRun) and
-    /// the player picks each one, so the bias has to be a property of the Location they chose
-    /// (RunState.CurrentLocation) rather than a constant.
-    ///
-    /// Only the type bias is mechanical today. The table's other columns — more Events in a Town,
-    /// trainer-heavy Cities, rare loot in a Dungeon — need node-weighting and a Shop that don't
-    /// exist, so the flavor line says what a Location is *meant* to feel like without the map
-    /// pretending it already does.</summary>
+    /// A static table rather than LocationTypeDefinition assets (content-schema.md §9): nine fixed
+    /// rows straight out of the design doc, no art, and nothing an asset pipeline would buy yet.
+    /// Replaces ForestLocationFactory, which held the one row that existed. Recorded in ADR 0007 as a
+    /// deviation to revisit when Locations gain content of their own.</summary>
     public static class LocationCatalog
     {
-        public readonly struct Entry
+        public sealed class Entry
         {
             public readonly LocationType Type;
             public readonly string DisplayName;
-            public readonly string Flavor;
             public readonly PokemonType[] TypeBias;
+            public readonly string Flavor;
 
-            public Entry(LocationType type, string displayName, string flavor, PokemonType[] typeBias)
+            public Entry(LocationType type, string displayName, string flavor, params PokemonType[] typeBias)
             {
                 Type = type;
                 DisplayName = displayName;
@@ -34,47 +30,60 @@ namespace Pets.Meta
             }
         }
 
-        private static readonly Dictionary<LocationType, Entry> Entries = new Dictionary<LocationType, Entry>
+        /// <summary>How many Locations the Region Hub offers at a time.</summary>
+        public const int OfferCount = 3;
+
+        /// <summary>The Location a map resolves against when its run hasn't chosen one — a Map scene
+        /// opened on its own in the Editor or a test. The Forest, which is what the game's one
+        /// Location used to be.</summary>
+        public const LocationType Fallback = LocationType.Forest;
+
+        public static readonly IReadOnlyList<Entry> All = new[]
         {
-            [LocationType.Town] = new Entry(LocationType.Town, "Quiet Town",
-                "Low danger, and people about.",
-                new[] { PokemonType.Normal, PokemonType.Fairy }),
-            [LocationType.City] = new Entry(LocationType.City, "Busy City",
-                "Trainers everywhere.",
-                new[] { PokemonType.Normal, PokemonType.Steel, PokemonType.Electric, PokemonType.Psychic }),
-            [LocationType.Dungeon] = new Entry(LocationType.Dungeon, "Old Dungeon",
-                "Dark, and something is in it.",
-                new[] { PokemonType.Ghost, PokemonType.Dark, PokemonType.Poison, PokemonType.Steel }),
-            [LocationType.Cave] = new Entry(LocationType.Cave, "Winding Cave",
-                "Cramped enough to be ambushed in.",
-                new[] { PokemonType.Rock, PokemonType.Ground, PokemonType.Poison, PokemonType.Dark }),
-            [LocationType.Forest] = new Entry(LocationType.Forest, "Deep Forest",
-                "Dense, and full of wildlife.",
-                new[] { PokemonType.Grass, PokemonType.Bug, PokemonType.Flying }),
-            [LocationType.Sea] = new Entry(LocationType.Sea, "Open Sea",
-                "Coastal water, and what lives under it.",
-                new[] { PokemonType.Water, PokemonType.Ice }),
-            [LocationType.Plains] = new Entry(LocationType.Plains, "Wide Plains",
-                "Open ground, frequent encounters.",
-                new[] { PokemonType.Normal, PokemonType.Flying, PokemonType.Grass, PokemonType.Electric }),
-            [LocationType.Desert] = new Entry(LocationType.Desert, "Burning Desert",
-                "Sparse, and everything here is tough.",
-                new[] { PokemonType.Ground, PokemonType.Fire, PokemonType.Rock }),
-            [LocationType.Mountain] = new Entry(LocationType.Mountain, "High Mountain",
-                "Harsh going, and a strong Gym at the top.",
-                new[] { PokemonType.Rock, PokemonType.Ground, PokemonType.Flying, PokemonType.Ice, PokemonType.Fighting }),
+            new Entry(LocationType.Town, "Town", "Quiet streets and friendly faces.",
+                PokemonType.Normal, PokemonType.Fairy),
+            new Entry(LocationType.City, "City", "Trainers on every corner.",
+                PokemonType.Normal, PokemonType.Steel, PokemonType.Electric, PokemonType.Psychic),
+            new Entry(LocationType.Dungeon, "Dungeon", "Dark halls, rare finds.",
+                PokemonType.Ghost, PokemonType.Dark, PokemonType.Poison, PokemonType.Steel),
+            new Entry(LocationType.Cave, "Cave", "Cramped tunnels, sudden ambushes.",
+                PokemonType.Rock, PokemonType.Ground, PokemonType.Poison, PokemonType.Dark),
+            new Entry(LocationType.Forest, "Forest", "Dense with wild Pokémon.",
+                PokemonType.Grass, PokemonType.Bug, PokemonType.Flying),
+            new Entry(LocationType.Sea, "Sea", "Waves, spray and cold currents.",
+                PokemonType.Water, PokemonType.Ice),
+            new Entry(LocationType.Plains, "Plains", "Open ground, frequent encounters.",
+                PokemonType.Normal, PokemonType.Flying, PokemonType.Grass, PokemonType.Electric),
+            new Entry(LocationType.Desert, "Desert", "Sparse, but what lives here is tough.",
+                PokemonType.Ground, PokemonType.Fire, PokemonType.Rock),
+            new Entry(LocationType.Mountain, "Mountain", "Harsh climbs and strong Gym Leaders.",
+                PokemonType.Rock, PokemonType.Ground, PokemonType.Flying, PokemonType.Ice, PokemonType.Fighting),
         };
 
-        /// <summary>Every Location type, in declaration order — what the Region Hub draws its
-        /// offers from.</summary>
-        public static readonly LocationType[] AllTypes =
-            (LocationType[])Enum.GetValues(typeof(LocationType));
+        public static Entry Get(LocationType type) => All.First(e => e.Type == type);
 
-        public static Entry For(LocationType type) => Entries[type];
+        /// <summary>The Location the run is in, or <see cref="Fallback"/> when it hasn't chosen one.</summary>
+        public static Entry CurrentFor(RunState state) => Get(state?.CurrentLocation ?? Fallback);
 
-        /// <summary>The types a Location's wild encounters lean toward (EncounterGenerator).</summary>
-        public static PokemonType[] TypeBiasFor(LocationType type) => Entries[type].TypeBias;
+        /// <summary>The Locations the Region Hub offers the run right now: <see cref="OfferCount"/>
+        /// distinct types, never the one just completed, shuffled from the run seed and badge count.
+        /// Derived rather than stored, so leaving the hub for the Team screen and coming back shows the
+        /// same three — and so a future save doesn't need to carry them.</summary>
+        public static List<LocationType> OffersFor(RunState state)
+        {
+            var candidates = All.Select(e => e.Type).ToList();
+            if (state.CompletedLocations.Count > 0)
+            {
+                candidates.Remove(state.CompletedLocations[state.CompletedLocations.Count - 1]);
+            }
 
-        public static string DisplayNameFor(LocationType type) => Entries[type].DisplayName;
+            var rng = new DeterministicRandom(state.RunSeed ^ ((state.BadgeCount + 1) * 7919));
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = rng.NextInt(i + 1);
+                (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+            }
+            return candidates.Take(OfferCount).ToList();
+        }
     }
 }

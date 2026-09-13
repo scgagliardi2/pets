@@ -1,53 +1,60 @@
+using System;
 using System.Collections.Generic;
 using Pets.Data;
+using Pets.Simulation;
 
 namespace Pets.Meta
 {
-    /// <summary>What winning a node's fight gives the run (design doc §7: mons "grow via
-    /// EXP/level").
+    /// <summary>What winning a node's fight gives the run (design doc §7: mons "grow via EXP/level").
+    ///
+    /// **A win pays by the level of what was beaten**: <see cref="BaseExpPerWin"/> plus the foes'
+    /// average level, doubled for a Gym. Scaling with the foe is what keeps the rising level curve
+    /// (ExperienceResolver) moving at a steady pace across all eight badges; a flat reward would
+    /// either race through the early game or crawl through the late one.
     ///
     /// **The whole line-up is paid, not just the survivors** — a Reserve behind a Lead that never
-    /// faints would otherwise never grow, and the floor (RunProgression) means it wouldn't be left
-    /// behind anyway, so paying only survivors buys nothing but bookkeeping.
-    ///
-    /// **The amount depends on the node**, which it didn't when EXP was a 1-point counter: a Gym is
-    /// worth most of a level, a wild fight a third of one. That's the milestone a Gym should feel
-    /// like, and it's affordable now that a level costs 7-17 EXP rather than 3 (ADR 0006). The
-    /// rates and LevelCurve's costs are two halves of one number — see LevelCurve for how they're
-    /// sized against each other, and RunBudgetTests for the assertion that keeps them that way.</summary>
+    /// faints would otherwise never grow — and then everything the run owns is caught up
+    /// (ExperienceResolver.ApplyCatchUp), so the Box isn't left behind either.</summary>
     public static class BattleRewardResolver
     {
-        /// <summary>A won wild encounter — the run's bread and butter, about a third of a level
-        /// early on.</summary>
-        public const int ExpPerPvEWin = 3;
+        /// <summary>EXP a win pays on top of the foes' average level.</summary>
+        public const int BaseExpPerWin = 2;
 
-        /// <summary>A won trainer fight. Slightly more than a wild one: it's a fight you can't
-        /// catch anything from (design doc §5.1).</summary>
-        public const int ExpPerPvPWin = 4;
+        /// <summary>A Gym pays this many times what a wild fight at its level would.</summary>
+        public const int GymExpMultiplier = 2;
 
-        /// <summary>A beaten Gym Leader — the Location's finale, and most of a level on its
-        /// own.</summary>
-        public const int ExpPerGymWin = 8;
-
-        /// <summary>EXP a won fight at this node type pays each mon in the line-up. Camp isn't a
-        /// fight and has its own rate (CampResolver); anything else pays the PvE rate rather than
-        /// nothing, so a node type added later is quietly playable instead of silently
-        /// worthless.</summary>
-        public static int ExpForWin(NodeType nodeType)
+        /// <summary>EXP each mon in the line-up earns for beating <paramref name="enemyLineUp"/>.</summary>
+        public static int ExpForWin(IReadOnlyList<PokemonInstance> enemyLineUp, bool isGym)
         {
-            switch (nodeType)
+            int total = 0;
+            int count = enemyLineUp?.Count ?? 0;
+            for (int i = 0; i < count; i++)
             {
-                case NodeType.Gym: return ExpPerGymWin;
-                case NodeType.PvP: return ExpPerPvPWin;
-                default: return ExpPerPvEWin;
+                total += ExperienceResolver.LevelOf(enemyLineUp[i]);
             }
+            int averageLevel = count > 0 ? (int)Math.Round((double)total / count, MidpointRounding.AwayFromZero) : 1;
+            return (BaseExpPerWin + averageLevel) * (isGym ? GymExpMultiplier : 1);
         }
 
-        /// <summary>Pays the run's line-up for a win at <paramref name="nodeType"/> and returns the
-        /// evolutions it set off, so the caller can tell the player about them — an evolution is the
-        /// one thing here worth more than a number ticking up.</summary>
-        public static List<ExperienceResolver.Evolution> GrantWinRewards(
-            RunState state, PokemonSpeciesLibrary library, NodeType nodeType) =>
-            RunProgression.GrantToLineUp(state, ExpForWin(nodeType), library);
+        /// <summary>Pays the run's line-up for a win and reports what grew. Box mons the catch-up
+        /// raised aren't in the report: they didn't fight, and the Team screen shows where they got to.</summary>
+        public static GrowthReport GrantWinRewards(RunState state, IReadOnlyList<PokemonInstance> enemyLineUp, bool isGym,
+            PokemonSpeciesLibrary library)
+        {
+            var report = new GrowthReport();
+            if (state == null)
+            {
+                return report;
+            }
+
+            int amount = ExpForWin(enemyLineUp, isGym);
+            report.ExpGranted = amount;
+            foreach (var mon in state.LineUp)
+            {
+                report.Merge(ExperienceResolver.GrantExp(mon, amount, library));
+            }
+            ExperienceResolver.ApplyCatchUp(state, library);
+            return report;
+        }
     }
 }

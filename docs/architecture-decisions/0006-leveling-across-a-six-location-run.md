@@ -1,6 +1,6 @@
 # ADR 0006: Leveling, Evolution and Difficulty Are Paced Across a Six-Location Run
 
-**Status:** Accepted
+**Status:** Superseded by ADR 0007 (an eight-badge run); kept for its reasoning
 **Date:** 2026-09-13
 **Supersedes:** the numbers and growth model in [ADR 0005](0005-exp-as-a-small-counter.md) (its
 derived-stats decision survives intact; see below)

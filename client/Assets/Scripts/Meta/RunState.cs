@@ -20,48 +20,38 @@ namespace Pets.Meta
         /// <summary>Caught/adopted mons not currently in the active line-up.</summary>
         public List<PokemonInstance> Box = new List<PokemonInstance>();
 
+        /// <summary>Morale a run starts with, and what earning a badge restores it to.</summary>
+        public const int StartingMorale = 3;
+
         public int Money;
 
-        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.
-        ///
-        /// 5, not the 3 it was, because a run is now six Locations rather than one: at ~27 fights
-        /// and the win rates RegionTier's enemy levels aim for, a run expects to lose about three
-        /// of them, and 3 Morale meant the average run died to arithmetic before its last badge
-        /// (ADR 0006).</summary>
-        public int Morale = 5;
+        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run. Refilled by each
+        /// badge (<see cref="EarnBadge"/>), so it's a per-Location budget of losses rather than one
+        /// that has to last all eight Gyms.</summary>
+        public int Morale = StartingMorale;
 
-        /// <summary>Which Location of the run this is, 1-based — the difficulty tier everything
-        /// scales off (RegionTier), and the badge count's other half.</summary>
-        public int RegionIndex = 1;
+        /// <summary>The Location the run is in, or null while it's at the Region Hub choosing the
+        /// next one (design doc §5.2).</summary>
+        public LocationType? CurrentLocation;
 
-        /// <summary>Gym Leaders beaten. Design doc §14 wants each badge to also grant a run-wide
-        /// passive; for now it's a counter and a win condition — the relic-style effect needs
-        /// run-wide passives the effect vocabulary doesn't have yet.</summary>
-        public int Badges;
+        /// <summary>Every Location whose Gym has fallen, oldest first. One badge each.</summary>
+        public List<LocationType> CompletedLocations = new List<LocationType>();
 
-        /// <summary>Which kind of Location the run is currently in — what its wild encounters are
-        /// biased toward (LocationCatalog), and what the map screen calls itself. Picked at the
-        /// Region Hub; the default only matters for a Map scene opened with no run behind it.</summary>
-        public LocationType CurrentLocation = LocationType.Forest;
+        public int BadgeCount => CompletedLocations.Count;
 
-        /// <summary>Total EXP this run has paid its line-up. Not a mon's EXP and not a sum of
-        /// theirs — it's the run's own progress, and what the floor under every mon it owns is
-        /// derived from (RunProgression).</summary>
-        public int RunExp;
+        /// <summary>All eight badges earned (RunProgression.BadgesToWin) — the run is won.</summary>
+        public bool IsRunWon => BadgeCount >= RunProgression.BadgesToWin;
 
-        /// <summary>The level no mon this run owns is allowed to be below: one under what the run
-        /// has earned, so a mon that joins late is immediately playable while a mon that has been
-        /// here the whole time is still, just, ahead. See RunProgression for why this exists.</summary>
-        public int FloorLevel =>
-            System.Math.Max(LevelCurve.StartingLevel, LevelCurve.LevelForExp(RunExp) - 1);
+        /// <summary>The run is between Locations and has to pick its next one at the Region Hub.</summary>
+        public bool NeedsLocationChoice => CurrentLocation == null && !IsRunWon && !IsRunOver;
 
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —
-        /// RegionMapTraversal.ForRun binds a traversal to these.</summary>
-        public RegionMap LocationMap;
+        /// LocationMapTraversal.ForRun binds a traversal to these.</summary>
+        public LocationMap LocationMap;
 
         /// <summary>The nodes walked so far, oldest first. The last entry is where the player
-        /// stands — RegionMapTraversal derives its position from this rather than storing it
+        /// stands — LocationMapTraversal derives its position from this rather than storing it
         /// twice.</summary>
         public List<string> VisitedMapNodeIds = new List<string>();
 
@@ -75,33 +65,28 @@ namespace Pets.Meta
 
         public bool IsRunOver => Morale <= 0;
 
-        /// <summary>The run is won once every Location's Gym has been beaten — the fixed-badge-count
-        /// answer to design doc §20's open "what ends a run" question (ADR 0006).</summary>
-        public bool IsRunWon => Badges >= RegionTier.RegionsPerRun;
-
-        /// <summary>True between Locations: the Gym is beaten, the map is gone, and the next thing
-        /// the player does is pick where to go. It's how Home's "Continue Run" knows to resume at
-        /// the Region Hub rather than at a map that no longer exists.</summary>
-        public bool IsBetweenLocations => LocationMap == null;
-
-        /// <summary>Enters the Location chosen at the Region Hub: its node-map is generated from
-        /// the offer's own seed, and the walk starts over at the new map's start node.</summary>
-        public void StartLocation(RegionHubGenerator.Offer offer, int layerCount)
+        /// <summary>Sets off for a Location chosen at the Region Hub: its map is generated fresh when
+        /// the Map scene next shows it.</summary>
+        public void TravelTo(LocationType location)
         {
-            CurrentLocation = offer.Type;
-            LocationMap = RegionMapGenerator.Generate(offer.MapSeed, layerCount);
+            CurrentLocation = location;
+            LocationMap = null;
             VisitedMapNodeIds.Clear();
         }
 
-        /// <summary>Banks a beaten Gym: a badge, the next Location's difficulty tier, and no map —
-        /// which is what sends the player back to the Region Hub to choose the next one. Doesn't
-        /// decide whether the run is over; <see cref="IsRunWon"/> is what the caller checks.</summary>
-        public void CompleteLocation()
+        /// <summary>The Gym has fallen: the Location is completed and the run returns to the Region
+        /// Hub. Morale is refilled and any unspent Pokémon Center buff lapses with the Location.
+        ///
+        /// A run with no Location chosen (a Map scene opened on its own) is credited with the one its
+        /// encounters were rolled from, LocationCatalog.Fallback, so a badge is never lost.</summary>
+        public void EarnBadge()
         {
-            Badges++;
-            RegionIndex++;
+            CompletedLocations.Add(CurrentLocation ?? LocationCatalog.Fallback);
+            CurrentLocation = null;
             LocationMap = null;
             VisitedMapNodeIds.Clear();
+            NextBattleAttackBonusPercent = 0f;
+            Morale = StartingMorale;
         }
 
         /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team

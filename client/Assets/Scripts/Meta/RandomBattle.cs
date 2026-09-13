@@ -45,11 +45,18 @@ namespace Pets.Meta
                 throw new ArgumentException("A battle needs at least one mon in the player's line-up.", nameof(playerLineUp));
             }
 
-            var enemies = GenerateEnemyLineUp(library, playerLineUp.Count, seed);
+            // Pitched at the party's strongest mon, so a dev battle late in a run is still a fight.
+            int level = 1;
+            foreach (var mon in playerLineUp)
+            {
+                level = Math.Max(level, ExperienceResolver.LevelOf(mon));
+            }
+
+            var enemies = GenerateEnemyLineUp(library, playerLineUp.Count, seed, level);
             return new RandomBattle(WithoutPassives(playerLineUp), WithoutPassives(enemies), seed);
         }
 
-        public static List<PokemonInstance> GenerateEnemyLineUp(PokemonSpeciesLibrary library, int count, int seed)
+        public static List<PokemonInstance> GenerateEnemyLineUp(PokemonSpeciesLibrary library, int count, int seed, int level = 1)
         {
             if (library == null || library.AllSpecies.Count == 0)
             {
@@ -61,7 +68,7 @@ namespace Pets.Meta
             for (int i = 0; i < count; i++)
             {
                 var species = library.AllSpecies[rng.NextInt(library.AllSpecies.Count)];
-                lineUp.Add(PokemonInstanceFactory.Create(species, $"{EnemyInstanceIdPrefix}{i}"));
+                lineUp.Add(ExperienceResolver.CreateAtLevel(species, $"{EnemyInstanceIdPrefix}{i}", level, library));
             }
             return lineUp;
         }

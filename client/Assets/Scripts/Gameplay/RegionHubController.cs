@@ -2,134 +2,129 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using Pets.Meta;
+using Pets.Simulation;
 using Pets.UI;
 
 namespace Pets.Gameplay
 {
-    /// <summary>The Region Hub (design doc §5.2): the screen between Locations, where the run picks
-    /// which of three candidate Locations to travel to next. Picking one generates its node-map and
-    /// leaves for the Map scene.
+    /// <summary>The Region Hub (design doc §5.2): shown after Character Select and after every Gym,
+    /// it offers three Locations (LocationCatalog.OffersFor) and sends the run to the one the player
+    /// picks. Each card names the Location, gives its flavor line and shows the Pokémon types it
+    /// leans toward; the header says which Gym this will be and what levels to expect.
     ///
-    /// This is what makes a run a *run* rather than a single Location. Until now, beating a Gym
-    /// ended everything at Home (ADR 0003) — there was nowhere to go back to — which meant the
-    /// growth curve had one Location to happen in. A run is six Locations and six badges now
-    /// (RegionTier.RegionsPerRun), and this screen is the seam between them.
+    /// Adapted to the game as built (ADR 0007): the Trailblazer travel minigame (§6) isn't built, so
+    /// travel is instant; and every offer shares the run's difficulty tier — it's the badge count that
+    /// sets how hard a Location is, not which one is chosen.
     ///
-    /// It shows what a player needs to choose with: each offer's type bias (LocationCatalog), and
-    /// the difficulty tier the next Location will be built at (RegionTier). The Trailblazer travel
-    /// minigame that design doc §6 puts between choosing and arriving isn't built, so choosing goes
-    /// straight to the map.</summary>
+    /// The scene owns a RunBootstrapper, since Character Select hands its pair to this screen rather
+    /// than to the map.</summary>
     public sealed class RegionHubController : MonoBehaviour
     {
-        [SerializeField] private Text headlineText;
-        [SerializeField] private Text progressText;
-        [SerializeField] private RectTransform offerRow;
+        private const float TypeIconWidth = 56f;
+        private const float TypeIconHeight = 28f;
 
-        /// <summary>Layers the Locations chosen here are generated with — the same default the Map
-        /// scene uses, kept here because this screen is what generates the map now.</summary>
-        [SerializeField] private int mapLayerCount = RegionMapGenerator.DefaultLayerCount;
+        [SerializeField] private Text headerText;
+        [SerializeField] private Text subheaderText;
+        [SerializeField] private ResourceBarController resourceBar;
+        [SerializeField] private GameObject typeIconPrefab;
+        [SerializeField] private Text[] nameTexts;
+        [SerializeField] private Text[] flavorTexts;
+        [SerializeField] private RectTransform[] typeRows;
+        [SerializeField] private Button[] travelButtons;
 
-        /// <summary>The offers on screen, in the order they're shown. Exposed for the PlayMode
-        /// tests, which need to know what the buttons they're clicking mean.</summary>
-        public IReadOnlyList<RegionHubGenerator.Offer> Offers { get; private set; }
-            = new List<RegionHubGenerator.Offer>();
+        private readonly List<LocationType> offers = new List<LocationType>();
+        private bool travelling;
+
+        /// <summary>The Locations on offer, in card order. Exposed for the PlayMode tests.</summary>
+        public IReadOnlyList<LocationType> Offers => offers;
 
         private void Start()
         {
-            // There is always a run here: this scene carries a RunBootstrapper, so opening it
-            // directly builds a default one exactly as the Map scene does.
-            var run = ActiveRun.State;
-
-            headlineText.text = run.Badges == 0
-                ? "Where to first?"
-                : $"Badge {run.Badges} earned. Where next?";
-            progressText.text =
-                $"Location {Mathf.Min(run.RegionIndex, RegionTier.RegionsPerRun)} of {RegionTier.RegionsPerRun}" +
-                $"    Badges {run.Badges} / {RegionTier.RegionsPerRun}" +
-                $"    Morale {run.Morale}";
-
-            Offers = RegionHubGenerator.Offers(run);
-            BuildOfferCards(run);
-        }
-
-        private void BuildOfferCards(RunState run)
-        {
-            for (int i = offerRow.childCount - 1; i >= 0; i--)
-            {
-                Destroy(offerRow.GetChild(i).gameObject);
-            }
-
-            for (int i = 0; i < Offers.Count; i++)
-            {
-                BuildOfferCard(Offers[i], i, run);
-            }
-        }
-
-        private void BuildOfferCard(RegionHubGenerator.Offer offer, int index, RunState run)
-        {
-            var entry = LocationCatalog.For(offer.Type);
-
-            var card = new GameObject($"OfferCard{index}", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup));
-            card.transform.SetParent(offerRow, false);
-            card.GetComponent<Image>().color = Theme.PanelBg;
-            var layout = card.GetComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(16, 16, 16, 16);
-            layout.spacing = 8;
-            layout.childForceExpandHeight = false;
-            layout.childControlHeight = true;
-            layout.childControlWidth = true;
-
-            AddCardLine(card.transform, "NameText", entry.DisplayName, Theme.FontSizeHeading, FontStyle.Bold, Theme.TextDark);
-            AddCardLine(card.transform, "FlavorText", entry.Flavor, Theme.FontSizeBody, FontStyle.Italic, Theme.TextMuted);
-            AddCardLine(card.transform, "TypesText", TypeBiasLine(entry), Theme.FontSizeBody, FontStyle.Normal, Theme.TextDark);
-            AddCardLine(card.transform, "TierText", TierLine(run), Theme.FontSizeBody, FontStyle.Normal, Theme.TextMuted);
-
-            var button = card.AddComponent<Button>();
-            button.targetGraphic = card.GetComponent<Image>();
-            var chosen = offer;
-            button.onClick.AddListener(() => Choose(chosen));
-        }
-
-        private static string TypeBiasLine(LocationCatalog.Entry entry) =>
-            "Wildlife: " + string.Join(", ", entry.TypeBias);
-
-        /// <summary>What the next Location's opposition will be, in the player's terms — the two
-        /// levers RegionTier actually pulls, so the choice isn't made blind.</summary>
-        private static string TierLine(RunState run)
-        {
-            int stage = RegionTier.MaxEvolutionStageFor(run.RegionIndex);
-            string forms = stage == 0 ? "base forms" : stage == 1 ? "up to first evolutions" : "fully evolved";
-            return $"Wild Lv {RegionTier.EnemyLevel(run, NodeType.PvE)}, {forms}" +
-                $"    Gym Lv {RegionTier.EnemyLevel(run, NodeType.Gym)}";
-        }
-
-        private static void AddCardLine(Transform parent, string name, string content, int fontSize,
-            FontStyle style, Color color)
-        {
-            var go = new GameObject(name, typeof(RectTransform), typeof(Text));
-            go.transform.SetParent(parent, false);
-            var text = go.GetComponent<Text>();
-            text.text = content;
-            text.font = Theme.GameFont;
-            text.fontSize = fontSize;
-            text.fontStyle = style;
-            text.color = color;
-            text.alignment = TextAnchor.UpperLeft;
-            text.horizontalOverflow = HorizontalWrapMode.Wrap;
-            text.verticalOverflow = VerticalWrapMode.Overflow;
-            go.AddComponent<LayoutElement>().minHeight = fontSize + 6;
-        }
-
-        /// <summary>Takes the offer: the run enters that Location and the map screen picks it up
-        /// from run state, exactly as it does when resuming one.</summary>
-        public void Choose(RegionHubGenerator.Offer offer)
-        {
-            if (!ActiveRun.HasRun)
+            var state = ActiveRun.State;
+            if (state == null)
             {
                 return;
             }
-            ActiveRun.State.StartLocation(offer, mapLayerCount);
+
+            if (!state.NeedsLocationChoice)
+            {
+                // Nothing to choose: a run already in a Location belongs on its map, and a finished
+                // one at Home.
+                ScreenFade.TransitionTo(state.CurrentLocation != null ? SceneNames.Map : SceneNames.Home);
+                return;
+            }
+
+            offers.AddRange(LocationCatalog.OffersFor(state));
+            resourceBar.Refresh(state);
+
+            int badges = state.BadgeCount;
+            headerText.text = badges == 0 ? "Choose your first Location" : "Choose your next Location";
+            subheaderText.text =
+                $"Gym {badges + 1} of {RunProgression.BadgesToWin}   -   " +
+                $"wild Pokémon Lv {RunProgression.WildLevel(badges, 1)} to {RunProgression.WildLevel(badges, LocationMapGenerator.ChoiceLayerCount)}   -   " +
+                $"Gym Leader Lv {RunProgression.GymLevel(badges)}";
+
+            for (int i = 0; i < travelButtons.Length; i++)
+            {
+                bool offered = i < offers.Count;
+                travelButtons[i].interactable = offered;
+                if (!offered)
+                {
+                    continue;
+                }
+
+                var entry = LocationCatalog.Get(offers[i]);
+                nameTexts[i].text = entry.DisplayName;
+                flavorTexts[i].text = entry.Flavor;
+                ShowTypes(typeRows[i], entry.TypeBias);
+            }
+        }
+
+        /// <summary>A card's Travel button (wired with its card index by RegionHubSceneBuilder).</summary>
+        public void OnTravelClicked(int index)
+        {
+            var state = ActiveRun.State;
+            if (travelling || state == null || index < 0 || index >= offers.Count)
+            {
+                return;
+            }
+
+            // One choice per visit: a second click during the fade would otherwise re-pick.
+            travelling = true;
+            foreach (var button in travelButtons)
+            {
+                button.interactable = false;
+            }
+
+            // The Trailblazer minigame (design doc §6) would play here; until it exists, travel is instant.
+            state.TravelTo(offers[index]);
             ScreenFade.TransitionTo(SceneNames.Map);
+        }
+
+        private void ShowTypes(RectTransform row, PokemonType[] types)
+        {
+            for (int i = row.childCount - 1; i >= 0; i--)
+            {
+                var child = row.GetChild(i).gameObject;
+                child.SetActive(false);
+                Destroy(child);
+            }
+
+            foreach (var type in types)
+            {
+                var icon = Instantiate(typeIconPrefab, row);
+                icon.name = $"TypeIcon_{type}";
+                icon.GetComponent<TypeIconView>().Type = type;
+
+                // Explicit == null rather than ??, for the fake-null reason TeamPanelController.Fade gives.
+                var layout = icon.GetComponent<LayoutElement>();
+                if (layout == null)
+                {
+                    layout = icon.AddComponent<LayoutElement>();
+                }
+                layout.preferredWidth = TypeIconWidth;
+                layout.preferredHeight = TypeIconHeight;
+            }
         }
     }
 }

@@ -109,8 +109,8 @@ namespace Pets.Gameplay
         {
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
-            // The Region Hub, not straight onto a map: a run picks its first Location
-            // like it picks every one after it (design doc §5.2).
+            // To the Region Hub, which bootstraps the run from this pair and offers its first
+            // Location (design doc §3 step 5).
             ScreenFade.TransitionTo(SceneNames.RegionHub);
         }
 

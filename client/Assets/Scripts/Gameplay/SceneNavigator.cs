@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Pets.Gameplay
 {
     /// <summary>The one component every menu button's onClick points at. The Home, Ingame Menu,
-    /// Team and Region Map scenes are all wired by the Editor scene builders through
+    /// Team and Location Map scenes are all wired by the Editor scene builders through
     /// UnityEventTools.AddVoidPersistentListener, which needs a real no-argument method on a real
     /// component — so plain navigation lives here rather than as a per-screen controller class
     /// that would otherwise hold nothing but LoadScene calls.
@@ -29,9 +29,16 @@ namespace Pets.Gameplay
 
         public void GoToCharacterSelect() => ScreenFade.TransitionTo(SceneNames.CharacterSelect);
 
-        public void GoToMap() => ScreenFade.TransitionTo(SceneNames.Map);
+        /// <summary>The Ingame Menu's "Back to Map". A run between Locations has no map to go back to
+        /// — its last one ended at a Gym — so this lands on the Region Hub instead.</summary>
+        public void GoToMap() => ScreenFade.TransitionTo(MapOrHubFor(ActiveRun.State));
 
         public void GoToRegionHub() => ScreenFade.TransitionTo(SceneNames.RegionHub);
+
+        /// <summary>Where "the map" is for this run right now: the Location's map, or the Region Hub
+        /// while a next Location still has to be picked.</summary>
+        public static string MapOrHubFor(Pets.Meta.RunState state) =>
+            state != null && state.NeedsLocationChoice ? SceneNames.RegionHub : SceneNames.Map;
 
         public void GoToIngameMenu() => ScreenFade.TransitionTo(SceneNames.IngameMenu);
 
@@ -78,7 +85,7 @@ namespace Pets.Gameplay
         /// <summary>Home's "Continue Run": back into the run still held by ActiveRun, landing on
         /// the Ingame Menu rather than straight on the Map so the player sees where they are
         /// before moving — unless the run is *between* Locations (its Gym is beaten and its map is
-        /// gone, RunState.IsBetweenLocations), in which case the only thing left to do is pick the
+        /// gone, RunState.NeedsLocationChoice), in which case the only thing left to do is pick the
         /// next Location, so it resumes at the Region Hub. Without that, the Ingame Menu's "Back to
         /// Map" would quietly generate a fresh map and skip the choice the hub exists to offer.
         ///
@@ -92,7 +99,7 @@ namespace Pets.Gameplay
                 return;
             }
             ScreenFade.TransitionTo(
-                ActiveRun.State.IsBetweenLocations ? SceneNames.RegionHub : SceneNames.IngameMenu);
+                ActiveRun.State.NeedsLocationChoice ? SceneNames.RegionHub : SceneNames.IngameMenu);
         }
 
         /// <summary>Application.Quit is a no-op in the Editor (it only ends a real player

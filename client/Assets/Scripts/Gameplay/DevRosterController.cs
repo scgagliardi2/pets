@@ -76,10 +76,10 @@ namespace Pets.Gameplay
         {
             var state = ActiveRun.State;
             addedCount++;
-            var mon = PokemonInstanceFactory.Create(species, $"dev-{species.Id}-{addedCount}");
-            // Joins at the run's floor like anything else the run acquires, so a mon stuffed in
-            // during Location 5 is testable rather than five Locations behind.
-            RunProgression.Onboard(state, mon, speciesLibrary);
+            // At the run's catch-up level, the same rule a real catch follows, so a dev-added mon is as
+            // usable as a caught one rather than a level-1 dead weight.
+            var mon = ExperienceResolver.CreateAtLevel(species, $"dev-{species.Id}-{addedCount}",
+                ExperienceResolver.CatchUpLevel(state), speciesLibrary);
 
             bool partyFull = state.LineUp.Count >= RunState.MaxPartySize;
             var landedIn = target == RosterGroup.Party && !partyFull ? RosterGroup.Party : RosterGroup.Box;

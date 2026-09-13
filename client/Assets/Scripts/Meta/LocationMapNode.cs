@@ -3,8 +3,8 @@ using System.Collections.Generic;
 namespace Pets.Meta
 {
     /// <summary>One node in a generated branching Region/Location map (design doc §5). Visual
-    /// prototype only — see RegionMapGenerator.</summary>
-    public sealed class RegionMapNode
+    /// prototype only — see LocationMapGenerator.</summary>
+    public sealed class LocationMapNode
     {
         public string Id;
         public NodeType Type;

@@ -2,10 +2,10 @@ namespace Pets.Meta
 {
     /// <summary>Location node-map node kinds (design doc §5.1) — shown to the player as Battle
     /// (PvE), Encounter (Event), Mystery Trainer (PvP), Pokémon Center (Camp), and Gym (see
-    /// RegionMapController's NodeDisplayNames for that flavor mapping). Arriving at a node resolves
-    /// it (Gameplay/NodeResolutionController, ADR 0003): PvE and Gym hand a fight to the Battle
-    /// screen and Camp rests the team, while Event and PvP still show an honest "not built yet"
-    /// modal.</summary>
+    /// LocationMapController's NodeDisplayNames for that flavor mapping). The branching map itself
+    /// (LocationMapGenerator/LocationMapTraversal, PLAN.md Phase 1) is walkable, but only PvE and Camp
+    /// are actually resolvable today, via ForestLocationFactory's separate linear map — arriving at
+    /// a node on the branching map doesn't yet start its fight/event/center visit.</summary>
     public enum NodeType
     {
         PvE,

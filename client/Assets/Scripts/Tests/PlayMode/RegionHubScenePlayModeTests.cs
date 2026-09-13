@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
@@ -15,12 +16,14 @@ using Pets.Simulation;
 
 namespace Pets.Tests
 {
-    /// <summary>Drives the saved Region Hub scene (RegionHubSceneBuilder): the screen a run passes
-    /// through between Locations. The wiring between a generated scene and its controller is
-    /// exactly what compiles fine and does nothing, so these click the real cards.</summary>
+    /// <summary>The saved Region Hub scene against RegionHubController (design doc §5.2, ADR 0007):
+    /// it bootstraps a run from Character Select's pair, offers three Locations, sends the run to the
+    /// one picked, and is where "Back to Map" lands while the run is between Locations.</summary>
     public class RegionHubScenePlayModeTests
     {
-        private const string RegionHubScenePath = "Assets/Scenes/" + SceneNames.RegionHub + ".unity";
+        private const string ScenePath = "Assets/Scenes/RegionHub.unity";
+        private const string IngameMenuScenePath = "Assets/Scenes/IngameMenu.unity";
+        private const string HomeScenePath = "Assets/Scenes/Home.unity";
 
         [SetUp]
         public void SetUp() => ResetRunState();
@@ -32,6 +35,7 @@ namespace Pets.Tests
         {
             ActiveRun.End();
             PendingRunSelection.Clear();
+            PendingBattle.Clear();
         }
 
         private static IEnumerator LoadScene(string path)
@@ -45,108 +49,203 @@ namespace Pets.Tests
             yield return null;
         }
 
+        [UnityTest]
+        public IEnumerator RegionHub_BootstrapsARun_AndOffersThreeDistinctLocations()
+        {
+            yield return LoadScene(ScenePath);
+
+            Assert.IsTrue(ActiveRun.HasRun, "the hub is where Character Select's pair becomes a run");
+            Assert.AreSame(RunBootstrapper.Instance.State, ActiveRun.State);
+
+            var hub = Hub();
+            Assert.AreEqual(LocationCatalog.OfferCount, hub.Offers.Count);
+            CollectionAssert.AllItemsAreUnique(hub.Offers);
+
+            for (int i = 0; i < hub.Offers.Count; i++)
+            {
+                var entry = LocationCatalog.Get(hub.Offers[i]);
+                var card = Card(i);
+                Assert.AreEqual(entry.DisplayName, card.Find("NameText").GetComponent<Text>().text);
+                Assert.AreEqual(entry.Flavor, card.Find("FlavorText").GetComponent<Text>().text);
+                var row = card.Find("TypesRow");
+                int icons = row.Cast<Transform>().Count(t => t.gameObject.activeSelf);
+                Assert.AreEqual(entry.TypeBias.Length, icons, $"{entry.DisplayName} should show one icon per type");
+                Assert.IsTrue(card.Find("TravelButton").GetComponent<Button>().interactable);
+            }
+
+            StringAssert.Contains($"Gym 1 of {RunProgression.BadgesToWin}", Label("SubheaderText"));
+            Assert.AreEqual($"Badges 0/{RunProgression.BadgesToWin}", Label("BadgesValue"));
+        }
+
+        [UnityTest]
+        public IEnumerator RegionHub_ButtonsAreWired()
+        {
+            yield return LoadScene(ScenePath);
+
+            var menu = FindButton("MenuButton");
+            Assert.AreEqual(1, menu.onClick.GetPersistentEventCount());
+            Assert.IsInstanceOf<SceneNavigator>(menu.onClick.GetPersistentTarget(0));
+            Assert.AreEqual(nameof(SceneNavigator.GoToIngameMenu), menu.onClick.GetPersistentMethodName(0));
+
+            for (int i = 0; i < LocationCatalog.OfferCount; i++)
+            {
+                var travel = Card(i).Find("TravelButton").GetComponent<Button>();
+                Assert.AreEqual(1, travel.onClick.GetPersistentEventCount(), $"card {i}'s Travel button");
+                Assert.IsInstanceOf<RegionHubController>(travel.onClick.GetPersistentTarget(0));
+                Assert.AreEqual(nameof(RegionHubController.OnTravelClicked), travel.onClick.GetPersistentMethodName(0));
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator Travelling_SetsTheRunsLocation_AndOpensItsMap()
+        {
+            yield return LoadScene(ScenePath);
+            var chosen = Hub().Offers[1];
+
+            Card(1).Find("TravelButton").GetComponent<Button>().onClick.Invoke();
+
+            Assert.AreEqual(chosen, ActiveRun.State.CurrentLocation);
+            Assert.IsFalse(Card(0).Find("TravelButton").GetComponent<Button>().interactable, "one choice per visit");
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+            yield return null;
+            StringAssert.StartsWith(LocationCatalog.Get(chosen).DisplayName, Label("TitleText"),
+                "the map should name the Location the run travelled to");
+        }
+
+        [UnityTest]
+        public IEnumerator AfterABadge_TheHubSaysSo_AndLeavesOutTheLocationJustBeaten()
+        {
+            var run = MakeRun();
+            run.TravelTo(LocationType.Desert);
+            run.EarnBadge();
+            ActiveRun.Begin(run, MakeLibrary());
+
+            yield return LoadScene(ScenePath);
+
+            CollectionAssert.DoesNotContain(Hub().Offers, LocationType.Desert);
+            StringAssert.Contains($"Gym 2 of {RunProgression.BadgesToWin}", Label("SubheaderText"));
+            Assert.AreEqual($"Badges 1/{RunProgression.BadgesToWin}", Label("BadgesValue"));
+        }
+
+        [UnityTest]
+        public IEnumerator RegionHub_ForARunAlreadyInALocation_SendsThePlayerToItsMap()
+        {
+            var run = MakeRun();
+            run.TravelTo(LocationType.Plains);
+            ActiveRun.Begin(run, MakeLibrary());
+
+            yield return LoadScene(ScenePath);
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+        }
+
+        /// <summary>The Ingame Menu's "Back to Map" has no map to go back to after a Gym — the hub is
+        /// where the run actually is.</summary>
+        [UnityTest]
+        public IEnumerator GoToMap_WhileBetweenLocations_OpensTheRegionHub()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+            yield return LoadScene(IngameMenuScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().GoToMap();
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.RegionHub);
+        }
+
+        [UnityTest]
+        public IEnumerator GoToMap_InsideALocation_OpensItsMap()
+        {
+            var run = MakeRun();
+            run.TravelTo(LocationType.Forest);
+            ActiveRun.Begin(run, MakeLibrary());
+            yield return LoadScene(IngameMenuScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().GoToMap();
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+        }
+
+        /// <summary>Home's Continue Run resumes where the run actually is: between Locations that's the
+        /// Region Hub, since the Ingame Menu's map would have no map to show.</summary>
+        [UnityTest]
+        public IEnumerator ContinueRun_BetweenLocations_ResumesAtTheRegionHub()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+            yield return LoadScene(HomeScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().ContinueRun();
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.RegionHub);
+        }
+
+        [UnityTest]
+        public IEnumerator ContinueRun_InsideALocation_ResumesAtTheIngameMenu()
+        {
+            var run = MakeRun();
+            run.TravelTo(LocationType.Sea);
+            ActiveRun.Begin(run, MakeLibrary());
+            yield return LoadScene(HomeScenePath);
+
+            Object.FindFirstObjectByType<SceneNavigator>().ContinueRun();
+
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.IngameMenu);
+        }
+
+        private static RegionHubController Hub()
+        {
+            var hub = Object.FindFirstObjectByType<RegionHubController>();
+            Assert.IsNotNull(hub, "the scene should have a RegionHubController");
+            return hub;
+        }
+
+        private static Transform Card(int index)
+        {
+            var card = GameObject.Find($"LocationCard{index}");
+            Assert.IsNotNull(card, $"expected LocationCard{index}");
+            return card.transform;
+        }
+
+        private static string Label(string name)
+        {
+            var go = GameObject.Find(name);
+            Assert.IsNotNull(go, $"expected a '{name}' label");
+            return go.GetComponent<Text>().text;
+        }
+
+        private static Button FindButton(string name)
+        {
+            var button = Object.FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(b => b.name == name);
+            Assert.IsNotNull(button, $"Expected a Button named '{name}'");
+            return button;
+        }
+
         private static PokemonSpeciesDefinitionAsset MakeSpecies(int id, string name)
         {
             var species = ScriptableObject.CreateInstance<PokemonSpeciesDefinitionAsset>();
             species.Id = id;
             species.DisplayName = name;
             species.Type1 = PokemonType.Normal;
-            species.BaseAttack = 20;
-            species.BaseHealth = 40;
-            species.BaseSpeed = 20;
+            species.BaseAttack = 10;
+            species.BaseHealth = 50;
+            species.BaseSpeed = 10;
             return species;
         }
 
         private static PokemonSpeciesLibrary MakeLibrary()
         {
             var library = ScriptableObject.CreateInstance<PokemonSpeciesLibrary>();
-            library.AllSpecies = new System.Collections.Generic.List<PokemonSpeciesDefinitionAsset>
-            {
-                MakeSpecies(1, "Alpha"),
-                MakeSpecies(2, "Beta")
-            };
+            library.AllSpecies = new List<PokemonSpeciesDefinitionAsset> { MakeSpecies(1, "Alpha"), MakeSpecies(2, "Beta") };
             return library;
         }
 
-        /// <summary>A run standing between Locations, with <paramref name="badges"/> already
-        /// earned — what the hub is for.</summary>
-        private static RunState BeginRun(int badges = 0)
+        private static RunState MakeRun()
         {
-            var library = MakeLibrary();
-            var run = new RunState { RunSeed = 31337, Badges = badges, RegionIndex = badges + 1 };
-            run.LineUp.Add(PokemonInstanceFactory.Create(library.AllSpecies[0], "lead"));
-            ActiveRun.Begin(run, library);
+            var run = new RunState { RunSeed = 77 };
+            run.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(1, "Alpha"), "mon-0"));
+            run.LineUp.Add(PokemonInstanceFactory.Create(MakeSpecies(2, "Beta"), "mon-1"));
             return run;
-        }
-
-        private static RegionHubController Controller() =>
-            Object.FindFirstObjectByType<RegionHubController>();
-
-        [UnityTest]
-        public IEnumerator RegionHubScene_ShowsOneCardPerOfferedLocation()
-        {
-            BeginRun();
-
-            yield return LoadScene(RegionHubScenePath);
-
-            var controller = Controller();
-            Assert.IsNotNull(controller, "the Region Hub scene should be running its controller");
-            Assert.AreEqual(RegionHubGenerator.OfferCount, controller.Offers.Count);
-
-            var cards = Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
-                .Where(b => b.name.StartsWith("OfferCard")).ToList();
-            Assert.AreEqual(RegionHubGenerator.OfferCount, cards.Count,
-                "every offer should be a card the player can press");
-
-            var names = Object.FindObjectsByType<Text>(FindObjectsSortMode.None).Select(t => t.text).ToList();
-            foreach (var offer in controller.Offers)
-            {
-                CollectionAssert.Contains(names, LocationCatalog.DisplayNameFor(offer.Type));
-            }
-        }
-
-        [UnityTest]
-        public IEnumerator RegionHubScene_ShowsHowFarThroughTheRunTheseBadgesAre()
-        {
-            BeginRun(badges: 2);
-
-            yield return LoadScene(RegionHubScenePath);
-
-            string progress = GameObject.Find("ProgressText").GetComponent<Text>().text;
-            StringAssert.Contains($"Badges 2 / {RegionTier.RegionsPerRun}", progress);
-            StringAssert.Contains($"Location 3 of {RegionTier.RegionsPerRun}", progress);
-        }
-
-        [UnityTest]
-        public IEnumerator RegionHubScene_PressingACard_EntersThatLocationAndLeavesForTheMap()
-        {
-            var run = BeginRun();
-
-            yield return LoadScene(RegionHubScenePath);
-
-            var controller = Controller();
-            var chosen = controller.Offers[1];
-            Object.FindObjectsByType<Button>(FindObjectsSortMode.None)
-                .First(b => b.name == "OfferCard1").onClick.Invoke();
-
-            Assert.AreEqual(chosen.Type, run.CurrentLocation,
-                "the Location picked is the one whose wildlife the map will draw from");
-            Assert.IsNotNull(run.LocationMap, "picking a Location generates its node-map");
-            Assert.AreEqual(chosen.MapSeed, run.LocationMap.Seed);
-
-            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
-        }
-
-        /// <summary>Opened on its own, the scene bootstraps a run like the Map scene does, so it
-        /// stands up and offers Locations rather than throwing on a missing run — this is the
-        /// screen a designer opens directly.</summary>
-        [UnityTest]
-        public IEnumerator RegionHubScene_OpenedWithNoRun_BootstrapsOneAndStillOffersLocations()
-        {
-            yield return LoadScene(RegionHubScenePath);
-
-            Assert.IsTrue(ActiveRun.HasRun, "the scene's RunBootstrapper should have built a run");
-            Assert.AreEqual(RegionHubGenerator.OfferCount, Controller().Offers.Count);
         }
     }
 }

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Pets.Data;
 
 namespace Pets.Meta
@@ -7,21 +6,25 @@ namespace Pets.Meta
     /// line-up and a temporary Attack buff for the next fight.</summary>
     public static class CampResolver
     {
-        /// <summary>A rest is worth less than the wild fight you didn't have — it costs nothing
-        /// and risks nothing. Sized against LevelCurve's 7-17 EXP per level, so a Pokémon Center is
-        /// a nudge rather than a level (ADR 0006).</summary>
-        public const int ExpGranted = 2;
-
         private const float NextBattleAttackBonusPercent = 0.2f;
 
-        /// <summary>Returns the evolutions the rest set off, for the same reason
-        /// BattleRewardResolver does — the Pokémon Center overlay is where the player would see
-        /// them.</summary>
-        public static List<ExperienceResolver.Evolution> Resolve(RunState state, PokemonSpeciesLibrary library)
+        /// <summary>A rest is worth what a wild win at the Location's baseline level would pay — about
+        /// a fight's worth of EXP, so choosing the Center over a Battle node isn't a sacrifice.</summary>
+        public static int ExpFor(RunState state) =>
+            BattleRewardResolver.BaseExpPerWin + RunProgression.BaselineLevel(state.BadgeCount);
+
+        public static GrowthReport Resolve(RunState state, PokemonSpeciesLibrary library)
         {
-            var evolutions = RunProgression.GrantToLineUp(state, ExpGranted, library);
+            var report = new GrowthReport();
+            int amount = ExpFor(state);
+            report.ExpGranted = amount;
+            foreach (var mon in state.LineUp)
+            {
+                report.Merge(ExperienceResolver.GrantExp(mon, amount, library));
+            }
+            ExperienceResolver.ApplyCatchUp(state, library);
             state.NextBattleAttackBonusPercent = NextBattleAttackBonusPercent;
-            return evolutions;
+            return report;
         }
     }
 }

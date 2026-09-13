@@ -8,29 +8,20 @@ namespace Pets.Data
     /// see content-schema.md §8.</summary>
     public static class PokemonInstanceFactory
     {
-        /// <summary>Builds a fresh, full-health PokemonInstance at 0 EXP and the given level. Its
-        /// passive is resolved at the species' own evolution stage — a mon caught as a Charmeleon is
-        /// a stage-1 mon, and its passive's magnitude should say so (content-schema.md §1). Growth
-        /// from there is Pets.Meta.ExperienceResolver's job, and it re-resolves the passive on each
-        /// evolution.
+        /// <summary>Builds a fresh, full-health PokemonInstance at level 1 (0 EXP), with its stats
+        /// from <see cref="StatGrowth"/>. Its passive is resolved at the species' own evolution stage
+        /// — a mon caught as a Charmeleon is a stage-1 mon, and its passive's magnitude should say so
+        /// (content-schema.md §1).
         ///
-        /// <paramref name="level"/> is how an enemy is built to match the run it's fighting: a wild
-        /// encounter or a Gym team is created at the level its region calls for
-        /// (Pets.Meta.RegionTier), through the same StatGrowth rule the player's own mons use. It
-        /// does *not* set the mon's EXP — a mon created at level 6 has earned nothing, it simply is
-        /// that strong; see PokemonInstance.MinLevel.</summary>
-        public static PokemonInstance Create(PokemonSpeciesDefinitionAsset species, string instanceId,
-            int level = StatGrowth.StartingLevel)
+        /// A run should usually go through Pets.Meta.ExperienceResolver.CreateAtLevel instead, which
+        /// also sets the level and counts how far along its chain an evolved species already is.</summary>
+        public static PokemonInstance Create(PokemonSpeciesDefinitionAsset species, string instanceId)
         {
-            var stats = StatGrowth.StatsFor(
-                new Stats { Attack = species.BaseAttack, Health = species.BaseHealth, Speed = species.BaseSpeed },
-                level);
-
+            var stats = StatGrowth.AtLevel(species, 1);
             return new PokemonInstance
             {
                 InstanceId = instanceId,
                 SpeciesId = species.Id,
-                MinLevel = level,
                 CurrentStats = stats,
                 CurrentHP = stats.Health,
                 PassiveId = species.Passive != null ? species.Passive.Id : null,

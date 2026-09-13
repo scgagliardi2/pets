@@ -273,19 +273,11 @@ namespace Pets.Gameplay
             var card = PokemonCardBuilder.CreateCard(slot, "Card");
             Stretch(card.GetComponent<RectTransform>());
 
-            // Level first — it's the number that explains the stats underneath it — then the two
-            // things a player can act on: how far this mon is through the level, and what level it
-            // evolves at, whenever there's something left to evolve into (Meta/ExperienceResolver).
+            // The level, with the level this mon next evolves at when it has one — the two numbers a
+            // player plans a line-up around (see Meta/ExperienceResolver).
             int level = ExperienceResolver.LevelOf(mon);
-            var (into, cost) = LevelCurve.ProgressInLevel(mon.Exp);
-            string growth = cost > 0 ? $"Lv {level}  {into}/{cost}" : $"Lv {level}  MAX";
-            int evolvesAt = ExperienceResolver.CanEverEvolve(mon, library)
-                ? ExperienceResolver.NextEvolutionLevel(mon)
-                : int.MaxValue;
-            if (evolvesAt != int.MaxValue)
-            {
-                growth += $"  →Lv {evolvesAt}";
-            }
+            int? evolvesAt = ExperienceResolver.NextEvolutionLevel(mon, library);
+            string growth = evolvesAt.HasValue ? $"Lv {level}  Evo {evolvesAt.Value}" : $"Lv {level}";
             PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
                 CardRoleFontSize, FontStyle.Bold, Theme.TextMuted).name = "RoleText";
             PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.Load(species), CardSpriteHeight);

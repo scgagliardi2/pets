@@ -21,30 +21,30 @@ namespace Pets.Tests
     /// random enemy team, the stat boxes and party strip, the 2-second HP drain, the playback
     /// controls, the autoplay setting and the end-of-fight panel.
     ///
-    /// Every test species has 10 attack and 200 HP, so a single Step is predictable (both Leads
-    /// lose exactly 10) and a fight lasts long enough that autoplay can't have finished it before
-    /// the test takes control. Autoplay is switched off by default here, and the player's own
-    /// setting is put back afterwards — PlayerPrefs in the Editor are the real ones.</summary>
+    /// Every test species has 10 attack and 200 base HP (tripled at level 1 by StatGrowth), so a
+    /// single Step is predictable (both Leads lose exactly 10) and a fight lasts long enough that
+    /// autoplay can't have finished it before the test takes control. Autoplay is switched off by
+    /// default here, and the player's own setting is put back afterwards — PlayerPrefs in the Editor
+    /// are the real ones.</summary>
     public class BattleScenePlayModeTests
     {
         private const string BattleScenePath = "Assets/Scenes/Battle.unity";
         private const int TestAttack = 10;
 
         /// <summary>The test species' *sheet* Health. What a mon actually fights with is this times
-        /// StatGrowth.HealthScalar — see TestFullHealth.</summary>
+        /// StatGrowth.HealthMultiplier — see TestMaxHealth.</summary>
         private const int TestHealth = 200;
 
-        /// <summary>The HP pool a test mon actually has: every mon's Health is scaled on the way
-        /// out of the roster sheet (Data/StatGrowth), so a fight lasts more than a Step or two.</summary>
-        private const int TestFullHealth = TestHealth * StatGrowth.HealthScalar;
+        /// <summary>A level-1 test mon's actual HP — base Health through StatGrowth.</summary>
+        private const int TestMaxHealth = TestHealth * StatGrowth.HealthMultiplier;
 
-        // A node fight's foe, tuned so the fight is over in one Step and which way it went is never
-        // in question: the weak one dies to a single hit without landing a meaningful one, the
-        // strong one one-shots a party mon and shrugs off everything it takes.
+        // A node fight's foe, tuned so which way the fight goes is never in question: the weak one
+        // dies to a single hit without landing a meaningful one, the strong one outlasts and outhits
+        // a party mon by a wide margin.
         private const string WildName = "Wild";
         private const int WeakFoeAttack = 1;
         private const int WeakFoeHealth = 1;
-        private const int StrongFoeAttack = TestFullHealth;
+        private const int StrongFoeAttack = TestMaxHealth;
         private const int StrongFoeHealth = TestHealth * 10;
 
         private static readonly string[] MonNames = { "Alpha", "Beta", "Gamma", "Delta" };
@@ -102,7 +102,7 @@ namespace Pets.Tests
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.CharacterSelect);
         }
 
-        /// <summary>A run with nobody in it is dropped on the way out, or the Map would adopt it
+        /// <summary>A run with nobody in it is dropped on the way out, or the hub would adopt it
         /// over the pair the player is about to pick.</summary>
         [UnityTest]
         public IEnumerator BattleScene_WithAnEmptyParty_SendsThePlayerToCharacterSelect_AndDropsTheRun()
@@ -127,14 +127,11 @@ namespace Pets.Tests
             Assert.AreEqual(3, controller.State.LineUpA.Count);
             Assert.AreEqual(3, controller.State.LineUpB.Count, "the foe team matches the party's size");
 
-            // Name *and* level: the stat box carries the level that explains its numbers.
-            StringAssert.StartsWith("Alpha", Stats("PlayerLeadStats").NameText.text);
-            StringAssert.Contains("Lv 1", Stats("PlayerLeadStats").NameText.text);
+            Assert.AreEqual("Alpha Lv 1", Stats("PlayerLeadStats").NameText.text, "a stat box names the mon and its level");
             StringAssert.StartsWith("Beta", Stats("PlayerSupportStats").NameText.text);
-            Assert.IsTrue(MonNames.Any(n => Stats("EnemyLeadStats").NameText.text.StartsWith(n)),
-                "the foe is rolled from the library");
+            Assert.IsTrue(MonNames.Any(n => Stats("EnemyLeadStats").NameText.text.StartsWith(n)), "the foe is rolled from the library");
             Assert.IsTrue(MonNames.Any(n => Stats("EnemySupportStats").NameText.text.StartsWith(n)));
-            Assert.AreEqual($"{TestFullHealth}/{TestFullHealth}", Stats("PlayerLeadStats").HealthBar.ValueLabel.text);
+            Assert.AreEqual($"{TestMaxHealth}/{TestMaxHealth}", Stats("PlayerLeadStats").HealthBar.ValueLabel.text);
             Assert.AreEqual(TestAttack.ToString(), Stats("PlayerLeadStats").AttackText.text);
 
             foreach (var sprite in new[] { "PlayerLeadSprite", "PlayerSupportSprite", "EnemyLeadSprite", "EnemySupportSprite" })
@@ -205,8 +202,8 @@ namespace Pets.Tests
             Assert.AreEqual(1, controller.State.StepNumber);
             Assert.IsTrue(playerBar.IsAnimating, "the player's HP should be draining");
             Assert.IsTrue(enemyBar.IsAnimating, "the foe's HP should be draining");
-            Assert.AreEqual(TestFullHealth - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
-            Assert.Greater(playerBar.DisplayedHealth, TestFullHealth - TestAttack, "but hasn't got there yet");
+            Assert.AreEqual(TestMaxHealth - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
+            Assert.Greater(playerBar.DisplayedHealth, TestMaxHealth - TestAttack, "but hasn't got there yet");
             Assert.AreEqual($"-{TestAttack}", GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text);
             Assert.IsTrue(Slot(0).IsAnimating, "the party strip drains along with the box");
 
@@ -215,12 +212,12 @@ namespace Pets.Tests
 
             Assert.GreaterOrEqual(Time.realtimeSinceStartup - started, controller.HpDrainSeconds - 0.1f,
                 "the drain should take the full drain time");
-            Assert.AreEqual($"{TestFullHealth - TestAttack}/{TestFullHealth}", playerBar.ValueLabel.text);
-            Assert.AreEqual(TestFullHealth - TestAttack, enemyBar.DisplayedHealth);
-            Assert.AreEqual((TestFullHealth - TestAttack) / (float)TestFullHealth, Slot(0).HealthFraction, 0.001f);
+            Assert.AreEqual($"{TestMaxHealth - TestAttack}/{TestMaxHealth}", playerBar.ValueLabel.text);
+            Assert.AreEqual(TestMaxHealth - TestAttack, enemyBar.DisplayedHealth);
+            Assert.AreEqual((TestMaxHealth - TestAttack) / (float)TestMaxHealth, Slot(0).HealthFraction, 0.001f);
             Assert.AreEqual(string.Empty, GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text,
                 "the damage number clears once the Step is drawn");
-            Assert.AreEqual(TestFullHealth, run.LineUp[0].CurrentHP, "the battle must not write damage back to the run");
+            Assert.AreEqual(TestMaxHealth, run.LineUp[0].CurrentHP, "the battle must not write damage back to the run");
         }
 
         /// <summary>Identical species on both sides trade identical blows, so the last mons fall
@@ -258,8 +255,6 @@ namespace Pets.Tests
             yield return LoadScene(BattleScenePath);
 
             AssertWired<SceneNavigator>("BackButton", nameof(SceneNavigator.GoToTeam));
-            // The two result buttons go through the controller, not straight to the navigator:
-            // where they lead depends on how the fight ended and whether it was a node fight.
             AssertWired<SceneNavigator>("ResultBackButton", nameof(SceneNavigator.GoToTeam));
             AssertWired<SceneNavigator>("BattleAgainButton", nameof(SceneNavigator.GoToBattle));
             // The one button whose destination isn't fixed — it depends on how the node fight ended.
@@ -293,20 +288,17 @@ namespace Pets.Tests
         public IEnumerator NodeFight_Won_GrantsExp_OffersACatch_AndContinuesToTheMap()
         {
             var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth);
-            int startingMorale = run.Morale;
+            int expected = ExpForBeatingOneLevelOneFoe(isGym: false);
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();
             yield return null;
 
             Assert.AreEqual(BattleOutcome.SideAWins, Controller().Outcome);
-            // StartsWith, not equality: the result panel now reports the EXP the win paid (and any
-            // evolution it set off) under the outcome line.
-            StringAssert.StartsWith("Victory!", GameObject.Find("ResultText").GetComponent<Text>().text);
-            StringAssert.Contains($"gains {BattleRewardResolver.ExpPerPvEWin} EXP",
-                GameObject.Find("ResultText").GetComponent<Text>().text);
-            Assert.AreEqual(startingMorale, run.Morale, "winning costs no Morale");
-            Assert.IsTrue(run.LineUp.TrueForAll(m => m.Exp == BattleRewardResolver.ExpPerPvEWin),
+            StringAssert.StartsWith("Victory!", ResultText());
+            StringAssert.Contains($"gains {expected} EXP", ResultText());
+            Assert.AreEqual(RunState.StartingMorale, run.Morale, "winning costs no Morale");
+            Assert.IsTrue(run.LineUp.TrueForAll(m => m.Exp == expected),
                 "every mon in the line-up is paid in EXP, not just whoever was left standing");
 
             var catchButton = FindButton($"Catch_{WildName}");
@@ -329,14 +321,13 @@ namespace Pets.Tests
         public IEnumerator NodeFight_Lost_CostsMorale_AndLeavesTheRunGoing()
         {
             var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth);
-            int startingMorale = run.Morale;
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();
             yield return null;
 
             Assert.AreEqual(BattleOutcome.SideBWins, Controller().Outcome);
-            Assert.AreEqual(startingMorale - 1, run.Morale, "a lost fight costs one Morale");
+            Assert.AreEqual(RunState.StartingMorale - 1, run.Morale, "a lost fight costs one Morale");
             Assert.IsFalse(run.IsRunOver);
             Assert.AreEqual(0, run.LineUp[0].Exp, "losing pays nothing");
             Assert.IsNull(FindCatchButton(), "nothing to catch out of a fight you lost");
@@ -358,56 +349,60 @@ namespace Pets.Tests
             yield return null;
 
             Assert.IsTrue(run.IsRunOver);
-            StringAssert.Contains("run ends here", GameObject.Find("ResultText").GetComponent<Text>().text);
+            StringAssert.Contains("run ends here", ResultText());
 
             FindButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
             Assert.IsFalse(ActiveRun.HasRun, "a broken run is over, not resumable");
         }
 
+        /// <summary>Beating a Gym earns a badge and returns to the Region Hub to pick the next
+        /// Location (ADR 0007) — it no longer ends the run.</summary>
         [UnityTest]
-        public IEnumerator GymFight_Won_BanksABadge_AndSendsTheRunToTheRegionHub()
+        public IEnumerator GymFight_Won_EarnsABadge_AndContinuesToTheRegionHub()
         {
             var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth, isGym: true);
+            run.TravelTo(LocationType.Mountain);
+            run.Morale = 1;
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();
             yield return null;
 
-            var resultText = GameObject.Find("ResultText").GetComponent<Text>().text;
-            StringAssert.Contains("Badge earned", resultText);
-            StringAssert.Contains($"Badge 1 of {RegionTier.RegionsPerRun}", resultText);
-            Assert.AreEqual(1, run.Badges);
-            Assert.AreEqual(2, run.RegionIndex, "the next Location is a tier harder");
-            Assert.IsTrue(run.IsBetweenLocations, "the beaten Location's map is done with");
-            Assert.AreEqual(BattleRewardResolver.ExpPerGymWin, run.LineUp[0].Exp,
-                "a Gym is the Location's finale, and pays more than the fights on the way to it");
+            StringAssert.Contains("Badge earned", ResultText());
+            StringAssert.Contains($"Badges: 1 of {RunProgression.BadgesToWin}", ResultText());
+            Assert.AreEqual(ExpForBeatingOneLevelOneFoe(isGym: true), run.LineUp[0].Exp, "a Gym pays more than a wild fight");
             Assert.IsNull(FindCatchButton(), "a Gym Leader's team isn't wildlife to catch");
+            Assert.AreEqual(1, run.BadgeCount);
+            CollectionAssert.AreEqual(new[] { LocationType.Mountain }, run.CompletedLocations);
+            Assert.IsNull(run.CurrentLocation, "the run is between Locations now");
+            Assert.AreEqual(RunState.StartingMorale, run.Morale, "a badge refills Morale");
 
             FindButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.RegionHub);
-            Assert.IsTrue(ActiveRun.HasRun, "one badge in, the run carries on");
+            Assert.IsTrue(ActiveRun.HasRun, "the run carries on to its next Location");
         }
 
-        /// <summary>The last badge is the run's win condition (RunState.IsRunWon) — the one Gym
-        /// win that does end at Home.</summary>
         [UnityTest]
-        public IEnumerator GymFight_WonOnTheLastBadge_EndsTheRunAtHome()
+        public IEnumerator GymFight_WonForTheFinalBadge_CrownsTheChampion_AndEndsTheRunAtHome()
         {
             var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth, isGym: true);
-            run.Badges = RegionTier.RegionsPerRun - 1;
-            run.RegionIndex = RegionTier.RegionsPerRun;
+            for (int i = 0; i < RunProgression.BadgesToWin - 1; i++)
+            {
+                run.CompletedLocations.Add(LocationType.Town);
+            }
+            run.TravelTo(LocationType.City);
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();
             yield return null;
 
             Assert.IsTrue(run.IsRunWon);
-            StringAssert.Contains("run is won", GameObject.Find("ResultText").GetComponent<Text>().text);
+            StringAssert.Contains("Champion", ResultText());
 
             FindButton("ResultActionButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Home);
-            Assert.IsFalse(ActiveRun.HasRun);
+            Assert.IsFalse(ActiveRun.HasRun, "a won run is finished");
         }
 
         /// <summary>The Gym is every path's terminus, so a loss there can't send the player back to a
@@ -416,13 +411,13 @@ namespace Pets.Tests
         public IEnumerator GymFight_Lost_OffersTheFightAgain()
         {
             var run = BeginNodeFight(StrongFoeAttack, StrongFoeHealth, isGym: true);
-            int startingMorale = run.Morale;
 
             yield return LoadScene(BattleScenePath);
             FindButton("SkipButton").onClick.Invoke();
             yield return null;
 
-            Assert.AreEqual(startingMorale - 1, run.Morale);
+            Assert.AreEqual(RunState.StartingMorale - 1, run.Morale);
+            Assert.AreEqual(0, run.BadgeCount);
             var retry = FindButton("ResultActionButton");
             Assert.AreEqual("Try Again", retry.GetComponentInChildren<Text>().text,
                 "back to the map would be a dead end, so the Gym offers itself again");
@@ -438,6 +433,8 @@ namespace Pets.Tests
             Assert.IsNotNull(controller, "the Battle scene should have a BattleScreenController");
             return controller;
         }
+
+        private static string ResultText() => GameObject.Find("ResultText").GetComponent<Text>().text;
 
         private static BattleStatsBoxView Stats(string name)
         {
@@ -493,6 +490,11 @@ namespace Pets.Tests
             library.AllSpecies.AddRange(extra);
             return library;
         }
+
+        /// <summary>What a won node fight pays against the single level-1 foe BeginNodeFight queues —
+        /// read off the resolver rather than restated, so a reward retune doesn't break the test.</summary>
+        private static int ExpForBeatingOneLevelOneFoe(bool isGym) =>
+            BattleRewardResolver.ExpForWin(new List<PokemonInstance> { new PokemonInstance() }, isGym);
 
         /// <summary>Queues the fight a map node would have queued: a single wild mon of the given
         /// stats, with a passive on it (a node fight keeps passives — the dev battle strips them),

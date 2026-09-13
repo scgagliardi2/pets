@@ -5,15 +5,15 @@ using Pets.Meta;
 
 namespace Pets.Tests
 {
-    /// <summary>Coverage for RegionMapGenerator's graph shape (PLAN.md Phase 1). The map is
-    /// walkable (see RegionMapTraversalTests), so a malformed graph isn't just an ugly render — a
+    /// <summary>Coverage for LocationMapGenerator's graph shape (PLAN.md Phase 1). The map is
+    /// walkable (see LocationMapTraversalTests), so a malformed graph isn't just an ugly render — a
     /// dead end or an unreachable node would strand the player short of the Gym.</summary>
-    public class RegionMapGeneratorTests
+    public class LocationMapGeneratorTests
     {
         [Test]
         public void Generate_ProducesExactlyTheRequestedLayerCount()
         {
-            var map = RegionMapGenerator.Generate(seed: 1, layerCount: 6);
+            var map = LocationMapGenerator.Generate(seed: 1, layerCount: 6);
 
             Assert.AreEqual(6, map.LayerCount);
             Assert.AreEqual(5, map.Nodes.Max(n => n.Layer));
@@ -23,12 +23,12 @@ namespace Pets.Tests
         [Test]
         public void Generate_DefaultsToAStartLayer_FiveChoiceLayers_AndAGymLayer()
         {
-            var map = RegionMapGenerator.Generate(seed: 11);
+            var map = LocationMapGenerator.Generate(seed: 11);
 
-            Assert.AreEqual(RegionMapGenerator.ChoiceLayerCount + 2, map.LayerCount);
+            Assert.AreEqual(LocationMapGenerator.ChoiceLayerCount + 2, map.LayerCount);
             Assert.AreEqual(1, map.NodesInLayer(0).Count);
             Assert.AreEqual(NodeType.Gym, map.GetById(map.GymNodeId).Type);
-            for (int layer = 1; layer <= RegionMapGenerator.ChoiceLayerCount; layer++)
+            for (int layer = 1; layer <= LocationMapGenerator.ChoiceLayerCount; layer++)
             {
                 Assert.IsNotEmpty(map.NodesInLayer(layer), $"choice layer {layer} is empty");
             }
@@ -40,11 +40,11 @@ namespace Pets.Tests
             // The opening choice is a fixed shape rather than a roll, so check a spread of seeds.
             for (int seed = 1; seed <= 25; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed);
+                var map = LocationMapGenerator.Generate(seed);
                 var start = map.GetById(map.StartNodeId);
 
-                Assert.AreEqual(RegionMapGenerator.StartingOptionCount, map.NodesInLayer(1).Count, $"seed {seed}");
-                Assert.AreEqual(RegionMapGenerator.StartingOptionCount, start.NextIds.Count, $"seed {seed}");
+                Assert.AreEqual(LocationMapGenerator.StartingOptionCount, map.NodesInLayer(1).Count, $"seed {seed}");
+                Assert.AreEqual(LocationMapGenerator.StartingOptionCount, start.NextIds.Count, $"seed {seed}");
                 CollectionAssert.AllItemsAreUnique(start.NextIds, $"seed {seed}");
             }
         }
@@ -52,7 +52,7 @@ namespace Pets.Tests
         [Test]
         public void Generate_HasExactlyOneGymNode_InTheFinalLayer_ThatEveryPrecedingNodeFeedsInto()
         {
-            var map = RegionMapGenerator.Generate(seed: 2, layerCount: 7);
+            var map = LocationMapGenerator.Generate(seed: 2, layerCount: 7);
 
             var gymNodes = map.Nodes.Where(n => n.Type == NodeType.Gym).ToList();
             Assert.AreEqual(1, gymNodes.Count);
@@ -68,7 +68,7 @@ namespace Pets.Tests
         [Test]
         public void Generate_EveryNonFinalNode_HasAtLeastOneOutgoingEdge()
         {
-            var map = RegionMapGenerator.Generate(seed: 3, layerCount: 8);
+            var map = LocationMapGenerator.Generate(seed: 3, layerCount: 8);
 
             foreach (var node in map.Nodes.Where(n => n.Layer < map.LayerCount - 1))
             {
@@ -79,7 +79,7 @@ namespace Pets.Tests
         [Test]
         public void Generate_EveryNonStartNode_IsReachableFromTheLayerBefore()
         {
-            var map = RegionMapGenerator.Generate(seed: 4, layerCount: 8);
+            var map = LocationMapGenerator.Generate(seed: 4, layerCount: 8);
 
             foreach (var node in map.Nodes.Where(n => n.Id != map.StartNodeId))
             {
@@ -91,7 +91,7 @@ namespace Pets.Tests
         [Test]
         public void Generate_EveryEdge_PointsToTheImmediatelyNextLayer()
         {
-            var map = RegionMapGenerator.Generate(seed: 5, layerCount: 6);
+            var map = LocationMapGenerator.Generate(seed: 5, layerCount: 6);
 
             foreach (var node in map.Nodes)
             {
@@ -108,8 +108,8 @@ namespace Pets.Tests
         {
             for (int seed = 1; seed <= 25; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed);
-                for (int layer = 1; layer <= RegionMapGenerator.ChoiceLayerCount; layer++)
+                var map = LocationMapGenerator.Generate(seed);
+                for (int layer = 1; layer <= LocationMapGenerator.ChoiceLayerCount; layer++)
                 {
                     Assert.GreaterOrEqual(map.NodesInLayer(layer).Count, 3, $"seed {seed}, layer {layer}");
                 }
@@ -121,8 +121,8 @@ namespace Pets.Tests
         {
             for (int seed = 1; seed <= 25; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed);
-                for (int layer = 1; layer <= RegionMapGenerator.ChoiceLayerCount; layer++)
+                var map = LocationMapGenerator.Generate(seed);
+                for (int layer = 1; layer <= LocationMapGenerator.ChoiceLayerCount; layer++)
                 {
                     var countsByType = map.NodesInLayer(layer).GroupBy(n => n.Type).ToDictionary(g => g.Key, g => g.Count());
                     foreach (var kvp in countsByType)
@@ -139,7 +139,7 @@ namespace Pets.Tests
         {
             for (int seed = 1; seed <= 25; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed);
+                var map = LocationMapGenerator.Generate(seed);
                 foreach (var node in map.Nodes.Where(n => n.NextIds.Count > 0))
                 {
                     var fromLayer = map.NodesInLayer(node.Layer);
@@ -180,7 +180,7 @@ namespace Pets.Tests
         {
             // A node fanning out to a gapped set (targets 0 and 2 but not 1) would render as two
             // paths straddling a third — the staircase connector is supposed to prevent that.
-            var map = RegionMapGenerator.Generate(seed: 9, layerCount: 8);
+            var map = LocationMapGenerator.Generate(seed: 9, layerCount: 8);
 
             foreach (var node in map.Nodes.Where(n => n.NextIds.Count > 0))
             {
@@ -193,8 +193,8 @@ namespace Pets.Tests
         [Test]
         public void Generate_IsDeterministic_ForTheSameSeed()
         {
-            var a = RegionMapGenerator.Generate(seed: 42, layerCount: 7);
-            var b = RegionMapGenerator.Generate(seed: 42, layerCount: 7);
+            var a = LocationMapGenerator.Generate(seed: 42, layerCount: 7);
+            var b = LocationMapGenerator.Generate(seed: 42, layerCount: 7);
 
             Assert.AreEqual(a.Nodes.Count, b.Nodes.Count);
             for (int i = 0; i < a.Nodes.Count; i++)
@@ -211,7 +211,7 @@ namespace Pets.Tests
             var shapes = new HashSet<string>();
             for (int seed = 1; seed <= 10; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed);
+                var map = LocationMapGenerator.Generate(seed);
                 shapes.Add(string.Join("|", map.Nodes.Select(n => $"{n.Id}:{n.Type}:{string.Join(",", n.NextIds)}")));
             }
 
@@ -221,7 +221,7 @@ namespace Pets.Tests
         [Test]
         public void Generate_Throws_WhenLayerCountIsTooSmallToFitAStartAndAGym()
         {
-            Assert.Throws<System.ArgumentOutOfRangeException>(() => RegionMapGenerator.Generate(seed: 1, layerCount: 2));
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => LocationMapGenerator.Generate(seed: 1, layerCount: 2));
         }
 
         [Test]
@@ -229,7 +229,7 @@ namespace Pets.Tests
         {
             for (int seed = 1; seed <= 25; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed);
+                var map = LocationMapGenerator.Generate(seed);
                 int layerBeforeGym = map.LayerCount - 2;
 
                 foreach (var node in map.Nodes.Where(n => n.Type == NodeType.Camp))
@@ -245,7 +245,7 @@ namespace Pets.Tests
         {
             for (int seed = 1; seed <= 50; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed, layerCount: 8);
+                var map = LocationMapGenerator.Generate(seed, layerCount: 8);
                 for (int layer = 0; layer < map.LayerCount - 1; layer++)
                 {
                     var from = map.NodesInLayer(layer);
@@ -278,7 +278,7 @@ namespace Pets.Tests
             var widthCounts = new Dictionary<int, int>();
             for (int seed = 1; seed <= 200; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed, layerCount: 8);
+                var map = LocationMapGenerator.Generate(seed, layerCount: 8);
                 // Restrict to middle-layer-to-middle-layer edges: the start layer always fans out
                 // to exactly StartingOptionCount nodes, and the layer before the Gym always fans
                 // out to exactly one (the Gym), so both would skew a "how common is width X" count.
@@ -307,7 +307,7 @@ namespace Pets.Tests
             int totalNonGymEdgesFrom = 0;
             for (int seed = 1; seed <= 200; seed++)
             {
-                var map = RegionMapGenerator.Generate(seed, layerCount: 8);
+                var map = LocationMapGenerator.Generate(seed, layerCount: 8);
                 // Restrict to middle-layer-to-middle-layer edges: the start layer always fans out
                 // to exactly StartingOptionCount nodes, and the layer before the Gym always fans
                 // out to exactly one (the Gym), so both would skew a "how common is width X" count.
@@ -325,7 +325,7 @@ namespace Pets.Tests
             Assert.Less(singleConnectionCount * 4, totalNonGymEdgesFrom, "single-node fan-outs should stay rare, not become a common shape");
         }
 
-        private static List<int> TargetIndices(RegionMap map, RegionMapNode node) =>
+        private static List<int> TargetIndices(LocationMap map, LocationMapNode node) =>
             node.NextIds.Select(id => map.GetById(id).IndexInLayer).ToList();
     }
 }
