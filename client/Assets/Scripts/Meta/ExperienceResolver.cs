@@ -58,18 +58,26 @@ namespace Pets.Meta
         /// game. No real chain is longer than three species.</summary>
         private const int MaxEvolutionsPerGrant = 8;
 
-        /// <summary>One evolution that just happened, so a caller can tell the player about it.</summary>
+        /// <summary>One evolution that just happened, so a caller can tell the player about it.
+        ///
+        /// Carries both species assets, not only their names: by the time anyone reads this the mon
+        /// has already become <see cref="To"/>, so the species it *was* is otherwise unrecoverable —
+        /// and the battle screen's evolution animation has to draw both (Gameplay/EvolutionOverlayController).</summary>
         public readonly struct Evolution
         {
             public readonly PokemonInstance Mon;
+            public readonly PokemonSpeciesDefinitionAsset From;
+            public readonly PokemonSpeciesDefinitionAsset To;
             public readonly string FromName;
             public readonly string ToName;
 
-            public Evolution(PokemonInstance mon, string fromName, string toName)
+            public Evolution(PokemonInstance mon, PokemonSpeciesDefinitionAsset from, PokemonSpeciesDefinitionAsset to)
             {
                 Mon = mon;
-                FromName = fromName;
-                ToName = toName;
+                From = from;
+                To = to;
+                FromName = from != null ? from.DisplayName : string.Empty;
+                ToName = to != null ? to.DisplayName : string.Empty;
             }
         }
 
@@ -333,7 +341,7 @@ namespace Pets.Meta
                 ? PokemonInstanceFactory.ResolvePassive(next.Passive, next.EvolutionStage)
                 : null;
 
-            evolution = new Evolution(mon, species.DisplayName, next.DisplayName);
+            evolution = new Evolution(mon, species, next);
             return true;
         }
 

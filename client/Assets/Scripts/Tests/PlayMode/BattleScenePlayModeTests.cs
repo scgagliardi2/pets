@@ -342,6 +342,102 @@ namespace Pets.Tests
             yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
         }
 
+        /// <summary>A mon that runs out of HP drops off the field rather than simply dimming — the
+        /// faint beat of the Step exists to show that happening (Pets.UI.FaintAnimationView).</summary>
+        [UnityTest]
+        public IEnumerator NodeFight_AFaintingFoe_DropsOffTheField()
+        {
+            BeginNodeFight(WeakFoeAttack, WeakFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+            var controller = Controller();
+            var faint = GameObject.Find("EnemyLeadSprite").GetComponent<FaintAnimationView>();
+            Assert.IsNotNull(faint, "every field sprite should carry the faint animation");
+            Assert.IsFalse(faint.IsFainted, "nothing has fainted yet");
+            float restingY = ((RectTransform)faint.transform).anchoredPosition.y;
+
+            FindButton("StepButton").onClick.Invoke();
+            // Far enough into the Step to be past the HP drain and into the faint beat.
+            yield return SceneTransitionWait.UntilWithinSeconds(() => faint.IsFainted,
+                "the foe should be falling once the Step that killed it is drawn", 6f);
+
+            Assert.Less(((RectTransform)faint.transform).anchoredPosition.y, restingY,
+                "a fainted mon sinks out of the field");
+
+            var image = GameObject.Find("EnemyLeadSprite").GetComponent<Image>();
+            yield return SceneTransitionWait.UntilWithinSeconds(() => image.color.a < 1f,
+                "and fades as it goes", 2f);
+
+            yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
+                "the Step should finish", 6f);
+        }
+
+        /// <summary>Nothing evolves off a single point of EXP, so an ordinary win must not put the
+        /// evolution scene between the player and their result panel.</summary>
+        [UnityTest]
+        public IEnumerator NodeFight_WonWithoutAnEvolution_ShowsTheResultPanelStraightAway()
+        {
+            BeginNodeFight(WeakFoeAttack, WeakFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            Assert.IsFalse(EvolutionOverlay().IsPlaying);
+            Assert.IsTrue(ResultPanel().activeInHierarchy);
+        }
+
+        /// <summary>A win that carries a mon over its twelfth point plays the evolution first and
+        /// holds the result panel back until it's done — the shape change is the news, and a panel
+        /// listing the new stat line on top of it gives it away before it plays.</summary>
+        [UnityTest]
+        public IEnumerator NodeFight_WonWithAnEvolution_PlaysItBeforeTheResultPanel()
+        {
+            var run = BeginNodeFight(WeakFoeAttack, WeakFoeHealth);
+            // One point short of evolving, and somewhere to evolve to: the win's single point of EXP
+            // is what carries it over (ExperienceResolver.ExpPerEvolution).
+            var evolved = MakeSpecies(MonNames.Length + 2, "Evolved");
+            ActiveRun.Library.AllSpecies.Add(evolved);
+            ActiveRun.Library.GetById(run.LineUp[0].SpeciesId).EvolvesInto = evolved;
+            run.LineUp[0].Exp = ExperienceResolver.ExpPerEvolution - 1;
+
+            yield return LoadScene(BattleScenePath);
+            FindButton("SkipButton").onClick.Invoke();
+            yield return null;
+
+            var overlay = EvolutionOverlay();
+            Assert.IsTrue(overlay.IsPlaying, "the evolution should be playing");
+            Assert.IsFalse(ResultPanel().activeInHierarchy,
+                "and the result panel waits behind it");
+
+            // Skipping is a click anywhere on the overlay; it goes straight to the end.
+            overlay.OnSkipClicked();
+            yield return null;
+
+            Assert.IsFalse(overlay.IsPlaying);
+            Assert.IsTrue(ResultPanel().activeInHierarchy,
+                "the panel appears once the evolution is over");
+            StringAssert.Contains("evolved into", RewardText());
+        }
+
+        /// <summary>The result panel whether or not it's up — GameObject.Find only sees active
+        /// objects, and "the panel is still hidden" is exactly what the evolution tests assert.</summary>
+        private static GameObject ResultPanel()
+        {
+            var board = GameObject.Find("Board");
+            Assert.IsNotNull(board, "the Battle scene should have a Board");
+            var panel = board.transform.Find("ResultPanel");
+            Assert.IsNotNull(panel, "the Board should carry the result panel");
+            return panel.gameObject;
+        }
+
+        private static EvolutionOverlayController EvolutionOverlay()
+        {
+            var overlay = Object.FindFirstObjectByType<EvolutionOverlayController>(FindObjectsInactive.Include);
+            Assert.IsNotNull(overlay, "the Battle scene should carry the evolution overlay");
+            return overlay;
+        }
+
         /// <summary>Morale is the run's life total (design doc §4): the loss that takes the last of
         /// it ends the run, and the way out is Home rather than back onto the map.</summary>
         [UnityTest]

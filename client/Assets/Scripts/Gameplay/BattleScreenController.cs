@@ -75,6 +75,7 @@ namespace Pets.Gameplay
         [SerializeField] private GameObject resultPanel;
         [SerializeField] private Text resultText;
         [SerializeField] private Text rewardText;
+        [SerializeField] private EvolutionOverlayController evolutionOverlay;
         [SerializeField] private UiButton battleAgainButton;
         [SerializeField] private UiButton resultBackButton;
         [SerializeField] private UiButton resultActionButton;
@@ -83,8 +84,12 @@ namespace Pets.Gameplay
 
         [Header("Pacing")]
         [SerializeField] private float hpDrainSeconds = 2f;
-        [SerializeField] private float faintRevealSeconds = 0.4f;
+        [SerializeField] private float faintRevealSeconds = FaintDropSeconds;
         [SerializeField] private float pauseBetweenSteps = 0.4f;
+
+        /// <summary>How long the faint drop takes. Matched to faintRevealSeconds, so the Step's
+        /// faint beat lasts exactly as long as the animation it's there to show.</summary>
+        private const float FaintDropSeconds = 0.7f;
 
         /// <summary>How a redraw treats HP: drain to the new value (a Step just landed), leave a drain
         /// in progress alone, or jump (the first draw, or a skip to the end).</summary>
@@ -101,6 +106,12 @@ namespace Pets.Gameplay
             public Image Sprite;
             public Text Damage;
             public BattleCombatant Bound;
+
+            /// <summary>The drop-and-fade on this slot's sprite. Looked up off the sprite rather
+            /// than serialized separately — the two always live on the same object (see
+            /// BattleSceneBuilder.CreateFieldSprite), and a slot with one and not the other would
+            /// be a scene wiring bug with no symptom until something fainted.</summary>
+            public FaintAnimationView Faint => Sprite != null ? Sprite.GetComponent<FaintAnimationView>() : null;
         }
 
         private OnDemandStepRunner runner;
@@ -127,6 +138,12 @@ namespace Pets.Gameplay
         /// and this is a readable list under it (see rewardText, and BattleSceneBuilder's result
         /// panel). Rebuilt from scratch each time the panel is shown.</summary>
         private readonly List<string> resultLines = new List<string>();
+
+        /// <summary>Evolutions the win just set off, waiting to be played before the result panel
+        /// appears over them. Held rather than played where they're found, because the panel and the
+        /// animation are the same beat of the same screen and the animation goes first.</summary>
+        private readonly List<ExperienceResolver.Evolution> pendingEvolutions =
+            new List<ExperienceResolver.Evolution>();
 
         /// <summary>Every event of the whole fight, Step by Step — the record a catch reads to find
         /// what fainted on the wild side (Meta/CatchResolver). Bounded by BattleConfig's Step
@@ -364,6 +381,7 @@ namespace Pets.Gameplay
         {
             IsAutoplaying = false;
             resultLines.Clear();
+            pendingEvolutions.Clear();
             var outcome = runner.Outcome ?? BattleOutcome.Draw;
             bool capped = outcome == BattleOutcome.Draw && runner.State.LineUpA.Count > 0 && runner.State.LineUpB.Count > 0;
             switch (outcome)
@@ -393,9 +411,27 @@ namespace Pets.Gameplay
             rewardText.text = string.Join("\n", resultLines);
             rewardText.gameObject.SetActive(resultLines.Count > 0);
             UpdateResultButtons();
-
-            resultPanel.SetActive(true);
+            // Immediately, whether or not an animation is about to play over the top: the fight is
+            // over, and a Step button that still looks pressable during the evolution is a lie.
             UpdateControls();
+
+            // The evolution scene first, the result panel behind it — a mon changing shape is the
+            // most interesting thing that happened, and showing it under a panel listing its new
+            // stat line gives the surprise away before it plays.
+            if (pendingEvolutions.Count > 0 && evolutionOverlay != null)
+            {
+                evolutionOverlay.Play(pendingEvolutions, RevealResultPanel);
+                pendingEvolutions.Clear();
+                return;
+            }
+            RevealResultPanel();
+        }
+
+        /// <summary>The result panel going up — straight away for most fights, and after the
+        /// evolution scene for one that set any off.</summary>
+        private void RevealResultPanel()
+        {
+            resultPanel.SetActive(true);
         }
 
         /// <summary>Writes a node fight's outcome back to the run — the part that makes a fight
@@ -433,6 +469,7 @@ namespace Pets.Gameplay
             // GrowthReport.GainLines. The Box isn't listed because it isn't paid (BattleRewardResolver).
             resultLines.Add($"Your party gains {growth.ExpGranted} EXP.");
             resultLines.AddRange(growth.GainLines());
+            pendingEvolutions.AddRange(growth.Evolutions);
 
             if (isGym)
             {
@@ -570,6 +607,7 @@ namespace Pets.Gameplay
                 slot.Bound = null;
                 slot.Stats.SetEmpty($"No {slot.Role}");
                 slot.Sprite.enabled = false;
+                slot.Faint?.Clear();
                 slot.Damage.text = string.Empty;
                 return;
             }
@@ -587,6 +625,9 @@ namespace Pets.Gameplay
                     mon.CurrentStats.Attack, mon.CurrentStats.Speed, SpeedCeilingFor(mon));
                 slot.Stats.HealthBar.SetHealth(mon.CurrentHP, maxHp);
                 slot.Sprite.sprite = PokemonSprites.Load(species);
+                // Whoever was here last may have fallen out of frame; the mon promoted into their
+                // place stands where they stood.
+                slot.Faint?.Clear();
             }
             else
             {
@@ -594,9 +635,22 @@ namespace Pets.Gameplay
             }
 
             slot.Sprite.enabled = true;
-            float alpha = showFaint && !mon.IsAlive ? FaintedAlpha : 1f;
-            slot.Sprite.color = new Color(1f, 1f, 1f, alpha);
-            slot.Stats.Group.alpha = alpha;
+            // The sprite's own alpha belongs to the faint animation now — this only decides whether
+            // the mon is falling. The stat box still dims on the same beat, since it isn't animated.
+            bool down = showFaint && !mon.IsAlive;
+            var faint = slot.Faint;
+            if (faint != null)
+            {
+                if (down)
+                {
+                    faint.Play(FaintDropSeconds);
+                }
+                else if (!faint.IsAnimating)
+                {
+                    faint.Clear();
+                }
+            }
+            slot.Stats.Group.alpha = down ? FaintedAlpha : 1f;
             slot.Damage.text = mode == HealthMode.Animate && damageThisStep.TryGetValue(mon.InstanceId, out int damage) && damage > 0
                 ? $"-{damage}"
                 : string.Empty;

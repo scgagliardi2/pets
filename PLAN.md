@@ -206,13 +206,17 @@ returns to the Region Hub** for the next Location; the eighth badge wins the run
 `DevRoster` (stuff mons into the run) still hang off the map, plus `History` and `Credits` off Home,
 and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run nothing.
 
-*Verified green as of this writing:* 191 EditMode and 98 PlayMode tests pass (see CLAUDE.md for
+*Verified green as of this writing:* 198 EditMode and 101 PlayMode tests pass (see CLAUDE.md for
 the CLI commands).
 
 **Built and covered by tests:**
 - `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
   Step loop, charge meters, statuses, both runners — with `StepSimulatorTests.cs` and golden
-  fixtures in `/shared/fixtures` (`GoldenFixtureTests.cs`).
+  fixtures in `/shared/fixtures` (`GoldenFixtureTests.cs`). **A fight is guaranteed to end**:
+  sudden death escalates true damage into both Leads from Step 30, an attack always takes at least
+  1 HP however much DamageReduction has stacked, and Lifesteal stops at 100% (ADR 0011). Real fights
+  run 5-17 Steps, so none of that is reachable in normal play — it exists because two Bulbasaurs
+  could previously stack Vine Drain past parity and freeze a fight for 190 Steps.
 - **All 183 roster species** and 20 hand-authored type-flavored passives under
   `client/Assets/Content`, imported from `docs/pokemon_stats_unique.xlsx` by
   `Assets/Editor/SpeciesRosterImporter.cs` (ADR 0004). `PokemonContentTests.cs` runs a full
@@ -297,7 +301,12 @@ the CLI commands).
     types, name, attack, HP and SPD bars) for each active mon, the party along a bottom strip
     (`Prefabs/UI/BattlePartySlot.prefab`, gold frame = Lead, blue = Support, dimmed when fainted),
     and a pause / step / play / skip pill. Each Step drains HP over 2 seconds, fades whoever
-    fainted, then promotes; the result panel carries a headline plus a rewards list — the EXP, then
+    fainted — dropping and fading off the field (`UI/FaintAnimationView`) — then promotes. A win that
+    carried a mon over its twelfth point of EXP plays the **evolution scene** over the board before
+    anything else: the old form, a flicker between the two that accelerates, a white flash and the
+    new form, one mon at a time and skippable with a click
+    (`Gameplay/EvolutionOverlayController`, `Prefabs/UI/EvolutionOverlay.prefab`). Then the result
+    panel carries a headline plus a rewards list — the EXP, then
     one line per party mon reading `Charmander  3/4/1 → 3/5/1  (+1 Health)`, then any evolution, the
     badge, or the Morale a loss cost (`GrowthReport.GainLines`, ADR 0010) — and two buttons that say
     what the fight was (Battle Again /

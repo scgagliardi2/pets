@@ -258,13 +258,5 @@ namespace Pets.EditorTools
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = new Vector2(0f, height);
         }
-
-        private static void StretchTo(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax)
-        {
-            rect.anchorMin = anchorMin;
-            rect.anchorMax = anchorMax;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-        }
     }
 }

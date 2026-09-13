@@ -24,7 +24,10 @@ retunes that — a point buys Attack *or* Health by the species' own growth valu
 twelve points and adds a flat +3/+3, and a mon grows off its base form for life; and
 [`0010-only-the-party-earns.md`](docs/architecture-decisions/0010-only-the-party-earns.md) narrows who
 that growth reaches — the line-up and nothing else, with the result panel and a Team button on the map
-added so the choice can be seen and judged. Between them they
+added so the choice can be seen and judged; and
+[`0011-sudden-death-and-the-limits-of-stacking.md`](docs/architecture-decisions/0011-sudden-death-and-the-limits-of-stacking.md)
+records why a fight that nobody could win used to grind out the Step cap with the HP bars frozen, and
+the three bounds that stop it. Between them they
 list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
@@ -119,6 +122,12 @@ exists — the phase list under it describes intent, and the build has deviated 
 - **No new tests-optional logic in the simulator.** Any change to the battle-sim code needs an
   accompanying EditMode test — this is the one part of the codebase where bugs are both easy to
   introduce and hard to notice by eye.
+- **A fight has to be able to end.** Standing modifiers stack for the whole battle
+  (`battle-sim-spec.md` §12), so any new mitigation or sustain effect must be bounded somewhere: an
+  attack always takes at least 1 HP, Lifesteal stops at 100%, and **sudden death** escalates true
+  damage into both Leads from Step 30 (ADR 0011). Real fights run 5-17 Steps, so if a balance change
+  ever pushes ordinary fights past ~25, raise `BattleConfig.SuddenDeathStep` in the same change —
+  otherwise the backstop starts deciding fights that were still being fought.
 - **Don't add multiplayer/network code before Phase 3.** Local save is the source of truth until
   the backend actually exists.
 - **Respect the two-active-slots rule.** Only the Lead and Support (front two of a line-up) are
@@ -208,8 +217,9 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   ```
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-13 (after the tier/EXP refactor and its retune, ADR 0008 + ADR 0009, and the party-only
-  EXP change, ADR 0010): **191 EditMode, 98 PlayMode, all passing**. The same binary runs any Editor entry
+  2026-09-13 (after the tier/EXP refactor and its retune, ADR 0008 + ADR 0009, the party-only EXP
+  change, ADR 0010, and sudden death plus the battle animations, ADR 0011): **198 EditMode,
+  101 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

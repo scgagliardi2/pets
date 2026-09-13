@@ -141,6 +141,11 @@ namespace Pets.EditorTools
 
             var (resultPanel, resultText, rewardText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
 
+            // Last child of the canvas, so it draws over the board, the result panel and every
+            // control; its backdrop takes the raycast, which is what makes it modal while it plays.
+            // Left inactive — BattleScreenController shows it only when something evolved.
+            var evolutionOverlay = InstantiateEvolutionOverlay(canvasRect);
+
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
             var controller = new GameObject("BattleScreen").AddComponent<BattleScreenController>();
             SetField(controller, "board", board.gameObject);
@@ -168,6 +173,7 @@ namespace Pets.EditorTools
             SetField(controller, "resultPanel", resultPanel.gameObject);
             SetField(controller, "resultText", resultText);
             SetField(controller, "rewardText", rewardText);
+            SetField(controller, "evolutionOverlay", evolutionOverlay);
             SetField(controller, "battleAgainButton", battleAgainButton.GetComponent<UiButton>());
             SetField(controller, "resultBackButton", resultBackButton.GetComponent<UiButton>());
             SetField(controller, "resultActionButton", resultActionButton.GetComponent<UiButton>());
@@ -264,7 +270,28 @@ namespace Pets.EditorTools
             return box;
         }
 
-        /// <summary>A mon standing on the field, with the "-12" for the Step just played as a child.</summary>
+        /// <summary>Instantiates the evolution overlay prefab stretched over the whole canvas and
+        /// switched off, ready for the battle screen to play.</summary>
+        private static EvolutionOverlayController InstantiateEvolutionOverlay(RectTransform canvasRect)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(EvolutionOverlayPrefabBuilder.PrefabPath);
+            if (prefab == null)
+            {
+                throw new System.InvalidOperationException(
+                    $"Battle scene build failed: no prefab at {EvolutionOverlayPrefabBuilder.PrefabPath}. " +
+                    "Run Pets > Build All Scenes, which builds the overlay prefabs first.");
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, canvasRect);
+            instance.name = "EvolutionOverlay";
+            StretchTo(instance.GetComponent<RectTransform>(), Vector2.zero, Vector2.one);
+            instance.SetActive(false);
+            return instance.GetComponent<EvolutionOverlayController>();
+        }
+
+        /// <summary>A mon standing on the field, with the "-12" for the Step just played as a child,
+        /// and the faint animation that drops it off the field when it runs out of HP
+        /// (Pets.UI.FaintAnimationView).</summary>
         private static Image CreateFieldSprite(RectTransform board, string name, Rect r, bool bottom, out Text damage)
         {
             var go = new GameObject(name, typeof(RectTransform));
@@ -272,6 +299,7 @@ namespace Pets.EditorTools
             var image = go.AddComponent<Image>();
             image.preserveAspect = true;
             image.raycastTarget = false;
+            go.AddComponent<FaintAnimationView>();
             if (bottom)
             {
                 PlaceBottom(image.rectTransform, r);

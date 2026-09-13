@@ -180,11 +180,33 @@ pass, not inside `AdvanceStep`.
 - A side with zero mons remaining (Lead and Support both fainted, no dormant mons left to
   promote) loses.
 - If both sides lose their last mon in the same Step, it's a draw.
+- **Sudden death** (default: from Step 30): at the end of every Step from `SuddenDeathStep`
+  onward, **both Leads take escalating true damage** — 1 on the first such Step, 2 on the next, and
+  so on (`SuddenDeathDamagePerStep`). It is applied in beat 3.6, after status ticks and before the
+  faint check, and like a status tick it **bypasses `DamageReductionFlat`, `Shield` and
+  `Lifesteal`**: it isn't an attack, it's the clock running out, and everything that could mitigate
+  it is precisely what causes the fights it exists to end. Only the Leads are hit — the Supports are
+  dormant (design doc §7), and clearing the whole board at once would take the result out of the
+  player's hands.
+
+  **Why it exists.** Standing modifiers accumulate for the whole battle (§12), so a long enough
+  fight can reach a state in which nobody can lose: two mons whose `Lifesteal` has stacked past
+  100% each heal back exactly what they take, every Step, forever. This is not hypothetical —
+  two Bulbasaurs with Vine Drain (30% a trigger, every 3 Steps) reach it on Step 12. Because the
+  escalation is unbounded it must eventually outrun any amount of stacked sustain, so a fight is
+  now guaranteed to end with a real result, not a draw.
+
+- **A connecting attack always costs at least `MinimumAttackDamage` (1) HP**, however much
+  `DamageReductionFlat` the target has piled up, and **accumulated `Lifesteal` is capped at 100%**
+  (`MaxLifestealPercent`) — draining back more than the blow took is meaningless. Both are
+  narrowings of §12's accumulation rule, for the same reason sudden death exists: an effect that is
+  meant to blunt a hit must not be able to nullify every hit for the rest of the battle.
+
 - **Safety caps** (engineering safeguard, not from the design doc — carried forward from the old
   spec as good practice against pathological content): a **Step cap** (default 200 Steps) and an
-  **event cap** (default 10,000 logged `StepEvent`s) both force a draw if hit, to guard against a
-  future passive/status combo creating an effectively infinite fight. Tune these once real content
-  exists; they shouldn't matter for any sane fight.
+  **event cap** (default 10,000 logged `StepEvent`s) both force a draw if hit. With sudden death in
+  place these are a genuine last resort rather than the thing that ends a stalled fight — nothing
+  should ever reach them, and a fixture that does is a bug in the sim, not in the content.
 
 ## 10. Determinism
 
@@ -232,7 +254,9 @@ tune the *values* freely, but keep the *shape* of these rules in sync with
 - **Standing modifiers (`DamageReduction`, `BuffAttack`, `BuffSpeed`, `ModifyChargeRate`'s
   multiplier, `Lifesteal`'s percent) accumulate across repeated triggers** of the same passive
   over a long fight, the same way `BuffAttack`/`BuffSpeed` obviously do — each trigger adds
-  another increment, it doesn't refresh/overwrite a single value. `ApplyStatus` is the one
+  another increment, it doesn't refresh/overwrite a single value. **Two of them are bounded so the
+  accumulation can't make a mon unkillable** (§9): `Lifesteal` stops at 100%, and however far
+  `DamageReductionFlat` climbs, a connecting attack still takes at least 1 HP. `ApplyStatus` is the one
   exception: re-applying a status (even the same one) resets its tick tracking (severity stacks
   back to 1, tick damage reset to the new `amount`) rather than stacking with the previous
   application — see the Poisoned note below.

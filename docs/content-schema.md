@@ -92,9 +92,11 @@ Extending the old vocabulary's shape to cover the Type-flavor seeds in design do
   fills for the remainder of the battle (Electric's speed-up seed, Ice's slow seed, Psychic's
   head-start seed can be expressed as an instantaneous one-time bump via this same effect at
   battle start).
-- `DamageReduction` — flat reduction applied to incoming damage for the remainder of the battle
+- `DamageReduction` — flat reduction applied to incoming damage for the remainder of the battle;
+  it blunts a hit but never nullifies one (an attack always takes at least 1 HP — battle-sim-spec.md §9)
   (Steel's seed).
-- `Lifesteal` — heals the effect's owner by a percentage of damage it deals for the remainder of
+- `Lifesteal` — capped at 100% however many triggers stack (battle-sim-spec.md §9); heals the
+  effect's owner by a percentage of damage it deals for the remainder of
   the battle (Grass's seed) — implemented as a standing modifier flag rather than a one-shot
   effect, since it needs to apply to *future* attack-exchange damage, not just this passive's own
   `DealDamage`.

@@ -100,6 +100,17 @@ namespace Pets.EditorTools
             return text;
         }
 
+        /// <summary>Pins a rect to fill the area between two anchors with no inset — a full-screen
+        /// overlay, a background plate behind a scroll viewport. Shared rather than re-declared per
+        /// builder: three screens want the same four lines.</summary>
+        public static void StretchTo(RectTransform rect, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
         /// <summary>A plain UI Text with no LayoutElement/font sizing assumptions, for use inside
         /// manually-positioned (non-layout-group) hierarchies like grid cells or map nodes.</summary>
         public static Text CreatePlainText(Transform parent, string name, string content, int fontSize, TextAnchor anchor, Color color)

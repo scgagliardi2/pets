@@ -51,6 +51,7 @@ namespace Pets.EditorTools
             UiPrefabBuilder.Build();
             CampOverlayPrefabBuilder.Build();
             NodeEventOverlayPrefabBuilder.Build();
+            EvolutionOverlayPrefabBuilder.Build();
             HomeSceneBuilder.Build();
             CharacterSelectSceneBuilder.Build();
             RegionHubSceneBuilder.Build();

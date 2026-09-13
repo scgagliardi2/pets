@@ -1,0 +1,32 @@
+{
+  "seed": 1,
+  "lineUpA": [
+    {
+      "instanceId": "a-lead",
+      "attack": 1,
+      "health": 30,
+      "speed": 1,
+      "passive": {
+        "id": "test-vine-drain",
+        "effects": [{ "type": "Lifesteal", "target": "Self", "amount": 30 }]
+      }
+    }
+  ],
+  "lineUpB": [
+    {
+      "instanceId": "b-lead",
+      "attack": 1,
+      "health": 30,
+      "speed": 1,
+      "passive": {
+        "id": "test-vine-drain",
+        "effects": [{ "type": "Lifesteal", "target": "Self", "amount": 30 }]
+      }
+    }
+  ],
+  "expected": {
+    "outcome": "Draw",
+    "faintOrder": ["a-lead", "b-lead"],
+    "survivors": []
+  }
+}

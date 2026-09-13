@@ -78,8 +78,17 @@ namespace Pets.Simulation
             ApplyStatusTick(leadB, Side.B, events, step);
             ApplyStatusTick(supportB, Side.B, events, step);
 
+            // 3.6. Sudden death — escalating true damage to both Leads once a fight has gone on
+            //      long enough that it plainly isn't resolving itself (battle-sim-spec.md §9).
+            //      Bypasses reduction, shield and lifesteal for the same reason a status tick does:
+            //      it isn't an attack, it's the clock running out, and anything it could be
+            //      mitigated by is exactly what caused the stalemate.
+            ApplySuddenDeath(leadA, Side.A, events, step);
+            ApplySuddenDeath(leadB, Side.B, events, step);
+
             // 4. Faint check & promotion — the only point removal/promotion happens, batching
-            //    every faint this Step caused (attack exchange, passives, and status ticks alike).
+            //    every faint this Step caused (attack exchange, passives, status ticks and sudden
+            //    death alike).
             ResolveFaintsAndPromotions(state, Side.A, events, step);
             ResolveFaintsAndPromotions(state, Side.B, events, step);
 
@@ -205,6 +214,39 @@ namespace Pets.Simulation
             // Paralyzed/Asleep have no per-Step tick damage.
         }
 
+        /// <summary>How much true damage sudden death deals on <paramref name="step"/>: nothing
+        /// before BattleConfig.SuddenDeathStep, then one increment more every Step after it. Public
+        /// so a test and a fixture can state the schedule rather than restate the arithmetic.</summary>
+        public static int SuddenDeathDamageAt(int step)
+        {
+            int stepsIn = step - BattleConfig.SuddenDeathStep + 1;
+            return stepsIn <= 0 ? 0 : stepsIn * BattleConfig.SuddenDeathDamagePerStep;
+        }
+
+        /// <summary>Applies that damage to one Lead. Only the Leads, not the Supports: the Supports
+        /// are dormant (design doc §7) and a Step that killed the whole board at once would take the
+        /// fight's result out of the player's hands entirely.</summary>
+        private static void ApplySuddenDeath(BattleCombatant instance, Side side, List<StepEvent> events, int step)
+        {
+            int damage = SuddenDeathDamageAt(step);
+            if (instance == null || damage <= 0)
+            {
+                return;
+            }
+
+            instance.CurrentHP -= damage;
+            events.Add(new StepEvent
+            {
+                Step = step,
+                Kind = StepEventKind.SuddenDeath,
+                SourceSide = side,
+                SourceInstanceId = instance.InstanceId,
+                TargetSide = side,
+                TargetInstanceId = instance.InstanceId,
+                Amount = damage
+            });
+        }
+
         private static void ResolveFaintsAndPromotions(BattleState state, Side side, List<StepEvent> events, int step)
         {
             var lineUp = state.LineUp(side);
@@ -288,8 +330,11 @@ namespace Pets.Simulation
                     break;
 
                 case EffectType.Lifesteal:
-                    // Amount is a percentage (e.g. 30 => 0.3 of HP damage dealt heals back).
-                    target.LifestealPercent += effect.Amount / 100f;
+                    // Amount is a percentage (e.g. 30 => 0.3 of HP damage dealt heals back), and it
+                    // accumulates across triggers — capped, because draining back more than the blow
+                    // took is meaningless and 100%+ is self-sustaining forever.
+                    target.LifestealPercent = System.Math.Min(
+                        BattleConfig.MaxLifestealPercent, target.LifestealPercent + effect.Amount / 100f);
                     events.Add(new StepEvent { Step = step, Kind = StepEventKind.Lifesteal, SourceSide = selfSide, SourceInstanceId = self.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = effect.Amount });
                     break;
             }
@@ -330,7 +375,13 @@ namespace Pets.Simulation
 
         private static void ApplyDamage(BattleCombatant target, Side targetSide, int rawAmount, BattleCombatant attacker, Side attackerSide, List<StepEvent> events, int step)
         {
-            int afterReduction = System.Math.Max(0, rawAmount - target.DamageReductionFlat);
+            // Floored rather than allowed to reach zero: DamageReductionFlat accumulates for the
+            // whole battle (battle-sim-spec.md §12), so without this a mon whose reduction has
+            // stacked past the other's Attack can never be hurt by it again — and two such mons can
+            // never finish a fight. A blow that connects always costs something.
+            int afterReduction = rawAmount <= 0
+                ? 0
+                : System.Math.Max(BattleConfig.MinimumAttackDamage, rawAmount - target.DamageReductionFlat);
             int shieldAbsorbed = System.Math.Min(target.Shield, afterReduction);
             target.Shield -= shieldAbsorbed;
             int hpDamage = afterReduction - shieldAbsorbed;

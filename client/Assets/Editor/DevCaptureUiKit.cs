@@ -1,3 +1,4 @@
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -125,9 +126,77 @@ namespace Pets.EditorTools
             controller.OnSkipClicked();
         }
 
+        /// <summary>The faint, mid-drop. A single weak foe that dies to the first Step, stepped by
+        /// hand and shot partway through the faint beat — the one frame that shows whether the
+        /// sprite is actually falling and fading (Pets.UI.FaintAnimationView) rather than just
+        /// vanishing.</summary>
+        [MenuItem("Pets/Dev/Capture Battle Faint (Playing)")]
+        public static void CaptureBattleFaintPlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState { RunSeed = 7 };
+            for (int i = 0; i < 2 && i < library.AllSpecies.Count; i++)
+            {
+                run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[i], $"capture-{i}", 6, library));
+            }
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+
+            var foe = Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[3], "capture-foe", 0, library);
+            foe.CurrentStats = new Pets.Simulation.Stats { Attack = 1, Health = 1, Speed = 1 };
+            foe.CurrentHP = 1;
+            Pets.Gameplay.PendingBattle.Set(
+                new System.Collections.Generic.List<Pets.Simulation.PokemonInstance> { foe },
+                "capture-node", isGym: false, seed: 7);
+
+            // Stepped rather than skipped: Skip jumps to the end and the faint is never drawn.
+            CapturePlaying(BattleSceneBuilder.ScenePath,
+                () => Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>().OnStepClicked(),
+                captureAfterSeconds: DelayArg(2.35f));
+        }
+
+        /// <summary>The evolution scene, mid-flicker. A mon one point short of its twelfth, so the
+        /// win's single point of EXP evolves it (see EvolutionOverlayController).</summary>
+        [MenuItem("Pets/Dev/Capture Battle Evolution (Playing)")]
+        public static void CaptureBattleEvolutionPlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var evolving = library.AllSpecies.FirstOrDefault(s => s != null && s.EvolvesInto != null);
+            if (evolving == null)
+            {
+                Debug.LogError("[Capture] No species in the library has an evolution to show.");
+                return;
+            }
+
+            var run = new Pets.Meta.RunState { RunSeed = 11 };
+            var mon = Pets.Meta.ExperienceResolver.CreateAtExp(evolving, "capture-0",
+                Pets.Meta.ExperienceResolver.ExpPerEvolution - 1, library);
+            run.LineUp.Add(mon);
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+
+            var foe = Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-foe", 0, library);
+            foe.CurrentStats = new Pets.Simulation.Stats { Attack = 0, Health = 1, Speed = 1 };
+            foe.CurrentHP = 1;
+            Pets.Gameplay.PendingBattle.Set(
+                new System.Collections.Generic.List<Pets.Simulation.PokemonInstance> { foe },
+                "capture-node", isGym: false, seed: 11);
+
+            // -captureDelay overrides how far into the sequence the shot lands, so the intro, the
+            // flicker and the reveal can each be looked at without editing this file.
+            CapturePlaying(BattleSceneBuilder.ScenePath,
+                () => Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>().OnSkipClicked(),
+                captureAfterSeconds: DelayArg(1.6f));
+        }
+
         /// <summary>Run once in Play mode, a few frames before the shot is taken — for a screen
         /// whose interesting state is behind a gesture rather than in its resting layout.</summary>
         private static System.Action afterStart;
+
+        /// <summary>Wall-clock seconds to let run between <see cref="afterStart"/> and the shot, for
+        /// a screen whose interesting state is a moment *inside* an animation rather than a layout
+        /// that settles. Zero (the default) keeps the original behaviour: settle the canvas and
+        /// shoot immediately.</summary>
+        private static float captureDelay;
+        private static double captureAt;
 
         /// <summary>The Team screen with the duplicate question open — the one piece of this
         /// screen that isn't visible in its resting state. Seeds a party whose first two mons are
@@ -168,11 +237,13 @@ namespace Pets.EditorTools
             source.OnEndDrag(eventData);
         }
 
-        private static void CapturePlaying(string scenePath, System.Action onStarted = null)
+        private static void CapturePlaying(string scenePath, System.Action onStarted = null, float captureAfterSeconds = 0f)
         {
             EditorSceneManager.OpenScene(scenePath);
             playModeFrameCount = 0;
             afterStart = onStarted;
+            captureDelay = captureAfterSeconds;
+            captureAt = 0d;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             EditorApplication.isPlaying = true;
         }
@@ -192,7 +263,6 @@ namespace Pets.EditorTools
             {
                 return;
             }
-            EditorApplication.update -= WaitThenCapture;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             if (afterStart != null)
             {
@@ -202,10 +272,30 @@ namespace Pets.EditorTools
                 // toggles objects active and writes text, and the layout has to settle before the
                 // RenderTexture is read back.
                 Canvas.ForceUpdateCanvases();
+                if (captureDelay > 0f)
+                {
+                    // Keep the update callback attached and come back when the animation has run
+                    // far enough to be worth looking at.
+                    captureAt = EditorApplication.timeSinceStartup + captureDelay;
+                    return;
+                }
             }
+            if (captureAt > 0d && EditorApplication.timeSinceStartup < captureAt)
+            {
+                return;
+            }
+
+            EditorApplication.update -= WaitThenCapture;
             Capture(GetArg("-captureOutput") ?? "ui-kit.png");
             EditorApplication.isPlaying = false;
             EditorApplication.Exit(0);
+        }
+
+        /// <summary>-captureDelay from the command line, or <paramref name="fallback"/>.</summary>
+        private static float DelayArg(float fallback)
+        {
+            string raw = GetArg("-captureDelay");
+            return !string.IsNullOrEmpty(raw) && float.TryParse(raw, out float seconds) ? seconds : fallback;
         }
 
         private static string GetArg(string name)

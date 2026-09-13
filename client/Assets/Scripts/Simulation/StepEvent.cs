@@ -9,6 +9,10 @@ namespace Pets.Simulation
         StatusApplied,
         StatusCleared,
         StatusTick,
+
+        /// <summary>Escalating true damage dealt to both Leads once a fight has run past
+        /// BattleConfig.SuddenDeathStep without resolving (battle-sim-spec.md §9).</summary>
+        SuddenDeath,
         BuffAttack,
         BuffSpeed,
         ChargeRateModified,

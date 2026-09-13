@@ -410,11 +410,150 @@ namespace Pets.Tests
             Assert.AreEqual(BattleOutcome.Draw, BattleSimulator.DetermineOutcome(state));
         }
 
+        // --- 8b. Sudden death: a fight nobody can win still ends -----------------------------
+
+        /// <summary>The regression this whole section exists for. Two mons with a stacking Lifesteal
+        /// passive (Bulbasaur's Vine Drain is 30% a trigger, every third Step) each heal back exactly
+        /// what the other takes off them once it passes 100%, so from about Step 12 the HP bars
+        /// simply stop moving. Before sudden death the fight ground out all 200 Steps of the cap and
+        /// called itself a draw, which on screen looks exactly like the game having hung.</summary>
+        [Test]
+        public void TwoStackingLifestealMons_StillFinishTheirFight()
+        {
+            PassiveDefinition VineDrain() => new PassiveDefinition
+            {
+                Id = "vine-drain",
+                Effects = { new EffectDefinition { Type = EffectType.Lifesteal, Target = TargetSelector.Self, Amount = 30 } }
+            };
+            var a = Mon("a-lead", attack: 1, health: 30, speed: 1, VineDrain());
+            var b = Mon("b-lead", attack: 1, health: 30, speed: 1, VineDrain());
+
+            var log = PrecomputedStepLogRunner.Run(new List<BattleCombatant> { a }, new List<BattleCombatant> { b }, seed: 1);
+
+            Assert.Less(log.FinalState.StepNumber, BattleConfig.StepCap,
+                "the fight must resolve on its own rather than grinding out the safety cap");
+            Assert.IsTrue(log.Events.Any(e => e.Kind == StepEventKind.SuddenDeath),
+                "and it is sudden death that resolved it");
+        }
+
+        [Test]
+        public void SuddenDeath_StartsAtItsStep_AndEscalatesByOneEachStepAfter()
+        {
+            Assert.AreEqual(0, BattleSimulator.SuddenDeathDamageAt(BattleConfig.SuddenDeathStep - 1));
+            Assert.AreEqual(BattleConfig.SuddenDeathDamagePerStep,
+                BattleSimulator.SuddenDeathDamageAt(BattleConfig.SuddenDeathStep));
+            Assert.AreEqual(BattleConfig.SuddenDeathDamagePerStep * 3,
+                BattleSimulator.SuddenDeathDamageAt(BattleConfig.SuddenDeathStep + 2));
+
+            // Both Leads, and nobody behind them: the Supports are dormant (design doc §7).
+            var a = Mon("a-lead", attack: 0, health: 500, speed: 0);
+            var aSupport = Mon("a-support", attack: 0, health: 500, speed: 0);
+            var b = Mon("b-lead", attack: 0, health: 500, speed: 0);
+            var state = State(new List<BattleCombatant> { a, aSupport }, new List<BattleCombatant> { b });
+            var rng = new DeterministicRandom(1);
+
+            for (int i = 0; i < BattleConfig.SuddenDeathStep - 1; i++)
+            {
+                BattleSimulator.AdvanceStep(state, rng);
+            }
+            Assert.AreEqual(500, a.CurrentHP, "nothing happens before sudden death's Step");
+
+            var events = BattleSimulator.AdvanceStep(state, rng);
+
+            Assert.AreEqual(500 - BattleConfig.SuddenDeathDamagePerStep, a.CurrentHP);
+            Assert.AreEqual(500 - BattleConfig.SuddenDeathDamagePerStep, b.CurrentHP);
+            Assert.AreEqual(500, aSupport.CurrentHP, "a dormant Support isn't in the firing line");
+            Assert.AreEqual(2, events.Count(e => e.Kind == StepEventKind.SuddenDeath));
+        }
+
+        /// <summary>Sudden death is the clock running out, not an attack — so none of the mitigation
+        /// or response pipeline touches it, exactly like a status tick.</summary>
+        [Test]
+        public void SuddenDeath_IgnoresShieldReductionAndLifesteal()
+        {
+            var a = Mon("a-lead", attack: 0, health: 500, speed: 0);
+            a.Shield = 100;
+            a.DamageReductionFlat = 100;
+            a.LifestealPercent = 1f;
+            var b = Mon("b-lead", attack: 0, health: 500, speed: 0);
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
+            var rng = new DeterministicRandom(1);
+
+            for (int i = 0; i < BattleConfig.SuddenDeathStep; i++)
+            {
+                BattleSimulator.AdvanceStep(state, rng);
+            }
+
+            Assert.AreEqual(500 - BattleConfig.SuddenDeathDamagePerStep, a.CurrentHP,
+                "sudden death goes straight to HP");
+            Assert.AreEqual(100, a.Shield, "and leaves the shield untouched");
+        }
+
+        // --- 8c. The bounds that keep a mon killable -----------------------------------------
+
+        /// <summary>DamageReductionFlat accumulates for the whole battle (spec §12), so without a
+        /// floor a mon whose reduction has outgrown the other's Attack can never be hurt by it
+        /// again. Blunting a hit is the effect's job; nullifying every hit is not.</summary>
+        [Test]
+        public void DamageReduction_BluntsAHit_ButNeverNullifiesIt()
+        {
+            var a = Mon("a-lead", attack: 3, health: 20, speed: 0);
+            var b = Mon("b-lead", attack: 0, health: 20, speed: 0);
+            b.DamageReductionFlat = 1000;
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
+
+            BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
+
+            Assert.AreEqual(20 - BattleConfig.MinimumAttackDamage, b.CurrentHP);
+        }
+
+        /// <summary>A Lead with no Attack still deals nothing — the floor is on a blow that
+        /// connects, not a free hit for a mon that can't hit.</summary>
+        [Test]
+        public void AZeroAttackLead_StillDealsNothing()
+        {
+            var a = Mon("a-lead", attack: 0, health: 20, speed: 0);
+            var b = Mon("b-lead", attack: 0, health: 20, speed: 0);
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
+
+            BattleSimulator.AdvanceStep(state, new DeterministicRandom(1));
+
+            Assert.AreEqual(20, b.CurrentHP);
+        }
+
+        [Test]
+        public void Lifesteal_AccumulatesButStopsAtOneHundredPercent()
+        {
+            var drain = new PassiveDefinition
+            {
+                Id = "drain",
+                Effects = { new EffectDefinition { Type = EffectType.Lifesteal, Target = TargetSelector.Self, Amount = 60 } }
+            };
+            var a = Mon("a-lead", attack: 1, health: 500, speed: BattleConfig.ChargeThreshold, drain);
+            var b = Mon("b-lead", attack: 1, health: 500, speed: 0);
+            var state = State(new List<BattleCombatant> { a }, new List<BattleCombatant> { b });
+            var rng = new DeterministicRandom(1);
+
+            BattleSimulator.AdvanceStep(state, rng);
+            Assert.AreEqual(0.6f, a.LifestealPercent, 0.0001f, "one trigger stacks normally");
+
+            for (int i = 0; i < 5; i++)
+            {
+                BattleSimulator.AdvanceStep(state, rng);
+            }
+
+            Assert.AreEqual(BattleConfig.MaxLifestealPercent, a.LifestealPercent, 0.0001f,
+                "further triggers stop at the cap rather than running to 1980%");
+        }
+
         [Test]
         public void PrecomputedRunner_StalemateHitsStepCap_ForcesADraw()
         {
-            // Neither side can ever kill the other (0 attack, heals every trigger) - the runner
-            // must force a draw at BattleConfig.StepCap rather than looping forever.
+            // Neither side can ever kill the other (0 attack, and a passive that heals back to full
+            // every trigger, which outruns even sudden death's escalation for a long while) - the
+            // runner must force a draw at BattleConfig.StepCap rather than looping forever. With
+            // sudden death in place this is a genuine last resort: it takes deliberately absurd
+            // content to reach it, where before a pair of Bulbasaurs would do.
             var healFx = new PassiveDefinition { Id = "self-heal", Effects = { new EffectDefinition { Type = EffectType.Heal, Target = TargetSelector.Self, Amount = 1000 } } };
             var a = Mon("a-lead", attack: 0, health: 1000, speed: BattleConfig.ChargeThreshold, healFx);
             var b = Mon("b-lead", attack: 0, health: 1000, speed: BattleConfig.ChargeThreshold, healFx);
