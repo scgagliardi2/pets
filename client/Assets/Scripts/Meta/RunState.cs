@@ -22,8 +22,38 @@ namespace Pets.Meta
 
         public int Money;
 
-        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.</summary>
-        public int Morale = 3;
+        /// <summary>The run's life total (design doc §4). Hitting 0 ends the run.
+        ///
+        /// 5, not the 3 it was, because a run is now six Locations rather than one: at ~27 fights
+        /// and the win rates RegionTier's enemy levels aim for, a run expects to lose about three
+        /// of them, and 3 Morale meant the average run died to arithmetic before its last badge
+        /// (ADR 0006).</summary>
+        public int Morale = 5;
+
+        /// <summary>Which Location of the run this is, 1-based — the difficulty tier everything
+        /// scales off (RegionTier), and the badge count's other half.</summary>
+        public int RegionIndex = 1;
+
+        /// <summary>Gym Leaders beaten. Design doc §14 wants each badge to also grant a run-wide
+        /// passive; for now it's a counter and a win condition — the relic-style effect needs
+        /// run-wide passives the effect vocabulary doesn't have yet.</summary>
+        public int Badges;
+
+        /// <summary>Which kind of Location the run is currently in — what its wild encounters are
+        /// biased toward (LocationCatalog), and what the map screen calls itself. Picked at the
+        /// Region Hub; the default only matters for a Map scene opened with no run behind it.</summary>
+        public LocationType CurrentLocation = LocationType.Forest;
+
+        /// <summary>Total EXP this run has paid its line-up. Not a mon's EXP and not a sum of
+        /// theirs — it's the run's own progress, and what the floor under every mon it owns is
+        /// derived from (RunProgression).</summary>
+        public int RunExp;
+
+        /// <summary>The level no mon this run owns is allowed to be below: one under what the run
+        /// has earned, so a mon that joins late is immediately playable while a mon that has been
+        /// here the whole time is still, just, ahead. See RunProgression for why this exists.</summary>
+        public int FloorLevel =>
+            System.Math.Max(LevelCurve.StartingLevel, LevelCurve.LevelForExp(RunExp) - 1);
 
         /// <summary>The Location's generated node-map, and where the player stands on it. Held
         /// here rather than by the map screen so it survives navigating away and back —
@@ -44,6 +74,35 @@ namespace Pets.Meta
         public float NextBattleAttackBonusPercent;
 
         public bool IsRunOver => Morale <= 0;
+
+        /// <summary>The run is won once every Location's Gym has been beaten — the fixed-badge-count
+        /// answer to design doc §20's open "what ends a run" question (ADR 0006).</summary>
+        public bool IsRunWon => Badges >= RegionTier.RegionsPerRun;
+
+        /// <summary>True between Locations: the Gym is beaten, the map is gone, and the next thing
+        /// the player does is pick where to go. It's how Home's "Continue Run" knows to resume at
+        /// the Region Hub rather than at a map that no longer exists.</summary>
+        public bool IsBetweenLocations => LocationMap == null;
+
+        /// <summary>Enters the Location chosen at the Region Hub: its node-map is generated from
+        /// the offer's own seed, and the walk starts over at the new map's start node.</summary>
+        public void StartLocation(RegionHubGenerator.Offer offer, int layerCount)
+        {
+            CurrentLocation = offer.Type;
+            LocationMap = RegionMapGenerator.Generate(offer.MapSeed, layerCount);
+            VisitedMapNodeIds.Clear();
+        }
+
+        /// <summary>Banks a beaten Gym: a badge, the next Location's difficulty tier, and no map —
+        /// which is what sends the player back to the Region Hub to choose the next one. Doesn't
+        /// decide whether the run is over; <see cref="IsRunWon"/> is what the caller checks.</summary>
+        public void CompleteLocation()
+        {
+            Badges++;
+            RegionIndex++;
+            LocationMap = null;
+            VisitedMapNodeIds.Clear();
+        }
 
         /// <summary>Swaps which of the two active mons leads. The only line-up edit the Team
         /// screen offers so far: with exactly two active slots (design doc §7) it's unambiguous,

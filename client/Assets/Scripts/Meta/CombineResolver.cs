@@ -24,9 +24,14 @@ namespace Pets.Meta
     /// stats and follow an evolution — RunState is deliberately library-free.</summary>
     public static class CombineResolver
     {
-        /// <summary>EXP the surviving mon gains. Two battle wins' worth: enough that feeding a
-        /// duplicate is clearly better than carrying it, without being a shortcut past playing.</summary>
-        public const int ExpGranted = 2;
+        /// <summary>EXP the surviving mon gains. Two wild wins' worth — enough that feeding a
+        /// duplicate is clearly better than carrying it, without being a shortcut past playing.
+        ///
+        /// It is also the *only* way a mon gets ahead of its run's floor level (RunProgression), so
+        /// this number is what "investing in one mon" is worth. Kept at two fights when a fight went
+        /// from 1 EXP to 3, rather than left at 2 EXP, which would have quietly demoted combining to
+        /// two thirds of one fight (ADR 0006).</summary>
+        public const int ExpGranted = 2 * BattleRewardResolver.ExpPerPvEWin;
 
         /// <summary>What a combine would do, or why it can't happen — so the Team screen can put
         /// the reason in front of the player instead of a card that snaps back with no

@@ -36,14 +36,12 @@ namespace Pets.Tests
         // coroutine still fails well within a test's own timeout.
         private const int MoveTimeoutFrames = 20000;
 
-        /// <summary>EXP enough to put the test's mon's stats far beyond any curated species, so
-        /// every fight these tests walk into is won in a Step or two and Morale never enters the
-        /// picture.
+        /// <summary>EXP enough to put the test's mon at the level cap, so every fight these tests
+        /// walk into is won quickly and Morale never enters the picture.
         ///
         /// Granted as EXP rather than written straight onto CurrentStats: stats are *derived* from
-        /// species + EXP (Meta/ExperienceResolver), so the first win's own EXP award would recompute
-        /// a hand-set CurrentStats right back down to the species' base and lose every fight
-        /// after it.</summary>
+        /// species + level (Meta/ExperienceResolver), so the first win's own EXP award would
+        /// recompute a hand-set CurrentStats right back down and lose every fight after it.</summary>
         private const int UnbeatableExp = 1000;
 
         private const int MapSeedSearchLimit = 500;
@@ -364,7 +362,7 @@ namespace Pets.Tests
             yield return FinishFightAndReturnToMap();
 
             Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, "the fight left the player where it found them");
-            Assert.AreEqual(3, run.Morale, "a won fight costs no Morale");
+            Assert.AreEqual(new RunState().Morale, run.Morale, "a won fight costs no Morale");
             Assert.Greater(run.LineUp[0].Exp, 0, "a won fight pays EXP");
         }
 

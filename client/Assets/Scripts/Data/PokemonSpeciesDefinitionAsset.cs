@@ -46,8 +46,8 @@ namespace Pets.Data
         /// can't express "becomes one of seven"; picking a branch is its own feature. Set by the
         /// roster importer from the cached PokeAPI chains, restricted to the roster.
         ///
-        /// There is deliberately no per-species EXP threshold field: how much EXP an evolution
-        /// costs is a run-layer rule (ExperienceResolver.ExpPerEvolution), and nothing in the
+        /// There is deliberately no per-species evolution threshold field: what level an evolution
+        /// happens at is a run-layer rule (ExperienceResolver.EvolutionLevels), and nothing in the
         /// roster sheet or PokeAPI gives a per-species number to put here.</summary>
         public PokemonSpeciesDefinitionAsset EvolvesInto;
 

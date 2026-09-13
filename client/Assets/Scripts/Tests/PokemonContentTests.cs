@@ -36,6 +36,9 @@ namespace Pets.Tests
             }
         }
 
+        /// <summary>A fresh instance is its species' sheet stats at level 1, with Health scaled by
+        /// Data/StatGrowth — the one place the roster sheet's numbers are transformed on the way
+        /// into a fight.</summary>
         [Test]
         public void EverySpecies_ConvertsToAPokemonInstance_WithBaseStatsIntact()
         {
@@ -46,9 +49,9 @@ namespace Pets.Tests
                 var instance = PokemonInstanceFactory.Create(species, $"{species.DisplayName}#1");
 
                 Assert.AreEqual(species.BaseAttack, instance.CurrentStats.Attack);
-                Assert.AreEqual(species.BaseHealth, instance.CurrentStats.Health);
+                Assert.AreEqual(species.BaseHealth * StatGrowth.HealthScalar, instance.CurrentStats.Health);
                 Assert.AreEqual(species.BaseSpeed, instance.CurrentStats.Speed);
-                Assert.AreEqual(species.BaseHealth, instance.CurrentHP);
+                Assert.AreEqual(species.BaseHealth * StatGrowth.HealthScalar, instance.CurrentHP);
                 Assert.AreEqual(species.Passive.Id, instance.PassiveId);
                 Assert.IsNotNull(instance.ResolvedPassive);
                 Assert.AreEqual(species.Passive.Effects.Count, instance.ResolvedPassive.Effects.Count);

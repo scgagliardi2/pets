@@ -243,7 +243,8 @@ namespace Pets.Tests
             var fire = MakeSpecies(2, "Firey", PokemonType.Fire);
             var library = MakeLibrary(grass, fire);
 
-            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Grass }, seed: 42, instanceIdPrefix: "wild");
+            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Grass }, seed: 42,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(2, lineUp.Count);
             Assert.IsTrue(lineUp.All(m => m.SpeciesId == grass.Id));
@@ -257,8 +258,10 @@ namespace Pets.Tests
                 MakeSpecies(2, "B", PokemonType.Bug),
                 MakeSpecies(3, "C", PokemonType.Flying));
 
-            var a = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99, instanceIdPrefix: "wild");
-            var b = EncounterGenerator.GenerateWildLineUp(library, ForestLocationFactory.TypeBias, seed: 99, instanceIdPrefix: "wild");
+            var a = EncounterGenerator.GenerateWildLineUp(library, LocationCatalog.TypeBiasFor(LocationType.Forest), seed: 99,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
+            var b = EncounterGenerator.GenerateWildLineUp(library, LocationCatalog.TypeBiasFor(LocationType.Forest), seed: 99,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));
         }
@@ -268,14 +271,16 @@ namespace Pets.Tests
         {
             var library = MakeLibrary(MakeSpecies(1, "Rocky", PokemonType.Rock));
 
-            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Water }, seed: 1, instanceIdPrefix: "wild");
+            var lineUp = EncounterGenerator.GenerateWildLineUp(library, new[] { PokemonType.Water }, seed: 1,
+                instanceIdPrefix: "wild", RegionTier.Encounter.Default);
 
             Assert.AreEqual(2, lineUp.Count);
             Assert.IsTrue(lineUp.All(m => m.SpeciesId == 1));
         }
 
-        /// <summary>A two-stage line built for the EXP tests: base evolves into evolved, and both
-        /// are registered so ExperienceResolver can look either up by id.</summary>
+        /// <summary>A two-stage line for the tests that need an evolution to happen as a side
+        /// effect of something else. The growth model itself — the level curve, what a level is
+        /// worth, when a mon evolves — is covered in GrowthAndEvolutionTests.</summary>
         private static (PokemonSpeciesDefinitionAsset first, PokemonSpeciesDefinitionAsset second, PokemonSpeciesLibrary library)
             MakeEvolutionLine(int baseAttack = 10, int evolvedAttack = 40)
         {
@@ -284,114 +289,6 @@ namespace Pets.Tests
             first.EvolvesInto = second;
             second.EvolutionStage = 1;
             return (first, second, MakeLibrary(first, second));
-        }
-
-        [Test]
-        public void ExperienceResolver_AddsAFlatStatGainPerExp_ToAllThreeStats()
-        {
-            var (species, _, library) = MakeEvolutionLine();
-            var mon = PokemonInstanceFactory.Create(species, "mon-1");
-
-            ExperienceResolver.GrantExp(mon, 2, library);
-
-            int gain = 2 * ExperienceResolver.StatGainPerExp;
-            Assert.AreEqual(2, mon.Exp);
-            Assert.AreEqual(species.BaseAttack + gain, mon.CurrentStats.Attack);
-            Assert.AreEqual(species.BaseHealth + gain, mon.CurrentStats.Health);
-            Assert.AreEqual(species.BaseSpeed + gain, mon.CurrentStats.Speed);
-            Assert.AreEqual(mon.CurrentStats.Health, mon.CurrentHP, "growing should leave the mon at full HP");
-        }
-
-        /// <summary>Stats are derived from species + EXP rather than accumulated, so the same total
-        /// EXP has to produce the same stats however it was granted. The previous percentage-based
-        /// model failed exactly this.</summary>
-        [Test]
-        public void ExperienceResolver_StatsDependOnTotalExpOnly_NotOnHowItArrived()
-        {
-            var (species, _, library) = MakeEvolutionLine();
-            var atOnce = PokemonInstanceFactory.Create(species, "at-once");
-            var piecemeal = PokemonInstanceFactory.Create(species, "piecemeal");
-
-            ExperienceResolver.GrantExp(atOnce, 2, library);
-            ExperienceResolver.GrantExp(piecemeal, 1, library);
-            ExperienceResolver.GrantExp(piecemeal, 1, library);
-
-            Assert.AreEqual(atOnce.CurrentStats.Attack, piecemeal.CurrentStats.Attack);
-            Assert.AreEqual(atOnce.CurrentStats.Health, piecemeal.CurrentStats.Health);
-            Assert.AreEqual(atOnce.CurrentStats.Speed, piecemeal.CurrentStats.Speed);
-        }
-
-        [Test]
-        public void ExperienceResolver_EvolvesAtTheThreshold_AndRebasesStatsOnTheNewSpecies()
-        {
-            var (species, evolved, library) = MakeEvolutionLine();
-            var mon = PokemonInstanceFactory.Create(species, "mon-1");
-
-            var below = ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution - 1, library);
-            CollectionAssert.IsEmpty(below, "nothing should evolve before the threshold");
-            Assert.AreEqual(species.Id, mon.SpeciesId);
-
-            var evolutions = ExperienceResolver.GrantExp(mon, 1, library);
-
-            Assert.AreEqual(1, evolutions.Count);
-            Assert.AreEqual("Basic", evolutions[0].FromName);
-            Assert.AreEqual("Evolved", evolutions[0].ToName);
-            Assert.AreEqual(evolved.Id, mon.SpeciesId);
-            Assert.AreEqual(1, mon.TimesEvolved);
-            Assert.AreEqual(evolved.BaseAttack + ExperienceResolver.ExpPerEvolution * ExperienceResolver.StatGainPerExp,
-                mon.CurrentStats.Attack, "stats should rebase on the new species, not keep the old base");
-        }
-
-        /// <summary>The threshold is per evolution, not a flat total — otherwise reaching 3 EXP
-        /// would run a mon up its whole chain in one go and the middle stage would never exist.</summary>
-        [Test]
-        public void ExperienceResolver_DoesNotChainStraightThroughTheNextEvolution()
-        {
-            var second = MakeSpecies(2, "Middle", PokemonType.Normal);
-            var third = MakeSpecies(3, "Final", PokemonType.Normal);
-            var first = MakeSpecies(1, "Basic", PokemonType.Normal);
-            first.EvolvesInto = second;
-            second.EvolvesInto = third;
-            var library = MakeLibrary(first, second, third);
-            var mon = PokemonInstanceFactory.Create(first, "mon-1");
-
-            ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution, library);
-            Assert.AreEqual(second.Id, mon.SpeciesId, "the first threshold is one step, not the whole chain");
-
-            ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution, library);
-            Assert.AreEqual(third.Id, mon.SpeciesId, "the second threshold is another step further");
-            Assert.AreEqual(2, mon.TimesEvolved);
-        }
-
-        [Test]
-        public void ExperienceResolver_LeavesAFinalFormAlone_HoweverMuchExpItEarns()
-        {
-            var species = MakeSpecies(1, "FinalForm", PokemonType.Normal);
-            var library = MakeLibrary(species);
-            var mon = PokemonInstanceFactory.Create(species, "mon-1");
-
-            var evolutions = ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution * 4, library);
-
-            CollectionAssert.IsEmpty(evolutions);
-            Assert.AreEqual(species.Id, mon.SpeciesId);
-            Assert.AreEqual(0, mon.TimesEvolved);
-            Assert.IsFalse(ExperienceResolver.CanEverEvolve(mon, library));
-        }
-
-        /// <summary>A curated base form whose real pre-evolution isn't in the roster (Pikachu, whose
-        /// chain starts at Pichu) is stage 1 but has still evolved zero times — so it must reach its
-        /// first evolution on the first threshold like anything else.</summary>
-        [Test]
-        public void ExperienceResolver_CountsThresholdsPerInstance_NotFromTheSpeciesChainDepth()
-        {
-            var (species, evolved, library) = MakeEvolutionLine();
-            species.EvolutionStage = 1;
-            evolved.EvolutionStage = 2;
-            var mon = PokemonInstanceFactory.Create(species, "mon-1");
-
-            ExperienceResolver.GrantExp(mon, ExperienceResolver.ExpPerEvolution, library);
-
-            Assert.AreEqual(evolved.Id, mon.SpeciesId);
         }
 
         [Test]
@@ -424,11 +321,12 @@ namespace Pets.Tests
         {
             var species = MakeSpecies(1, "Fighter", PokemonType.Normal, health: 80);
             var persisted = PokemonInstanceFactory.Create(species, "mon-1");
+            int expectedHealth = 80 * StatGrowth.HealthScalar;
 
             var combatant = BattleCombatant.FromInstance(persisted);
 
-            Assert.AreEqual(80, combatant.CurrentHP);
-            Assert.AreEqual(80, combatant.CurrentStats.Health);
+            Assert.AreEqual(expectedHealth, combatant.CurrentHP);
+            Assert.AreEqual(expectedHealth, combatant.CurrentStats.Health);
             Assert.AreEqual(0, combatant.Charge);
             Assert.AreEqual(0, combatant.Shield);
             Assert.AreEqual(0, combatant.DamageReductionFlat);
@@ -453,8 +351,9 @@ namespace Pets.Tests
 
             Assert.IsTrue(log.Events.Any(e => e.Kind == StepEventKind.Damage),
                 "the fight should actually have done something");
-            Assert.AreEqual(species.BaseHealth, a[0].CurrentHP, "the roster mon took damage");
-            Assert.AreEqual(species.BaseHealth, b[0].CurrentHP, "the roster mon took damage");
+            int fullHealth = species.BaseHealth * StatGrowth.HealthScalar;
+            Assert.AreEqual(fullHealth, a[0].CurrentHP, "the roster mon took damage");
+            Assert.AreEqual(fullHealth, b[0].CurrentHP, "the roster mon took damage");
             Assert.AreEqual(species.BaseAttack, a[0].CurrentStats.Attack, "the roster mon's stats changed");
         }
 
@@ -487,12 +386,13 @@ namespace Pets.Tests
             var rock = MakeSpecies(2, "Rocky", PokemonType.Rock, health: 100);
             var library = MakeLibrary(grass, rock);
 
-            var team = GymTeamGenerator.Generate(library, count: 2, seed: 7);
+            var team = GymTeamGenerator.Generate(library, count: 2, seed: 7, RegionTier.Encounter.Default);
 
             Assert.AreEqual(2, team.Count);
             foreach (var mon in team)
             {
-                int authored = mon.SpeciesId == grass.Id ? grass.BaseHealth : rock.BaseHealth;
+                int authored = (mon.SpeciesId == grass.Id ? grass.BaseHealth : rock.BaseHealth)
+                    * StatGrowth.HealthScalar;
                 int expected = authored + (int)(authored * GymTeamGenerator.HealthBonusPercent);
                 Assert.AreEqual(expected, mon.CurrentStats.Health);
                 Assert.AreEqual(expected, mon.CurrentHP, "a Gym member starts its fight at full health");
@@ -508,8 +408,8 @@ namespace Pets.Tests
                 MakeSpecies(2, "B", PokemonType.Rock),
                 MakeSpecies(3, "C", PokemonType.Water));
 
-            var a = GymTeamGenerator.Generate(library, count: 3, seed: 123);
-            var b = GymTeamGenerator.Generate(library, count: 3, seed: 123);
+            var a = GymTeamGenerator.Generate(library, count: 3, seed: 123, RegionTier.Encounter.Default);
+            var b = GymTeamGenerator.Generate(library, count: 3, seed: 123, RegionTier.Encounter.Default);
 
             Assert.AreEqual(a.Select(m => m.SpeciesId), b.Select(m => m.SpeciesId));
         }
@@ -527,9 +427,9 @@ namespace Pets.Tests
             state.LineUp.Add(PokemonInstanceFactory.Create(species, "reserve"));
             state.Box.Add(PokemonInstanceFactory.Create(species, "boxed"));
 
-            BattleRewardResolver.GrantWinRewards(state, library);
+            BattleRewardResolver.GrantWinRewards(state, library, NodeType.PvE);
 
-            Assert.IsTrue(state.LineUp.All(m => m.Exp == BattleRewardResolver.ExpPerWin));
+            Assert.IsTrue(state.LineUp.All(m => m.Exp == BattleRewardResolver.ExpPerPvEWin));
             Assert.AreEqual(0, state.Box[0].Exp, "a mon sitting in the Box didn't fight");
         }
 
@@ -539,10 +439,11 @@ namespace Pets.Tests
             var (species, evolved, library) = MakeEvolutionLine();
             var state = new RunState();
             var mon = PokemonInstanceFactory.Create(species, "lead");
-            mon.Exp = ExperienceResolver.ExpPerEvolution - BattleRewardResolver.ExpPerWin;
+            mon.Exp = LevelCurve.TotalExpForLevel(ExperienceResolver.EvolutionLevels[0])
+                - BattleRewardResolver.ExpPerGymWin;
             state.LineUp.Add(mon);
 
-            var evolutions = BattleRewardResolver.GrantWinRewards(state, library);
+            var evolutions = BattleRewardResolver.GrantWinRewards(state, library, NodeType.Gym);
 
             Assert.AreEqual(1, evolutions.Count);
             Assert.AreEqual(evolved.Id, evolutions[0].Mon.SpeciesId);
@@ -603,15 +504,17 @@ namespace Pets.Tests
             Assert.AreEqual(0, state.Box[0].Exp);
         }
 
-        /// <summary>Two combines is six EXP, which is two evolutions' worth — combining is the
-        /// fastest route to one, so it has to report them the same way a win does.</summary>
+        /// <summary>Combining is the one way to push a mon past the level its run would hold it
+        /// at, so it's the fastest route to an evolution — and has to report one the same way a win
+        /// does.</summary>
         [Test]
         public void CombineResolver_ReportsAnEvolutionTheGrantSetOff()
         {
             var (species, evolved, library) = MakeEvolutionLine();
             var state = new RunState();
             var keeper = PokemonInstanceFactory.Create(species, "keeper");
-            keeper.Exp = ExperienceResolver.ExpPerEvolution - CombineResolver.ExpGranted;
+            keeper.Exp = LevelCurve.TotalExpForLevel(ExperienceResolver.EvolutionLevels[0])
+                - CombineResolver.ExpGranted;
             state.LineUp.Add(keeper);
             state.Box.Add(PokemonInstanceFactory.Create(species, "spare"));
 
@@ -652,7 +555,7 @@ namespace Pets.Tests
             CatchResolver.Catch(state, defeated[0], library);
 
             Assert.AreEqual(1, state.Box.Count);
-            Assert.AreEqual(species.BaseHealth, state.Box[0].CurrentHP);
+            Assert.AreEqual(species.BaseHealth * StatGrowth.HealthScalar, state.Box[0].CurrentHP);
         }
     }
 }

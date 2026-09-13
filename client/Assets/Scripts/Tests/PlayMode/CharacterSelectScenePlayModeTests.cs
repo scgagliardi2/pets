@@ -267,7 +267,7 @@ namespace Pets.Tests
             // arriving scene's bootstrapper rather than waiting a fixed number of frames, so this
             // doesn't quietly become a race if the fade duration changes.
             yield return SceneTransitionWait.UntilExists<RunBootstrapper>(
-                "confirming should have loaded the Map scene and its RunBootstrapper");
+                "confirming should have loaded the Region Hub scene and its RunBootstrapper");
             var state = RunBootstrapper.Instance.State;
             var library = RunBootstrapper.Instance.SpeciesLibrary;
             string leadName = library.GetById(state.LineUp[0].SpeciesId).DisplayName;

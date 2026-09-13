@@ -363,6 +363,7 @@ namespace Pets.Gameplay
                     resultText.text = context == BattleContext.MapGym
                         ? "Badge earned!\nLocation complete."
                         : "Victory!";
+
                     resultText.color = Theme.Positive;
                     break;
                 case BattleOutcome.SideBWins:
@@ -413,10 +414,12 @@ namespace Pets.Gameplay
                 return;
             }
 
-            // The run's line-up, not the battle's survivors: EXP is one point a win, and a Reserve
-            // behind a Lead that never faints would otherwise never grow (see BattleRewardResolver).
-            var evolutions = BattleRewardResolver.GrantWinRewards(state, library);
-            resultText.text += $"\nThe team gains {BattleRewardResolver.ExpPerWin} EXP.";
+            // The run's line-up, not the battle's survivors: a Reserve behind a Lead that never
+            // faints would otherwise never grow (see BattleRewardResolver). What it pays depends on
+            // the node — a Gym is most of a level, a wild fight a third of one.
+            var nodeType = context == BattleContext.MapGym ? NodeType.Gym : NodeType.PvE;
+            var evolutions = BattleRewardResolver.GrantWinRewards(state, library, nodeType);
+            resultText.text += $"\nThe team gains {BattleRewardResolver.ExpForWin(nodeType)} EXP.";
             foreach (var evolution in evolutions)
             {
                 resultText.text += $"\n{evolution.FromName} evolved into {evolution.ToName}!";
@@ -425,6 +428,17 @@ namespace Pets.Gameplay
             if (context == BattleContext.MapPvE)
             {
                 OfferCatches();
+            }
+
+            if (context == BattleContext.MapGym)
+            {
+                // Banks the badge and clears the map, which is what sends the player to the Region
+                // Hub to pick the next Location (RunState.CompleteLocation). Done here rather than
+                // on the Continue button so the result panel can say what the badge was worth.
+                state.CompleteLocation();
+                resultText.text += state.IsRunWon
+                    ? $"\n{state.Badges} badges. The run is won."
+                    : $"\nBadge {state.Badges} of {RegionTier.RegionsPerRun}.";
             }
         }
 
@@ -472,9 +486,9 @@ namespace Pets.Gameplay
         }
 
         /// <summary>A node fight's one way on from the result panel — the whole win-loss loop. A
-        /// broken run and a completed Location both end at Home (there's no Region Hub to pick the
-        /// next Location from yet — see ADR 0003), a Gym still standing is fought again, and
-        /// anything else returns to the map to keep walking.
+        /// broken run ends at Home and so does a won one (six badges, RunState.IsRunWon); a
+        /// completed Location goes to the Region Hub to choose the next one; a Gym still standing is
+        /// fought again; anything else returns to the map to keep walking.
         ///
         /// The dev battle's own two buttons go straight to the navigator and never reach here.</summary>
         public void OnResultActionClicked()
@@ -485,20 +499,23 @@ namespace Pets.Gameplay
                 // played out again.
                 int seed = Random.Range(int.MinValue, int.MaxValue);
                 PendingBattle.Set(
-                    GymTeamGenerator.Generate(library, ActiveRun.State.LineUp.Count, seed), nodeId, isGym: true, seed);
+                    GymTeamGenerator.Generate(library, ActiveRun.State.LineUp.Count, seed,
+                        RegionTier.For(ActiveRun.State, NodeType.Gym)),
+                    nodeId, isGym: true, seed);
                 ScreenFade.TransitionTo(SceneNames.Battle);
                 return;
             }
 
-            bool locationComplete = context == BattleContext.MapGym && runner.Outcome == BattleOutcome.SideAWins;
-            if (ActiveRun.State.IsRunOver || locationComplete)
+            var state = ActiveRun.State;
+            if (state.IsRunOver || state.IsRunWon)
             {
                 ActiveRun.End();
                 ScreenFade.TransitionTo(SceneNames.Home);
                 return;
             }
 
-            ScreenFade.TransitionTo(SceneNames.Map);
+            bool locationComplete = context == BattleContext.MapGym && runner.Outcome == BattleOutcome.SideAWins;
+            ScreenFade.TransitionTo(locationComplete ? SceneNames.RegionHub : SceneNames.Map);
         }
 
         /// <summary>The Gym is every path's terminus (design doc §14), so a run that's still alive
@@ -556,7 +573,7 @@ namespace Pets.Gameplay
                 // A different mon in this place (the first draw, or a promotion): nothing to drain from.
                 slot.Bound = mon;
                 var species = SpeciesOf(mon);
-                slot.Stats.Show(DisplayName(mon),
+                slot.Stats.Show(DisplayNameWithLevel(mon),
                     species != null ? species.Type1 : PokemonType.Normal,
                     species != null && species.HasSecondType,
                     species != null ? species.Type2 : PokemonType.Normal,
@@ -668,5 +685,14 @@ namespace Pets.Gameplay
             var species = SpeciesOf(mon);
             return species != null ? species.DisplayName : mon.InstanceId;
         }
+
+        /// <summary>Name plus level, for the four stat boxes — the level is what explains the
+        /// numbers under it, and on the wild side it's the only place a player can see that the
+        /// opposition scales with them (RegionTier) rather than being a fixed encounter. The party
+        /// strip along the bottom keeps the bare name; there's no room there for both.</summary>
+        private string DisplayNameWithLevel(BattleCombatant mon) =>
+            mon.Source == null
+                ? DisplayName(mon)
+                : $"{DisplayName(mon)}  Lv {ExperienceResolver.LevelOf(mon.Source)}";
     }
 }

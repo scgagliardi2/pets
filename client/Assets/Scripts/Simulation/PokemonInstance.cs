@@ -18,14 +18,30 @@ namespace Pets.Simulation
         public int SpeciesId;
         public string Nickname;
 
-        /// <summary>Total EXP this mon has ever earned — a small counter, not a points pool: one
-        /// per battle won, two per duplicate combined in (Pets.Meta.ExperienceResolver). It never
-        /// resets, and stats are derived from it rather than accumulated into, so
-        /// `species base + ExpGain * Exp` is always the whole story.
+        /// <summary>Total EXP this mon has ever earned. It never resets, and it buys *levels*
+        /// through Pets.Meta.LevelCurve rather than stats directly — the stats follow from the
+        /// level (Pets.Data.StatGrowth), so nothing is ever accumulated onto this mon that couldn't
+        /// be rebuilt from `species + level`.
         ///
-        /// There's no Level/ExpToNextLevel pair any more (design doc §9 still shows one): with a
-        /// flat gain per EXP, a level was a second name for this number.</summary>
+        /// There is still no stored Level field: the level is `LevelCurve.LevelForExp(Exp)` raised
+        /// to <see cref="MinLevel"/>, computed by Pets.Meta.ExperienceResolver.LevelOf. Storing it
+        /// would be storing a second copy of something two other fields already say.</summary>
         public int Exp;
+
+        /// <summary>A level this mon is held at regardless of its own EXP — the floor under
+        /// everything a run owns (ADR 0006).
+        ///
+        /// Two things set it. A mon *created* at a level (a wild encounter built for a region, a
+        /// Gym team) has earned no EXP and is simply that strong. And a mon that *joins* a run in
+        /// progress — caught, adopted, handed over by an Event — is raised to the run's floor level,
+        /// one below what the run has paid out, so it is immediately worth playing instead of
+        /// arriving a whole run's growth behind. The floor also keeps Box mons from rotting while
+        /// they sit out fights.
+        ///
+        /// It only ever rises. Personal EXP is what puts a mon *above* the floor — which, since
+        /// every mon in the line-up is paid the same, means combining duplicates is what a player
+        /// does to get ahead of it.</summary>
+        public int MinLevel;
 
         /// <summary>How many times this particular mon has evolved. Counted per instance rather
         /// than read off the species' chain depth, because the two disagree for a curated base form

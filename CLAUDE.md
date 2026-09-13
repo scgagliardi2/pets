@@ -12,8 +12,11 @@ carries; [`0004-full-roster-import-and-pokedex.md`](docs/architecture-decisions/
 covers the jump from 28 hand-authored species to all 183, the content-import pipeline that did it,
 and what that expansion left unfinished; and
 [`0005-exp-as-a-small-counter.md`](docs/architecture-decisions/0005-exp-as-a-small-counter.md)
-covers the EXP/growth/evolution model and the duplicate-combining gesture. Between them they list the deviations from the design doc
-that are still open questions.
+covers the EXP/growth/evolution model and the duplicate-combining gesture — but its *numbers* are
+superseded by [`0006-leveling-across-a-six-location-run.md`](docs/architecture-decisions/0006-leveling-across-a-six-location-run.md),
+which re-paces growth and evolution across a six-Location run, scales the opposition to match, and
+adds the Region Hub that makes a run six Locations at all. Between them they list the deviations
+from the design doc that are still open questions.
 
 ## Project snapshot
 
@@ -28,34 +31,47 @@ Pets–style Lead/Support auto-battler, themed with Pokémon species/types/asset
 
 **Current state: read PLAN.md §6's Status block first.** It is the only accurate account of what
 exists — the phase list under it describes intent, and the build has deviated from that order
-(ADR 0002). The short version, as of 2026-09-12:
+(ADR 0002). The short version, as of 2026-09-13:
 - Everything in the tree is **post-pivot**. The old 5-slot code and `Gameplay/ShopEconomy` were
   deleted, not kept; `Scripts/Simulation` matches `docs/battle-sim-spec.md` and is the code to
   extend, not replace.
-- The game's **shell** is built and playable (Home → Character Select → a walkable Location map,
-  plus an in-run menu, Team, History, Credits, Settings, a Pokédex, a dev roster screen), and the
-  **core run loop inside it now works**: arriving at a map node resolves it (ADR 0003). Battle/Gym nodes hand
-  an encounter to `Battle.unity` through `PendingBattle` and it writes the result back to the run
-  (Morale, EXP, the stubbed catch, Location complete); the Pokémon Center and the Event/PvP stubs
-  resolve as modals on the map. Team's dev button still opens the old throwaway random battle,
-  which strips passives and costs the run nothing — don't mistake one for the other.
-- The systems hanging off that loop are **not** built: evolution, the real drag-and-drop catching,
-  Pokémon Center adoption/healing, a Shop, type synergy, the badge reward, real Event/PvP nodes,
-  the Trailblazer minigame, and the Region Hub. See PLAN.md §6 for the deliberate simplifications
-  that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
-- **Growth runs on a small EXP counter** (ADR 0005): 1 per battle won, 2 per duplicate combined,
-  each point a flat +10 to all three stats, evolution every 3 points. `PokemonInstance.CurrentStats`
-  is **derived** by `ExperienceResolver.Recompute` from species + EXP — writing stats onto a mon
-  directly works until the next EXP grant silently recomputes them away, which is the one trap in
-  this area. There is no `Level` any more.
+- The game's **shell** is built and playable (Home → Character Select → the Region Hub → a walkable
+  Location map, plus an in-run menu, Team, History, Credits, Settings, a Pokédex, a dev roster
+  screen), and the **core run loop inside it now works**: arriving at a map node resolves it
+  (ADR 0003). Battle/Gym nodes hand an encounter to `Battle.unity` through `PendingBattle` and it
+  writes the result back to the run (Morale, EXP, the stubbed catch, the badge); the Pokémon Center
+  and the Event/PvP stubs resolve as modals on the map. Team's dev button still opens the old
+  throwaway random battle, which strips passives and costs the run nothing — don't mistake one for
+  the other.
+- **A run is six Locations and six badges** (ADR 0006): a Gym win banks a badge, bumps the
+  difficulty tier and returns to the Region Hub to pick the next Location; the sixth wins the run.
+- The systems hanging off that loop are **not** built: the real drag-and-drop catching, Pokémon
+  Center adoption/healing, a Shop, type synergy, the badge *reward* (badges are counted but inert),
+  real Event/PvP nodes, and the Trailblazer minigame. See PLAN.md §6 for the deliberate
+  simplifications that came with the loop (a lost fight costs only Morale; HP doesn't carry between
+  fights).
+- **Growth runs on a level curve** (ADR 0006, superseding ADR 0005's numbers): EXP buys levels 1–12
+  across a six-Location run (a PvE win pays 3, a Gym 8; a level costs `6 + level`), each level adds
+  10% of the species' own base Attack and Health plus a flat 3, **Speed doesn't grow**, and every
+  Health number is x3 (`StatGrowth.HealthScalar`). Mons evolve at levels 4 and 9.
+  `PokemonInstance.CurrentStats` is **derived** by `ExperienceResolver.Recompute` from species +
+  level — writing stats onto a mon directly works until the next grant silently recomputes them
+  away, which is the one trap in this area. Two rules that are easy to miss: a mon's level is
+  `max(its own EXP's level, MinLevel)`, where `MinLevel` is a **floor the run holds every mon it
+  owns at** (`RunProgression`), and the opposition is built at the party's level minus a per-node
+  delta from a stage-filtered pool (`RegionTier`) — so enemy strength is a function of run progress,
+  not of the species lottery.
 - **Content is all 183 roster species** (ADR 0004), imported by
   `Assets/Editor/SpeciesRosterImporter.cs` from `docs/pokemon_stats_unique.xlsx`. Two things that
   expansion left open and that it's easy to mistake for finished: only the original 28 species have
-  a bespoke passive (the rest share one placeholder per primary type), and the encounter/Gym/random
-  -battle pools still draw from the *whole* library unfiltered, so a Forest wild encounter can be a
-  Legendary. See PLAN.md §11 item 9.
+  a bespoke passive (the rest share one placeholder per primary type) — that one is still open. The
+  unfiltered encounter pools it also left behind are fixed: `EncounterGenerator` and
+  `GymTeamGenerator` draw through `RegionTier` now, so a Location-1 Forest can't field a Legendary.
+  The dev `RandomBattle` still draws unfiltered, deliberately. See PLAN.md §11 item 9.
 - `RegionMap*` is misnamed: it's the **Location** node-map (design doc §5), not the Region tier
-  (§4/§5.2), which isn't built. See PLAN.md §6 "Known naming debt" before adding to it.
+  (§4/§5.2) — and the Region tier now exists alongside it as `RegionHub*`, so the two are live in
+  one build under near-identical names. Renaming `RegionMap*` → `LocationMap*` is overdue; see
+  PLAN.md §6 "Known naming debt" before adding to either.
 - There is **no save/load layer** (so "Continue Run" only resumes a run still in memory, and
   History has nothing to list) and **no content-import pipeline** (the 28 curated species were
   hand-authored asset by asset). Both are still in the plan; neither is built.
@@ -175,9 +191,12 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
          -testResults /tmp/play.xml -logFile /tmp/play.log
   ```
 
-  Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
-  2026-09-12 (after the EXP/evolution model and combining, ADR 0005): **156 EditMode, 87 PlayMode,
-  all passing**. The same binary runs any Editor entry
+  Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Last verified
+  baseline, 2026-09-12 (ADR 0005): **156 EditMode, 87 PlayMode, all passing**. The ADR 0006 work
+  (levels, enemy scaling, the Region Hub) came after that and **has not been run against either
+  suite** — it was written without a Unity install. Rebuild the scenes first
+  (`Pets > Build All Scenes`, or the `-executeMethod` below): `RegionHub.unity` is generated and
+  isn't in the repo, so its PlayMode test fails until it is. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

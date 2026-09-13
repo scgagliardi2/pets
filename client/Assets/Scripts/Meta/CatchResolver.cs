@@ -44,7 +44,9 @@ namespace Pets.Meta
             return defeated;
         }
 
-        /// <summary>Adds a fresh, full-health copy of the defeated mon's species to the Box.</summary>
+        /// <summary>Adds a full-health copy of the defeated mon's species to the Box, at the run's
+        /// floor level rather than at level 1 (RunProgression.Onboard) — a mon caught in Location 5
+        /// is worth playing, which is the whole point of still catching things there.</summary>
         public static void Catch(RunState state, PokemonInstance defeated, PokemonSpeciesLibrary library)
         {
             var species = library.GetById(defeated.SpeciesId);
@@ -53,7 +55,9 @@ namespace Pets.Meta
                 return;
             }
             string instanceId = $"box-{species.Id}-{state.Box.Count}";
-            state.Box.Add(PokemonInstanceFactory.Create(species, instanceId));
+            var caught = PokemonInstanceFactory.Create(species, instanceId);
+            RunProgression.Onboard(state, caught, library);
+            state.Box.Add(caught);
         }
     }
 }
