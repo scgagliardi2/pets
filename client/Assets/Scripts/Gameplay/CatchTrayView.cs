@@ -23,9 +23,12 @@ namespace Pets.Gameplay
     /// once, mutate the labels, is also just less work per Step.</summary>
     public sealed class CatchTrayView : MonoBehaviour
     {
+        // Three rows at 46 plus two 6px gaps is exactly the 150 the column is tall, and the widths
+        // below are sized for its 140 — see BattleSceneBuilder's BallColumnSize for why it's 140.
         private const float RowHeight = 46f;
         private const float RowGap = 6f;
-        private const float BallSize = 34f;
+        private const float BallSize = 30f;
+        private const float CountWidth = 34f;
         private const float DraggedIconAlpha = 0.7f;
 
         private sealed class Row
@@ -101,7 +104,7 @@ namespace Pets.Gameplay
             ball.anchorMin = ball.anchorMax = new Vector2(0f, 0.5f);
             ball.pivot = new Vector2(0f, 0.5f);
             ball.sizeDelta = new Vector2(BallSize, BallSize);
-            ball.anchoredPosition = new Vector2(6f, 0f);
+            ball.anchoredPosition = new Vector2(5f, 0f);
 
             var ballImage = ballGo.GetComponent<Image>();
             ballImage.sprite = Theme.PokeballSprite;
@@ -111,18 +114,18 @@ namespace Pets.Gameplay
             var handle = ballGo.GetComponent<BallDragHandle>();
             handle.Initialize(this, tier, enabled: false, icon: ball);
 
-            var odds = CreateLabel(root, "Odds", 18, TextAnchor.MiddleLeft);
+            var odds = CreateLabel(root, "Odds", 17, TextAnchor.MiddleLeft);
             odds.rectTransform.anchorMin = new Vector2(0f, 0f);
             odds.rectTransform.anchorMax = new Vector2(1f, 1f);
-            odds.rectTransform.offsetMin = new Vector2(BallSize + 12f, 0f);
-            odds.rectTransform.offsetMax = new Vector2(-46f, 0f);
+            odds.rectTransform.offsetMin = new Vector2(BallSize + 10f, 0f);
+            odds.rectTransform.offsetMax = new Vector2(-(CountWidth + 4f), 0f);
 
-            var count = CreateLabel(root, "Count", 16, TextAnchor.MiddleRight);
+            var count = CreateLabel(root, "Count", 15, TextAnchor.MiddleRight);
             count.rectTransform.anchorMin = new Vector2(1f, 0f);
             count.rectTransform.anchorMax = new Vector2(1f, 1f);
             count.rectTransform.pivot = new Vector2(1f, 0.5f);
-            count.rectTransform.sizeDelta = new Vector2(42f, 0f);
-            count.rectTransform.anchoredPosition = new Vector2(-6f, 0f);
+            count.rectTransform.sizeDelta = new Vector2(CountWidth, 0f);
+            count.rectTransform.anchoredPosition = new Vector2(-5f, 0f);
 
             return new Row
             {
@@ -291,7 +294,7 @@ namespace Pets.Gameplay
                 draggedIcon.anchorMin = draggedIcon.anchorMax = new Vector2(0f, 0.5f);
                 draggedIcon.pivot = new Vector2(0f, 0.5f);
                 draggedIcon.sizeDelta = new Vector2(BallSize, BallSize);
-                draggedIcon.anchoredPosition = new Vector2(6f, 0f);
+                draggedIcon.anchoredPosition = new Vector2(5f, 0f);
             }
 
             draggedIcon = null;

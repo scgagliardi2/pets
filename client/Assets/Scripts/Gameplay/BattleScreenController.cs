@@ -94,6 +94,11 @@ namespace Pets.Gameplay
         /// <summary>How long "Caught!" / "broke free!" stays up before the fight carries on.</summary>
         [SerializeField] private float catchResultSeconds = 0.9f;
 
+        // Only used when the scene predates the ball column (see BuildFallbackBallColumn); the
+        // baked-in one uses BattleSceneBuilder's own constants.
+        private const float FallbackBallColumnWidth = 140f;
+        private const float FallbackBallColumnGap = 10f;
+
         [Header("Catching")]
         /// <summary>The column of ball rows beside the Throw button. Built empty by
         /// BattleSceneBuilder and filled by CatchTrayView at runtime, the same arrangement as the
@@ -103,6 +108,13 @@ namespace Pets.Gameplay
         /// <summary>Where "Caught Pidgey!" / "Pidgey broke free!" appears, over the field. Left
         /// inactive by the builder; only a throw ever shows it.</summary>
         [SerializeField] private Text catchMessageText;
+
+        /// <summary>The framed panel behind <see cref="catchMessageText"/>, which is what actually
+        /// gets shown and hidden. Separate from the Text because a uGUI object can hold only one
+        /// Graphic, so the frame has to be the parent — and toggling the Text alone would leave an
+        /// empty frame on the battlefield. Falls back to the Text's own object if a scene supplies
+        /// a bare Text with no frame.</summary>
+        [SerializeField] private GameObject catchMessageRoot;
 
         /// <summary>How long the faint drop takes. Matched to faintRevealSeconds, so the Step's
         /// faint beat lasts exactly as long as the animation it's there to show.</summary>
@@ -283,8 +295,15 @@ namespace Pets.Gameplay
         /// enemy Lead's sprite made into a drop target (design doc §12.1). Both are attached at
         /// runtime rather than wired into the Battle scene — see CatchTrayView for why.
         ///
-        /// In a fight where catching isn't offered the Throw button stays disabled exactly as it
-        /// was before, and no tray or target is built at all.</summary>
+        /// The column and the callout normally come from BattleSceneBuilder. If the scene predates
+        /// them — which it does until Pets &gt; Build Battle Scene is re-run — those serialized
+        /// fields are null, and stand-ins are built here instead. Carrying on with a null container
+        /// silently parented the rows to nothing: no balls, no callout, no error, and a Throw button
+        /// that looked broken. A feature that only works if someone remembers an editor menu item
+        /// isn't finished.
+        ///
+        /// In a fight where catching isn't offered the Throw button stays hidden exactly as it was
+        /// before, and no column or target is built at all.</summary>
         private void SetUpCatching()
         {
             if (!CatchingOffered)
@@ -309,8 +328,14 @@ namespace Pets.Gameplay
             var canvas = board.GetComponentInParent<Canvas>();
             var dragLayer = canvas != null ? (RectTransform)canvas.transform : (RectTransform)board.transform;
 
+            var column = ballColumn != null ? ballColumn : BuildFallbackBallColumn();
+            if (catchMessageText == null)
+            {
+                catchMessageText = BuildFallbackCatchMessage();
+            }
+
             catchTray = gameObject.AddComponent<CatchTrayView>();
-            catchTray.Build(ballColumn, dragLayer, ActiveRun.State.Balls, OddsPercentFor);
+            catchTray.Build(column, dragLayer, ActiveRun.State.Balls, OddsPercentFor);
 
             // Only the Lead slot gets a drop target, per the design doc: Support and further-back
             // enemies aren't catchable until they're promoted into the Lead slot themselves. The
@@ -331,6 +356,78 @@ namespace Pets.Gameplay
         {
             var target = runner?.State?.LeadB;
             return target == null ? 0 : CatchOdds.PercentFor(tier, target);
+        }
+
+        /// <summary>The ball column, for a Battle scene built before it existed. Positioned off the
+        /// Throw button so it lands beside it wherever it is. An un-rebuilt strip was laid out with
+        /// no column in mind, so the space to the right may not exist — putting it there would hang
+        /// it off the screen edge, which looks exactly like not being drawn. So it measures, and
+        /// drops to the left of the button when the right doesn't fit.</summary>
+        private RectTransform BuildFallbackBallColumn()
+        {
+            Debug.LogWarning("BattleScreenController: no ballColumn wired — building one at runtime. " +
+                "Run Pets > Build Battle Scene to bake it into Battle.unity properly.");
+
+            var throwRect = (RectTransform)throwButton.transform;
+            var column = new GameObject("BallColumn", typeof(RectTransform)).GetComponent<RectTransform>();
+            column.SetParent(throwRect.parent, false);
+            column.anchorMin = throwRect.anchorMin;
+            column.anchorMax = throwRect.anchorMax;
+            column.pivot = throwRect.pivot;
+            column.sizeDelta = new Vector2(FallbackBallColumnWidth, throwRect.sizeDelta.y);
+
+            float rightEdge = throwRect.anchoredPosition.x + throwRect.sizeDelta.x
+                + FallbackBallColumnGap + FallbackBallColumnWidth;
+            float available = (throwRect.parent as RectTransform)?.rect.width ?? rightEdge;
+            column.anchoredPosition = rightEdge <= available
+                ? throwRect.anchoredPosition + new Vector2(throwRect.sizeDelta.x + FallbackBallColumnGap, 0f)
+                : throwRect.anchoredPosition - new Vector2(FallbackBallColumnWidth + FallbackBallColumnGap, 0f);
+            return column;
+        }
+
+        /// <summary>The "Caught!" / "broke free!" callout, for a scene built before it existed: a
+        /// framed panel with the text inside, matching what BattleSceneBuilder bakes in. Also sets
+        /// catchMessageRoot, since the panel is what gets shown and hidden.</summary>
+        private Text BuildFallbackCatchMessage()
+        {
+            var panelGo = new GameObject("CatchMessage", typeof(RectTransform), typeof(Image));
+            var panel = panelGo.GetComponent<RectTransform>();
+            panel.SetParent(board.transform, false);
+            panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
+            panel.pivot = new Vector2(0.5f, 0.5f);
+            panel.sizeDelta = new Vector2(440f, 68f);
+            panel.anchoredPosition = new Vector2(0f, 30f);
+
+            var frame = panelGo.GetComponent<Image>();
+            frame.sprite = Theme.SlotDarkSprite;
+            frame.type = Image.Type.Sliced;
+            frame.raycastTarget = false;
+
+            var textGo = new GameObject("Label", typeof(RectTransform), typeof(Text));
+            var textRect = textGo.GetComponent<RectTransform>();
+            textRect.SetParent(panel, false);
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(12f, 0f);
+            textRect.offsetMax = new Vector2(-12f, 0f);
+
+            var text = textGo.GetComponent<Text>();
+            text.font = Theme.GameFont;
+            text.fontSize = 30;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Theme.TextLight;
+            text.raycastTarget = false;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+
+            var outline = textGo.AddComponent<Outline>();
+            outline.effectColor = Theme.ChromeBg;
+            outline.effectDistance = new Vector2(2f, -2f);
+
+            catchMessageRoot = panelGo;
+            panelGo.SetActive(false);
+            return text;
         }
 
         /// <summary>Whether a ball can be thrown this instant: a live wild Lead, a fight still
@@ -452,22 +549,47 @@ namespace Pets.Gameplay
             return lead != null ? DisplayName(lead) : "It";
         }
 
+        /// <summary>The object shown and hidden for the callout: the frame when there is one, the
+        /// bare Text when a scene supplies one without.</summary>
+        private GameObject CatchMessageObject =>
+            catchMessageRoot != null ? catchMessageRoot : catchMessageText?.gameObject;
+
         private void ShowCatchMessage(string message, Color color)
         {
-            if (catchMessageText == null)
+            var root = CatchMessageObject;
+            if (catchMessageText == null || root == null)
             {
                 return;
             }
             catchMessageText.text = message;
             catchMessageText.color = color;
-            catchMessageText.gameObject.SetActive(true);
+            root.SetActive(true);
+            StartCoroutine(PopCatchMessage(root.transform));
+        }
+
+        /// <summary>A short scale-up as the callout appears, so it reads as something that just
+        /// happened rather than text that was always there. Deliberately quick: it runs inside the
+        /// beat the fight is already paused for and mustn't add to it.</summary>
+        private IEnumerator PopCatchMessage(Transform target)
+        {
+            const float PopSeconds = 0.12f;
+            const float StartScale = 0.8f;
+            for (float t = 0f; t < PopSeconds; t += Time.deltaTime)
+            {
+                float k = Mathf.SmoothStep(StartScale, 1f, t / PopSeconds);
+                target.localScale = new Vector3(k, k, 1f);
+                yield return null;
+            }
+            target.localScale = Vector3.one;
         }
 
         private void HideCatchMessage()
         {
-            if (catchMessageText != null)
+            var root = CatchMessageObject;
+            if (root != null)
             {
-                catchMessageText.gameObject.SetActive(false);
+                root.transform.localScale = Vector3.one;
+                root.SetActive(false);
             }
         }
 

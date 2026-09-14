@@ -89,9 +89,23 @@ resolving identically:
 Selection defaults to the weakest stocked tier, so Throw can never quietly spend an Ultra Ball the
 player was saving, and re-defaults when the selected tier runs out.
 
-The column and the result message are built by `BattleSceneBuilder` (the Battle scene is generated,
+The column and the result callout are built by `BattleSceneBuilder` (the Battle scene is generated,
 not hand-authored, so this is the house way to change it) and left empty; `CatchTrayView` fills the
-rows at runtime, since counts and odds come from the run and the fight in progress. The drop target
+rows at runtime, since counts and odds come from the run and the fight in progress.
+
+**But the controller builds stand-ins when the scene doesn't supply them.** Depending on the scene
+alone meant that until someone re-ran *Pets > Build Battle Scene*, both serialized fields were null,
+the rows were parented to nothing, and the result was no balls, no callout, no error — and a Throw
+button that appeared to do nothing. A feature that only works if someone remembers an editor menu
+item isn't finished. The fallback logs a warning naming the menu item, so the baked version still
+gets built eventually.
+
+The column is also **140 wide rather than the 170 it started at**. The strip is six 146px party
+slots plus gaps plus the 150px Throw button — 1110 of the reference canvas's 1280 before the column
+exists at all. At 170 the row came to 1292, overflowed, and hung off the right edge, which looks
+exactly like not being drawn. At 140 with a 10px gap the row is 1260. The runtime fallback can't
+assume even that much room, since an un-rebuilt scene laid its strip out with no column in mind, so
+it measures and drops the column to the *left* of the Throw button when the right doesn't fit. The drop target
 is still attached in code, to the enemy *Lead* sprite only — which is what enforces §12.1's rule
 that Support and further-back enemies aren't valid targets: the slot is fixed and the mon under it
 changes as promotions happen. Attaching it also turns on that Image's `raycastTarget`, which is off
@@ -106,7 +120,10 @@ outright while a drag is in progress, so nothing moves under the pointer mid-ges
 
 A resolved throw holds the fight for a beat on "...", then shows either "Caught Pidgey!" in the
 positive colour or "Pidgey broke free!" in the danger colour, then carries on into the next Step
-either way. Without it a successful catch is a mon silently vanishing mid-fight and a failed one is
+either way. It's a framed panel with a short scale-up as it appears, not bare text, so it reads as
+something that just happened rather than a label that was always there — the frame has to be the
+panel's parent because a uGUI object can hold only one Graphic, and it's the frame the controller
+shows and hides. Without it a successful catch is a mon silently vanishing mid-fight and a failed one is
 nothing happening at all — which is indistinguishable from the control being broken.
 
 The target's name is read *before* the throw resolves, because a successful catch removes it from

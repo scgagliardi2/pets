@@ -61,8 +61,13 @@ namespace Pets.EditorTools
         // The ball column sits immediately right of the Throw button, the same height as it, so the
         // three tiers and the button that throws them read as one control (design doc §12.1). Left
         // empty here — CatchTrayView fills it at runtime, as the result panel's catch row is.
-        private const float BallColumnGap = 12f;
-        private static readonly Vector2 BallColumnSize = new Vector2(170f, 150f);
+        //
+        // 140 wide, not the 170 it started at: the strip is six 146px slots plus gaps plus the
+        // 150px Throw button, which is already 1110 of the reference canvas's 1280. At 170 the row
+        // came to 1292 and overflowed, so the column hung off the right edge and looked like it
+        // hadn't been drawn at all. 140 with a 10px gap brings the row to 1260, leaving 10 a side.
+        private const float BallColumnGap = 10f;
+        private static readonly Vector2 BallColumnSize = new Vector2(140f, 150f);
 
         // Tall and wide enough for the rewards list under the headline: a six-mon party is six
         // "Charmander  3/4/1 -> 3/5/1  (+1 Health)" lines, plus the EXP line and a badge or an
@@ -149,7 +154,7 @@ namespace Pets.EditorTools
             var ballColumn = CreateBallColumn(strip,
                 new Rect(throwLeft + ThrowSize.x + BallColumnGap, rowTop, BallColumnSize.x, BallColumnSize.y));
 
-            var catchMessage = CreateCatchMessage(board);
+            var (catchMessageRoot, catchMessageLabel) = CreateCatchMessage(board);
 
             var (resultPanel, resultText, rewardText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
 
@@ -182,7 +187,8 @@ namespace Pets.EditorTools
             SetField(controller, "skipButton", skipButton);
             SetField(controller, "throwButton", throwButton);
             SetField(controller, "ballColumn", ballColumn);
-            SetField(controller, "catchMessageText", catchMessage);
+            SetField(controller, "catchMessageText", catchMessageLabel);
+            SetField(controller, "catchMessageRoot", catchMessageRoot.gameObject);
             SetField(controller, "backButton", backButton);
             SetField(controller, "resultPanel", resultPanel.gameObject);
             SetField(controller, "resultText", resultText);
@@ -390,17 +396,32 @@ namespace Pets.EditorTools
             return column;
         }
 
-        /// <summary>"Caught Pidgey!" / "Pidgey broke free!", over the middle of the field. Inactive
-        /// until a throw resolves — see BattleScreenController.ShowCatchMessage.</summary>
-        private static Text CreateCatchMessage(RectTransform board)
+        /// <summary>"Caught Pidgey!" / "Pidgey broke free!" — a framed callout over the middle of
+        /// the field, inactive until a throw resolves (BattleScreenController.ShowCatchMessage).
+        ///
+        /// A frame with the text inside rather than bare text, so it reads as something that popped
+        /// up rather than a label that was always there. The frame is the parent because a uGUI
+        /// object can hold only one Graphic, and it's the frame the controller shows and hides —
+        /// hence both are handed back.
+        ///
+        /// Sits in the gap between the foe's feet (which end at y 322) and the player's Lead (which
+        /// starts at y 330), so it covers neither.</summary>
+        private static (RectTransform root, Text label) CreateCatchMessage(RectTransform board)
         {
-            // 34pt rather than Theme.FontSizeHeading (20): this is a callout the player is meant to
-            // catch mid-fight, not a label. Sits in the gap between the foe's feet and the player's
-            // Lead, so it covers neither.
-            var text = CreateOverlayText(board, "CatchMessage", string.Empty, 34, TextAnchor.MiddleCenter);
-            PlaceTop(text.rectTransform, new Rect((ReferenceResolution.x - 600f) / 2f, 300f, 600f, 56f));
-            text.gameObject.SetActive(false);
-            return text;
+            var panel = CreateFrame(board, "CatchMessage", Theme.SlotDarkSprite);
+            PlaceTop(panel, new Rect((ReferenceResolution.x - 440f) / 2f, 296f, 440f, 68f));
+            panel.GetComponent<Image>().raycastTarget = false;
+
+            // 30pt rather than Theme.FontSizeHeading (20): a callout the player is meant to catch
+            // mid-fight, not a label.
+            var label = CreateOverlayText(panel, "Label", string.Empty, 30, TextAnchor.MiddleCenter);
+            label.rectTransform.anchorMin = Vector2.zero;
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.offsetMin = new Vector2(12f, 0f);
+            label.rectTransform.offsetMax = new Vector2(-12f, 0f);
+
+            panel.gameObject.SetActive(false);
+            return (panel, label);
         }
 
         /// <summary>The ball and label from the mockup — the main catch trigger (design doc §12.1).
