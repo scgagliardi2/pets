@@ -25,6 +25,11 @@ namespace Pets.Meta
 
         public int Money;
 
+        /// <summary>Pokéballs the run is carrying, by tier (design doc §12.1). Stocked at run start
+        /// by RunBootstrapper rather than bought, until there's a Shop to buy them from — see
+        /// BallInventory.GrantStartingStock.</summary>
+        public BallInventory Balls = new BallInventory();
+
         /// <summary>The run's life total (design doc §4). Hitting 0 ends the run. Refilled by each
         /// badge (<see cref="EarnBadge"/>), so it's a per-Location budget of losses rather than one
         /// that has to last all eight Gyms.</summary>

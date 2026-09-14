@@ -95,6 +95,53 @@ namespace Pets.Simulation
             return events;
         }
 
+        /// <summary>Takes a caught mon out of the fight at a Step boundary — design doc §12.1:
+        /// "the target is removed from the enemy line-up exactly as if it had fainted (their
+        /// Support steps up, or the fight ends if that was their last mon)".
+        ///
+        /// Here rather than in the catching layer because line-up mutation and the promotion
+        /// events that follow from it are the simulator's rules, and having a second place that
+        /// edits a line-up is how those two copies drift apart. The simulator still has no concept
+        /// of a ball or a catch roll — it's told a combatant is leaving and applies the same
+        /// consequences a faint would, differing only in the event kind raised.
+        ///
+        /// Returns the events raised, for the caller to append to the fight's stream. No-ops on a
+        /// combatant that isn't actually in that line-up (already fainted, or the line-up moved on
+        /// while a throw was queued), so a stale throw can't remove someone twice.</summary>
+        public static List<StepEvent> RemoveCaught(BattleState state, Side side, BattleCombatant target)
+        {
+            var events = new List<StepEvent>();
+            var lineUp = state.LineUp(side);
+            if (target == null || !lineUp.Contains(target))
+            {
+                return events;
+            }
+
+            var oldLead = lineUp.Count > 0 ? lineUp[0] : null;
+            var oldSupport = lineUp.Count > 1 ? lineUp[1] : null;
+
+            lineUp.Remove(target);
+            events.Add(new StepEvent
+            {
+                Step = state.StepNumber,
+                Kind = StepEventKind.Caught,
+                SourceSide = side,
+                SourceInstanceId = target.InstanceId
+            });
+
+            var newLead = lineUp.Count > 0 ? lineUp[0] : null;
+            var newSupport = lineUp.Count > 1 ? lineUp[1] : null;
+            if (newLead != null && newLead != oldLead)
+            {
+                events.Add(new StepEvent { Step = state.StepNumber, Kind = StepEventKind.Promotion, SourceSide = side, SourceInstanceId = newLead.InstanceId });
+            }
+            if (newSupport != null && newSupport != oldSupport)
+            {
+                events.Add(new StepEvent { Step = state.StepNumber, Kind = StepEventKind.Promotion, SourceSide = side, SourceInstanceId = newSupport.InstanceId });
+            }
+            return events;
+        }
+
         /// <summary>Battle-end condition per battle-sim-spec.md §9. Callers (BattleRunner) invoke
         /// this once a Step leaves a line-up empty, or a safety cap is hit.</summary>
         public static BattleOutcome DetermineOutcome(BattleState state)

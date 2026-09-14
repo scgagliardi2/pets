@@ -21,6 +21,15 @@ namespace Pets.Simulation
         LifestealHeal,
         PassiveTriggered,
         Faint,
+
+        /// <summary>A wild mon was caught and left the fight (design doc §12.1). Its own kind
+        /// rather than a Faint, because the two mean opposite things to everything downstream: a
+        /// faint offers the mon to the post-fight "pick 1 from defeated" stub
+        /// (Meta/CatchResolver.GetDefeated), while a catch has already put it in the Box and must
+        /// not offer it twice. The simulator never raises this itself — the catching layer does,
+        /// through BattleSimulator.RemoveCaught, so a catch lands in the same event stream as
+        /// everything else that happened in the fight.</summary>
+        Caught,
         Promotion,
         BattleEnd
     }

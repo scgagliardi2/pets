@@ -49,6 +49,17 @@ namespace Pets.Simulation
 
         public BattleState State { get; }
 
+        /// <summary>The fight's own PRNG, exposed so a catch roll at a Step boundary draws from the
+        /// same stream the Steps do (design doc §10.5: a run is reproducible end to end from its
+        /// seed). A catch is part of what happened in this fight; giving it separate entropy would
+        /// make the fight unreplayable, which is exactly what the deterministic design is for.
+        ///
+        /// Note that this does mean throwing a ball shifts every subsequent Step — replaying a
+        /// fight reproduces it only if the same throws are made at the same boundaries. That's
+        /// correct (the throws are part of the history) and is why PvE fights use this runner
+        /// rather than a precomputed log.</summary>
+        public DeterministicRandom Rng => rng;
+
         /// <summary>Convenience entry from the run's own roster — see the note on the precomputed
         /// runner's equivalent for when to build the combatants yourself instead.</summary>
         public OnDemandStepRunner(IReadOnlyList<PokemonInstance> lineUpA, IReadOnlyList<PokemonInstance> lineUpB, int seed)
