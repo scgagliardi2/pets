@@ -91,6 +91,19 @@ namespace Pets.Gameplay
         /// before the result is drawn.</summary>
         [SerializeField] private float catchAttemptSeconds = 0.8f;
 
+        /// <summary>How long "Caught!" / "broke free!" stays up before the fight carries on.</summary>
+        [SerializeField] private float catchResultSeconds = 0.9f;
+
+        [Header("Catching")]
+        /// <summary>The column of ball rows beside the Throw button. Built empty by
+        /// BattleSceneBuilder and filled by CatchTrayView at runtime, the same arrangement as the
+        /// result panel's catch row.</summary>
+        [SerializeField] private RectTransform ballColumn;
+
+        /// <summary>Where "Caught Pidgey!" / "Pidgey broke free!" appears, over the field. Left
+        /// inactive by the builder; only a throw ever shows it.</summary>
+        [SerializeField] private Text catchMessageText;
+
         /// <summary>How long the faint drop takes. Matched to faintRevealSeconds, so the Step's
         /// faint beat lasts exactly as long as the animation it's there to show.</summary>
         private const float FaintDropSeconds = 0.7f;
@@ -278,34 +291,46 @@ namespace Pets.Gameplay
             {
                 throwButton.interactable = false;
                 throwButton.gameObject.SetActive(false);
+                if (ballColumn != null)
+                {
+                    ballColumn.gameObject.SetActive(false);
+                }
                 return;
+            }
+
+            // A run started before catching existed has an empty inventory and would silently offer
+            // a dead column and a dead button. Topping it up here rather than only in
+            // RunBootstrapper means an in-flight save isn't stranded without balls.
+            if (ActiveRun.State.Balls.Total() == 0)
+            {
+                ActiveRun.State.Balls.GrantStartingStock();
             }
 
             var canvas = board.GetComponentInParent<Canvas>();
             var dragLayer = canvas != null ? (RectTransform)canvas.transform : (RectTransform)board.transform;
 
-            catchTray = board.AddComponent<CatchTrayView>();
-            catchTray.Build((RectTransform)board.transform, dragLayer, ActiveRun.State.Balls, OddsLabelFor);
-            catchTray.ThrowAttempted += OnThrowAttempted;
+            catchTray = gameObject.AddComponent<CatchTrayView>();
+            catchTray.Build(ballColumn, dragLayer, ActiveRun.State.Balls, OddsPercentFor);
 
             // Only the Lead slot gets a drop target, per the design doc: Support and further-back
-            // enemies aren't catchable until they're promoted into the Lead slot themselves.
+            // enemies aren't catchable until they're promoted into the Lead slot themselves. The
+            // sprite has to take the raycast for a drop to find it — it doesn't by default, since
+            // nothing else on the field is interactive.
             if (enemyLead?.Sprite != null)
             {
+                enemyLead.Sprite.raycastTarget = true;
                 var target = enemyLead.Sprite.gameObject.AddComponent<CatchTargetView>();
-                target.BallDropped += handle => OnThrowAttempted(handle.Tier);
+                target.BallDropped += tier => OnThrowAttempted(tier);
             }
 
-            // The Throw button is a shortcut for the cheapest ball the run still has, so the
-            // mechanic works without a drag; the tray is the full-fidelity control.
             throwButton.onClick.AddListener(OnThrowButtonClicked);
             RefreshCatchControls();
         }
 
-        private string OddsLabelFor(BallTier tier)
+        private int OddsPercentFor(BallTier tier)
         {
             var target = runner?.State?.LeadB;
-            return target == null ? "-" : $"{CatchOdds.PercentFor(tier, target)}%";
+            return target == null ? 0 : CatchOdds.PercentFor(tier, target);
         }
 
         /// <summary>Whether a ball can be thrown this instant: a live wild Lead, a fight still
@@ -326,18 +351,15 @@ namespace Pets.Gameplay
             catchTray?.SetThrowsAllowed(canThrow);
         }
 
-        /// <summary>The Throw button: throws the weakest ball the run still has. Weakest rather
-        /// than best so the shortcut never quietly spends an Ultra Ball — choosing to spend a good
-        /// ball is a decision the tray exists to make deliberately.</summary>
+        /// <summary>The Throw button — the main trigger. Sends whichever tier is selected in the
+        /// column, which defaults to the weakest the run still has, so it can't quietly spend an
+        /// Ultra Ball the player was saving.</summary>
         private void OnThrowButtonClicked()
         {
-            foreach (var tier in BallCatalog.AllTiers)
+            var tier = catchTray?.Selected;
+            if (tier.HasValue)
             {
-                if (ActiveRun.State.Balls.Has(tier))
-                {
-                    OnThrowAttempted(tier);
-                    return;
-                }
+                OnThrowAttempted(tier.Value);
             }
         }
 
@@ -366,14 +388,17 @@ namespace Pets.Gameplay
             IsAnimating = true;
             bool wasAutoplaying = IsAutoplaying;
             IsAutoplaying = false;
+            RefreshCatchControls();
 
+            string caughtName = NameOfWildLead();
             var result = CatchResolver.TryCatch(
                 ActiveRun.State, runner.State, Side.B, tier, runner.Rng, library);
 
             if (result.SpentBall)
             {
-                // The suspense beat, then the outcome — without the pause a catch is a mon simply
-                // vanishing mid-fight.
+                // The suspense beat — the ball is in the air and the outcome isn't shown yet.
+                // Without it a catch is a mon simply vanishing mid-fight.
+                ShowCatchMessage("...", Theme.TextLight);
                 yield return new WaitForSeconds(catchAttemptSeconds);
             }
 
@@ -387,10 +412,21 @@ namespace Pets.Gameplay
                         caughtInstanceIds.Add(evt.SourceInstanceId);
                     }
                 }
+                ShowCatchMessage($"Caught {caughtName}!", Theme.Positive);
                 RenderCurrent(HealthMode.Keep);
             }
+            else if (result.Outcome == CatchResolver.ThrowOutcome.BrokeFree)
+            {
+                ShowCatchMessage($"{caughtName} broke free!", Theme.Danger);
+            }
 
-            catchTray?.Rebuild();
+            if (result.SpentBall)
+            {
+                yield return new WaitForSeconds(catchResultSeconds);
+            }
+            HideCatchMessage();
+
+            catchTray?.Refresh();
             RefreshCatchControls();
             IsAnimating = false;
 
@@ -401,9 +437,37 @@ namespace Pets.Gameplay
                 ShowResult();
                 yield break;
             }
+            // Otherwise the fight carries straight on into the next Step, hit or miss.
             if (wasAutoplaying)
             {
                 SetAutoplay(true);
+            }
+        }
+
+        /// <summary>The wild Lead's species name, read *before* the throw resolves — a successful
+        /// catch removes it from the line-up, so afterwards there's nothing left to name.</summary>
+        private string NameOfWildLead()
+        {
+            var lead = runner?.State?.LeadB;
+            return lead != null ? DisplayName(lead) : "It";
+        }
+
+        private void ShowCatchMessage(string message, Color color)
+        {
+            if (catchMessageText == null)
+            {
+                return;
+            }
+            catchMessageText.text = message;
+            catchMessageText.color = color;
+            catchMessageText.gameObject.SetActive(true);
+        }
+
+        private void HideCatchMessage()
+        {
+            if (catchMessageText != null)
+            {
+                catchMessageText.gameObject.SetActive(false);
             }
         }
 

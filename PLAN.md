@@ -436,7 +436,11 @@ retired hub scene (ADR 0002, ADR 0003).*
   (`Meta/BallTier`, `Meta/BallInventory`), the HP%/status odds formula (`Meta/CatchOdds`),
   Step-boundary throw resolution (`Meta/CatchResolver.TryCatch`,
   `Simulation/BattleSimulator.RemoveCaught`) and the battle-screen tray and drop target
-  (`Gameplay/CatchTrayView`, `BallDragHandle`, `CatchTargetView`). The "pick 1 from defeated" stub
+  (`Gameplay/CatchTrayView`, `BallDragHandle`, `BallRowSelector`, `CatchTargetView`): a column of
+  three ball rows beside the Throw button showing live odds per tier, throwable by pressing Throw
+  with a tier selected or by dragging a ball onto the enemy Lead, with a "Caught!"/"broke free!"
+  callout either way. The column and the callout are built by `BattleSceneBuilder`, so **re-run
+  Pets > Build Battle Scene after pulling this**. The "pick 1 from defeated" stub
   is still there on the result panel and still works — it covers mons that fainted rather than
   being caught, so the two are complementary, not duplicates.
 - Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center adoption and healing, type synergy bonuses, the

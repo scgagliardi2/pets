@@ -74,18 +74,43 @@ post-fight stub reads `Faint` events to decide what to offer, and a caught mon i
 Box. The simulator still has no concept of a ball or a catch roll — it is told a combatant is
 leaving and applies the consequences.
 
-### 6. The tray and drop target are built at runtime
+### 6. The Throw button is the trigger; the ball column is selection plus a drag source
 
-`Battle.unity` predates catching. Rather than hand-edit the scene asset — a change no test can
-check — `CatchTrayView`, `BallDragHandle` and `CatchTargetView` are attached in code by
-`BattleScreenController`, using the same uGUI vocabulary and `Theme` values the scene uses. The drop
-target goes only on the enemy *Lead* slot, which is what enforces §12.1's rule that Support and
-further-back enemies aren't valid targets: the slot is fixed and the mon under it changes as
-promotions happen.
+The controls are a column of three ball rows — one per tier, each showing its count and its **live
+odds against the current enemy Lead** — sitting immediately right of the Throw button in the party
+strip, so the tiers and the button that throws them read as one control. Three ways in, all
+resolving identically:
 
-Balls are also throwable by tapping, not only dragging, and the existing Throw button throws the
-*weakest* ball the run has. Weakest rather than best so the shortcut can never quietly spend an
-Ultra Ball — spending a good ball should be a deliberate choice made in the tray.
+- **Throw button** — throws the selected tier. The main trigger.
+- **Tap a row** — selects that tier. It deliberately does *not* throw: a stray tap on a 46-pixel row
+  shouldn't spend a ball.
+- **Drag a ball onto the enemy Lead** — throws that tier directly.
+
+Selection defaults to the weakest stocked tier, so Throw can never quietly spend an Ultra Ball the
+player was saving, and re-defaults when the selected tier runs out.
+
+The column and the result message are built by `BattleSceneBuilder` (the Battle scene is generated,
+not hand-authored, so this is the house way to change it) and left empty; `CatchTrayView` fills the
+rows at runtime, since counts and odds come from the run and the fight in progress. The drop target
+is still attached in code, to the enemy *Lead* sprite only — which is what enforces §12.1's rule
+that Support and further-back enemies aren't valid targets: the slot is fixed and the mon under it
+changes as promotions happen. Attaching it also turns on that Image's `raycastTarget`, which is off
+by default because nothing else on the battlefield is interactive.
+
+**Rows are built once and updated in place.** The first implementation destroyed and rebuilt them on
+every refresh, and a refresh happens after every Step — which destroyed the very icon a player was
+dragging, so the drop had nothing to land on and no catch ever resolved. Refreshes are also skipped
+outright while a drag is in progress, so nothing moves under the pointer mid-gesture.
+
+### 7. A throw always shows what it did
+
+A resolved throw holds the fight for a beat on "...", then shows either "Caught Pidgey!" in the
+positive colour or "Pidgey broke free!" in the danger colour, then carries on into the next Step
+either way. Without it a successful catch is a mon silently vanishing mid-fight and a failed one is
+nothing happening at all — which is indistinguishable from the control being broken.
+
+The target's name is read *before* the throw resolves, because a successful catch removes it from
+the line-up and there is then nothing left to name.
 
 ## Consequences
 
@@ -99,6 +124,9 @@ Ultra Ball — spending a good ball should be a deliberate choice made in the tr
 - **A throw made mid-animation is queued** to the Step boundary the Step is about to reach, per
   §12.1's "resolves at the next Step boundary"; a throw made while paused resolves immediately,
   because a paused fight is already sitting on one.
+- **A run that predates catching gets topped up** when it first reaches a PvE fight
+  (`SetUpCatching`), rather than only at run creation. Otherwise an in-flight save is stranded with
+  an empty inventory, a dead column and a dead button, with nothing on screen explaining why.
 - **Balls are currently finite and unreplenishable within a run.** Once the starting stock is gone,
   catching is over until the next run. That's a direct consequence of there being no Shop, and is
   the main reason the Shop is now the natural next piece of work.

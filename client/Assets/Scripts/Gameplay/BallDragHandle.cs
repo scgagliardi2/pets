@@ -1,31 +1,26 @@
-using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Pets.Meta;
 
 namespace Pets.Gameplay
 {
-    /// <summary>One ball in the battle screen's tray: which tier it throws, and the drag plumbing
-    /// that lets it be picked up and dropped on the enemy Lead (design doc §12.1).
+    /// <summary>The draggable ball in one row of the tray: which tier it throws, and the drag
+    /// plumbing that carries it to the enemy Lead (design doc §12.1).
     ///
-    /// The icon itself follows the pointer rather than a ghost copy, and is snapped back by the
-    /// tray rebuilding on drag end — the same approach, and the same reasoning, as the Team
-    /// screen's TeamSlotView/TeamPanelController pair: this type only reports the gesture, and
-    /// CatchTrayView decides what a completed drag means.
+    /// Drag only. A tap on the row selects the tier for the Throw button (BallRowSelector) rather
+    /// than throwing it — spending a ball should take either a deliberate drag or a press of the
+    /// button that says Throw on it, not a stray tap on a 46-pixel row.
     ///
-    /// Also clickable. A tap is a throw at the current Lead, so the mechanic is reachable without a
-    /// drag — which matters on a screen where the target may be the size of a thumb, and makes the
-    /// throw testable in PlayMode without synthesising pointer drags.</summary>
-    public sealed class BallDragHandle : MonoBehaviour,
-        IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
+    /// Reports the gesture and nothing else; CatchTrayView owns what a completed drag means, the
+    /// same split as the Team screen's TeamSlotView/TeamPanelController.</summary>
+    public sealed class BallDragHandle : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
     {
         private CatchTrayView tray;
 
         public BallTier Tier { get; private set; }
 
-        /// <summary>False when the run has none of this tier left, or a throw isn't legal right
-        /// now — the icon is still drawn (so the tier doesn't vanish from the tray) but won't
-        /// drag or click.</summary>
+        /// <summary>False when the run has none of this tier left, or throwing isn't legal right
+        /// now. The ball is still drawn, greyed, so the tier doesn't disappear from the column.</summary>
         public bool IsEnabled { get; private set; }
 
         public RectTransform Icon { get; private set; }
@@ -37,6 +32,10 @@ namespace Pets.Gameplay
             IsEnabled = enabled;
             Icon = icon;
         }
+
+        /// <summary>Updated in place every refresh. Rows are built once and mutated rather than
+        /// rebuilt, so that a refresh mid-drag can't destroy the icon under the pointer.</summary>
+        public void SetEnabled(bool enabled) => IsEnabled = enabled;
 
         public void OnBeginDrag(PointerEventData eventData)
         {
@@ -54,21 +53,11 @@ namespace Pets.Gameplay
             }
         }
 
-        /// <summary>Fires after the target's OnDrop, so by now a landed throw has already been
-        /// resolved and this is only tidying the icon up.</summary>
+        /// <summary>Fires after the drop target's OnDrop, so a landed throw has already resolved and
+        /// this only puts the icon back.</summary>
         public void OnEndDrag(PointerEventData eventData)
         {
             tray.EndBallDrag();
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            // A drag ends with a click event too on some input modules; ignore it so a completed
-            // drag can't also fire a second throw.
-            if (IsEnabled && !eventData.dragging)
-            {
-                tray.ThrowRequested(this);
-            }
         }
     }
 }
