@@ -48,6 +48,16 @@ namespace Pets.Simulation
         /// no longer makes the decision by accident.</summary>
         public int CurrentHP;
 
+        /// <summary>Id of the item this mon is holding (content-schema.md §7), or null. One slot:
+        /// the design doc leaves the slot count open, and one is the smallest thing that plays.</summary>
+        public string HeldItemId;
+
+        /// <summary>The held item's flat stat modifiers, baked in by the run layer when the item is
+        /// equipped (Pets.Meta.HeldItems) the same way <see cref="ResolvedPassive"/> is — so this
+        /// type never has to look an item asset up. ExperienceResolver.Recompute adds it on top of
+        /// the derived growth, which is what keeps an item's bonus from being recomputed away.</summary>
+        public Stats HeldItemStats;
+
         /// <summary>Id of this instance's passive — can differ from the species default if an
         /// item overrides it (content-schema.md §7, not yet implemented).</summary>
         public string PassiveId;

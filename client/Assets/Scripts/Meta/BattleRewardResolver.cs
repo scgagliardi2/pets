@@ -24,6 +24,28 @@ namespace Pets.Meta
         /// <summary>EXP a won fight pays every mon in the line-up. One, for every kind of fight.</summary>
         public const int ExpPerWin = 1;
 
+        /// <summary>Money a won wild fight pays the run — spent at the Pokémon Center
+        /// (PokemonCenterShop). Two or three wins ahead of a Location's Center buys one of its
+        /// Pokémon or its item.</summary>
+        public const int MoneyPerWildWin = 3;
+
+        /// <summary>Money beating a Gym pays: the Location's big payday, carried into the next one.</summary>
+        public const int MoneyPerGymWin = 10;
+
+        public static int MoneyForWin(bool isGym) => isGym ? MoneyPerGymWin : MoneyPerWildWin;
+
+        /// <summary>Pays the run for a win and returns how much.</summary>
+        public static int GrantWinMoney(RunState state, bool isGym)
+        {
+            if (state == null)
+            {
+                return 0;
+            }
+            int amount = MoneyForWin(isGym);
+            state.Money += amount;
+            return amount;
+        }
+
         /// <summary>EXP each mon in the line-up earns for beating <paramref name="enemyLineUp"/>.
         /// Neither argument changes the answer — they're kept because a caller shouldn't have to know
         /// that, and because whether a Gym is worth more is exactly the kind of thing balancing

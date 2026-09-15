@@ -30,7 +30,7 @@ namespace Pets.Meta
         public const int BadgesToWin = 8;
 
         /// <summary>EXP a Location is worth to a mon that fights its way through: two or three wild
-        /// wins, sometimes a Pokémon Center, and the Gym, at one point each
+        /// wins and the Gym, at one point each (the Pokémon Center is a shop and pays none — ADR 0013)
         /// (BattleRewardResolver.ExpPerWin). It's therefore also the EXP the *next* Location's
         /// opposition is pitched forward by — the two have to climb at the same rate, and
         /// RunProgressionTests fails if they drift apart.</summary>

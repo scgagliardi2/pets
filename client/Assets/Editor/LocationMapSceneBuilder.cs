@@ -161,16 +161,15 @@ namespace Pets.EditorTools
             SetField(controller, "newMapButton", newMapButton);
             SetField(controller, "titleText", titleText);
 
-            // Last children of the canvas, so they draw over the map and its chrome; each covers
-            // the screen and takes the raycast, which is what makes them modal. Left inactive —
-            // NodeResolutionController shows the one the node it arrives at calls for.
-            var campOverlay = InstantiateOverlay<CampPanelController>(canvasRect, CampOverlayPrefabBuilder.PrefabPath, "CampOverlay");
+            // Last child of the canvas, so it draws over the map and its chrome; it covers the
+            // screen and takes the raycast, which is what makes it modal. Left inactive —
+            // NodeResolutionController shows it for the node types that resolve in place. (The
+            // Pokémon Center is its own scene, PokemonCenterSceneBuilder.)
             var eventOverlay = InstantiateOverlay<NodeEventOverlayController>(canvasRect, NodeEventOverlayPrefabBuilder.PrefabPath, "NodeEventOverlay");
 
             var resolution = new GameObject("NodeResolution").AddComponent<NodeResolutionController>();
             SetField(resolution, "map", controller);
             SetField(resolution, "resourceBar", resourceBarController);
-            SetField(resolution, "campOverlay", campOverlay);
             SetField(resolution, "eventOverlay", eventOverlay);
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();

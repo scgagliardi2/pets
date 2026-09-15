@@ -35,5 +35,9 @@ namespace Pets.Gameplay
         public const string Battle = "Battle";
 
         public const string Settings = "Settings";
+
+        /// <summary>The Pokémon Center (see PokemonCenterController) — a shop reached by walking onto
+        /// a Location map's Center node.</summary>
+        public const string PokemonCenter = "PokemonCenter";
     }
 }

@@ -26,6 +26,7 @@ namespace Pets.EditorTools
             DevRosterSceneBuilder.ScenePath,
             BattleSceneBuilder.ScenePath,
             SettingsSceneBuilder.ScenePath,
+            PokemonCenterSceneBuilder.ScenePath,
         };
 
         public static void EnsureBuildScenes()
@@ -49,7 +50,7 @@ namespace Pets.EditorTools
         public static void BuildAll()
         {
             UiPrefabBuilder.Build();
-            CampOverlayPrefabBuilder.Build();
+            ShopPrefabBuilder.Build();
             NodeEventOverlayPrefabBuilder.Build();
             EvolutionOverlayPrefabBuilder.Build();
             HomeSceneBuilder.Build();
@@ -64,6 +65,7 @@ namespace Pets.EditorTools
             DevRosterSceneBuilder.Build();
             BattleSceneBuilder.Build();
             SettingsSceneBuilder.Build();
+            PokemonCenterSceneBuilder.Build();
             EnsureBuildScenes();
             Debug.Log($"All {AllScenePaths.Length} scenes rebuilt.");
         }

@@ -198,6 +198,39 @@ namespace Pets.EditorTools
         private static float captureDelay;
         private static double captureAt;
 
+        /// <summary>The Pokémon Center shop, mid-visit: a two-mon party a Location in, some money, one
+        /// Pokémon already adopted so the Adopted stamp shows, and a Muscle Band already bought.</summary>
+        [MenuItem("Pets/Dev/Capture Pokemon Center Scene (Playing)")]
+        public static void CapturePokemonCenterScenePlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState { RunSeed = 777, Money = 16 };
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-0", 4, library));
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[3], "capture-1", 3, library));
+            run.Items.Add("muscle-band");
+            Pets.Meta.PokemonCenterShop.OpenFor(run, "capture-center", 2024, library);
+            run.CenterStock.Pokemon[1] = null;
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+            CapturePlaying(PokemonCenterSceneBuilder.ScenePath);
+        }
+
+        /// <summary>The Team screen's bag and held items: a Lead holding a Muscle Band, and two more
+        /// in the bag.</summary>
+        [MenuItem("Pets/Dev/Capture Team Scene With Items (Playing)")]
+        public static void CaptureTeamItemsPlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var items = AssetDatabase.LoadAssetAtPath<Pets.Data.ItemLibrary>(PokemonCenterSceneBuilder.ItemLibraryPath);
+            var run = new Pets.Meta.RunState();
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-0", 3, library));
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[3], "capture-1", 3, library));
+            run.Box.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[6], "capture-2", 1, library));
+            run.Items.AddRange(new[] { "muscle-band", "muscle-band", "muscle-band" });
+            Pets.Meta.HeldItems.Equip(run, run.LineUp[0], items.AllItems[0], library);
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+            CapturePlaying(TeamSceneBuilder.ScenePath);
+        }
+
         /// <summary>The Team screen with the duplicate question open — the one piece of this
         /// screen that isn't visible in its resting state. Seeds a party whose first two mons are
         /// the same species (which is what makes the gesture ambiguous, see TeamPanelController),

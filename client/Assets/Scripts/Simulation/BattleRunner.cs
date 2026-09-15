@@ -9,7 +9,7 @@ namespace Pets.Simulation
     {
         /// <summary>Convenience entry from the run's own roster: copies each line-up into fresh
         /// combatants and runs. Use the combatant overload instead when anything has to be applied
-        /// at line-up assembly — a Camp buff, type synergy (battle-sim-spec.md §8) — since those
+        /// at line-up assembly — type synergy, say (battle-sim-spec.md §8) — since those
         /// belong on the combatants and must not touch the roster.</summary>
         public static StepLog Run(IReadOnlyList<PokemonInstance> lineUpA, IReadOnlyList<PokemonInstance> lineUpB, int seed) =>
             Run(BattleCombatant.FromLineUp(lineUpA), BattleCombatant.FromLineUp(lineUpB), seed);

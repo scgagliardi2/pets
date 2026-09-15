@@ -27,7 +27,12 @@ that growth reaches — the line-up and nothing else, with the result panel and 
 added so the choice can be seen and judged; and
 [`0011-sudden-death-and-the-limits-of-stacking.md`](docs/architecture-decisions/0011-sudden-death-and-the-limits-of-stacking.md)
 records why a fight that nobody could win used to grind out the Step cap with the HP bars frozen, and
-the three bounds that stop it. Between them they
+the three bounds that stop it;
+[`0012-catching-in-the-wild.md`](docs/architecture-decisions/0012-catching-in-the-wild.md) covers ball
+tiers, catch odds and Step-boundary throws; and
+[`0013-the-pokemon-center-is-a-shop.md`](docs/architecture-decisions/0013-the-pokemon-center-is-a-shop.md)
+turns the Center's EXP-and-buff rest into a shop scene (Poké Balls, held items, Pokémon matched to the
+party), with the money, ball and held-item rules that came with it. Between them they
 list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
@@ -51,11 +56,10 @@ exists — the phase list under it describes intent, and the build has deviated 
   plus an in-run menu, Team, History, Credits, Settings, a Pokédex, a dev roster screen), and the
   **core run loop inside it now works**: arriving at a map node resolves it (ADR 0003). Battle/Gym nodes hand
   an encounter to `Battle.unity` through `PendingBattle` and it writes the result back to the run
-  (Morale, EXP, the stubbed catch, a badge); the Pokémon Center and the Event/PvP stubs
-  resolve as modals on the map. Team's dev button still opens the old throwaway random battle,
+  (Morale, EXP, money, the stubbed catch, a badge); the Pokémon Center opens its own shop scene
+  (ADR 0013) and the Event/PvP stubs resolve as a modal on the map. Team's dev button still opens the old throwaway random battle,
   which strips passives and costs the run nothing — don't mistake one for the other.
-- The systems hanging off that loop are **not** built: the real drag-and-drop catching, Pokémon
-  Center adoption/healing, a Shop, type synergy, the badge-as-relic reward, the Line-Up menu before
+- The systems hanging off that loop are **not** built: Pokémon Center healing, item passives, type synergy, the badge-as-relic reward, the Line-Up menu before
   a Gym, real Event/PvP nodes, and the Trailblazer minigame. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
 - **Growth runs on tiers and a small EXP count, and a run is eight badges** (ADR 0007 for the run,
@@ -72,12 +76,20 @@ exists — the phase list under it describes intent, and the build has deviated 
   species' own line is only a Pokédex entry. Speed never changes at all (see ADR 0009: gaining Speed
   is meant to come from elsewhere, and doesn't exist yet). The Region Hub sits between Locations, and
   enemies are pitched by badge count (`Meta/RunProgression`) on two dials — the pool's tier and the
-  EXP its mons carry — never by the player. **Only the line-up earns** (ADR 0010): a win and a rest
-  pay every mon in the party and nothing in the Box, and `ApplyCatchUp`'s two-point floor applies to
+  EXP its mons carry — never by the player. **Only the line-up earns** (ADR 0010): a win pays every
+  mon in the party and nothing in the Box, and `ApplyCatchUp`'s two-point floor applies to
   the party only — a benched mon stops growing and is caught back up the next time it's fielded.
   `PokemonInstance.CurrentStats` is **derived** by
   `ExperienceResolver.Recompute` — writing stats onto a mon directly works until the next EXP grant
-  silently recomputes them away, which is the one trap in this area. Build a new mon with
+  silently recomputes them away, which is the one trap in this area. A **held item** is the one
+  other input: its modifiers live on `PokemonInstance.HeldItemStats` and `Recompute` adds them, so
+  equip, move and unequip only through `Meta/HeldItems`.
+- **The Pokémon Center is a shop** (ADR 0013): `PokemonCenter.unity` sells balls of every tier, every item in
+  `Content/ItemLibrary.asset`, and three Pokémon matched to the party's tiers and average EXP
+  (`Meta/PokemonCenterShop`). It grants no EXP or buff — Camp's effect is gone. A win pays money
+  (`BattleRewardResolver.GrantWinMoney`), and bought balls go into the same `RunState.Balls` the battle screen throws from. Items are ScriptableObjects
+  under `Content/Items`. The Center scene has one supply card per ball tier and per item **at build time** (room for four), so a new
+  item means registering it in `ItemLibrary` and rebuilding that scene. Build a new mon with
   `ExperienceResolver.CreateAtExp` rather than the bare factory: it roots the mon at its chain's base
   form and evolves it forward, which is what keeps a caught Charmeleon and a raised one the same mon.
 - **Content is all 183 roster species** (ADR 0004), imported by
@@ -218,8 +230,8 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
 
   Parse the NUnit XML for pass/fail counts (the exit code alone isn't enough). Baseline as of
   2026-09-13 (after the tier/EXP refactor and its retune, ADR 0008 + ADR 0009, the party-only EXP
-  change, ADR 0010, and sudden death plus the battle animations, ADR 0011): **198 EditMode,
-  101 PlayMode, all passing**. The same binary runs any Editor entry
+  change, ADR 0010, sudden death plus the battle animations, ADR 0011, catching, ADR 0012, and the
+  Pokémon Center shop, ADR 0013 — re-verified 2026-09-14): **240 EditMode, 111 PlayMode, all passing**. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

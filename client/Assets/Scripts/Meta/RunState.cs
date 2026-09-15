@@ -23,11 +23,27 @@ namespace Pets.Meta
         /// <summary>Morale a run starts with, and what earning a badge restores it to.</summary>
         public const int StartingMorale = 3;
 
-        public int Money;
+        /// <summary>Money a run starts with — enough for a Poké Ball or two before the first win,
+        /// not enough for anything bigger (PokemonCenterShop's prices).</summary>
+        public const int StartingMoney = 5;
+
+        /// <summary>Earned by winning fights (BattleRewardResolver.GrantWinMoney), spent at the
+        /// Pokémon Center (PokemonCenterShop).</summary>
+        public int Money = StartingMoney;
+
+        /// <summary>The bag: ids of items the run owns that no mon is holding, one entry per item —
+        /// two Muscle Bands are two entries. An item on a mon is on PokemonInstance.HeldItemId
+        /// instead, never in both places (see HeldItems).</summary>
+        public List<string> Items = new List<string>();
+
+        /// <summary>What the Pokémon Center the player is standing at has for sale, so leaving it for
+        /// the Team screen and coming back finds the same shelf. Null when no Center has been opened
+        /// in this Location.</summary>
+        public PokemonCenterStock CenterStock;
 
         /// <summary>Pokéballs the run is carrying, by tier (design doc §12.1). Stocked at run start
-        /// by RunBootstrapper rather than bought, until there's a Shop to buy them from — see
-        /// BallInventory.GrantStartingStock.</summary>
+        /// by RunBootstrapper (BallInventory.GrantStartingStock) and bought at the Pokémon Center
+        /// (PokemonCenterShop.BuyBall).</summary>
         public BallInventory Balls = new BallInventory();
 
         /// <summary>The run's life total (design doc §4). Hitting 0 ends the run. Refilled by each
@@ -64,10 +80,6 @@ namespace Pets.Meta
         /// a run is fully reproducible end to end (design doc §10.5).</summary>
         public int RunSeed;
 
-        /// <summary>Set by a Camp node, consumed by the next PvE fight's line-up assembly
-        /// (design doc §5.1: "temporary buff for the next fight"). 0 = no active buff.</summary>
-        public float NextBattleAttackBonusPercent;
-
         public bool IsRunOver => Morale <= 0;
 
         /// <summary>Sets off for a Location chosen at the Region Hub: its map is generated fresh when
@@ -77,10 +89,11 @@ namespace Pets.Meta
             CurrentLocation = location;
             LocationMap = null;
             VisitedMapNodeIds.Clear();
+            CenterStock = null;
         }
 
         /// <summary>The Gym has fallen: the Location is completed and the run returns to the Region
-        /// Hub. Morale is refilled and any unspent Pokémon Center buff lapses with the Location.
+        /// Hub. Morale is refilled and the Location's Pokémon Center shelf is gone with it.
         ///
         /// A run with no Location chosen (a Map scene opened on its own) is credited with the one its
         /// encounters were rolled from, LocationCatalog.Fallback, so a badge is never lost.</summary>
@@ -90,7 +103,7 @@ namespace Pets.Meta
             CurrentLocation = null;
             LocationMap = null;
             VisitedMapNodeIds.Clear();
-            NextBattleAttackBonusPercent = 0f;
+            CenterStock = null;
             Morale = StartingMorale;
         }
 
@@ -184,13 +197,15 @@ namespace Pets.Meta
 
         /// <summary>Lets a mon go for good — it leaves the run entirely rather than moving to the
         /// Box (design doc §7 has no separate storage behind the Box). Irreversible, which is why
-        /// the Team screen asks first; this only enforces the rules.</summary>
+        /// the Team screen asks first; this only enforces the rules. An item it was holding stays
+        /// with the run, back in the bag.</summary>
         public bool ReleaseMon(RosterGroup group, int index)
         {
             if (!CanReleaseMon(group, index))
             {
                 return false;
             }
+            HeldItems.ReturnToBag(this, CollectionFor(group)[index]);
             CollectionFor(group).RemoveAt(index);
             return true;
         }

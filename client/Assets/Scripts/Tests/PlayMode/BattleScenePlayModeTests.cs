@@ -148,7 +148,8 @@ namespace Pets.Tests
             Assert.AreSame(Theme.SlotGoldSprite, Slot(0).Frame.sprite, "the Lead is framed gold");
             Assert.AreSame(Theme.SlotBlueSprite, Slot(1).Frame.sprite, "the Support is framed blue");
 
-            Assert.IsFalse(FindButton("ThrowButton").interactable, "catching isn't built yet");
+            Assert.IsFalse(FindButton("ThrowButton", includeInactive: true).gameObject.activeInHierarchy,
+                "a dev battle isn't a wild encounter, so there's nothing to throw at (ADR 0012)");
             Assert.IsFalse(GameObject.Find("ResultPanel"), "no result before the fight ends");
         }
 
@@ -314,6 +315,9 @@ namespace Pets.Tests
                 Assert.IsFalse(FindButton(devOnly, includeInactive: true).gameObject.activeInHierarchy,
                     $"{devOnly} belongs to the dev battle, not to a node fight");
             }
+
+            Assert.AreEqual(RunState.StartingMoney + BattleRewardResolver.MoneyPerWildWin, run.Money, "a win pays money");
+            StringAssert.Contains($"You earn ${BattleRewardResolver.MoneyPerWildWin}", RewardText());
 
             catchButton.onClick.Invoke();
             Assert.AreEqual(1, run.Box.Count, "the caught mon joins the Box");

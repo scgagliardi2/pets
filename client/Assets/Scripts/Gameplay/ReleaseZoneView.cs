@@ -17,6 +17,12 @@ namespace Pets.Gameplay
 
         public void OnDrop(PointerEventData eventData)
         {
+            // A held-item badge dragged here sits inside a slot too; it must not read as its mon.
+            if (eventData.pointerDrag != null && eventData.pointerDrag.GetComponent<ItemDragSource>() != null)
+            {
+                return;
+            }
+
             var source = eventData.pointerDrag != null
                 ? eventData.pointerDrag.GetComponentInParent<TeamSlotView>()
                 : null;

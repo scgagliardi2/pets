@@ -152,6 +152,13 @@ Equip-slot count per mon is still TBD per design doc §20 — don't hardcode an 
 the slot count a `RunConfig`-style tunable (see the old schema's `ShopConfig` for the pattern) once
 it's implemented.
 
+**As built** (`Data/ItemDefinitionAsset`, ADR 0013): `Id`, `DisplayName`, `Description`, `Price` (what
+the Pokémon Center charges), `StatModifiers` (a `Stats`), and `Icon`. `passiveOverride` and `lockable`
+aren't implemented. Every item asset lives under `Assets/Content/Items` and must be registered in
+`ItemLibrary`, which is also the Pokémon Center's stock list. A mon holds **one** item — a single
+field, not yet the tunable slot count above. The run's unequipped items are `RunState.Items`, one id
+per item.
+
 ## 8. `PokemonInstance` and `BattleCombatant` (runtime, not ScriptableObjects)
 
 Design doc §9 describes a single `PokemonInstance` carrying both run-level and in-battle state.
@@ -169,7 +176,8 @@ The derivation, as of ADR 0009, takes three things: the **base form** of the mon
 of what it became), its lifetime `Exp`, and its `TimesEvolved`. Each point of EXP buys +1 Attack *or*
 +1 Health, drawn deterministically from the mon's `InstanceId` and which point it is against the base
 form's `healthGrowthPercent`; each evolution adds a flat +3 to both. Speed is the base form's and
-never moves. Keying the draw to the instance rather than to a stored roll is what lets the whole stat
+never moves. On top of all that, the held item's `HeldItemStats` are added — the one input that isn't
+species or EXP, and the reason a held item's bonus survives a grant. Keying the draw to the instance rather than to a stored roll is what lets the whole stat
 line be rebuilt from scratch on every grant while still behaving like luck.
 
 `Exp` is lifetime and never resets; the nth evolution lands the moment it reaches
@@ -194,7 +202,8 @@ public class PokemonInstance {
     public int CurrentHP;            // HP it starts its next battle at
     public string PassiveId;         // can differ from species default if item-granted (see ItemDefinition.passiveOverride)
     public PassiveDefinition ResolvedPassive;
-    public List<ItemInstance> EquippedItems;   // not implemented yet
+    public string HeldItemId;        // one held item or null (ADR 0013)
+    public Stats HeldItemStats;      // that item's StatModifiers, baked on equip by Meta/HeldItems; added in Recompute
     public int CaughtWithBallTier;             // not implemented yet
 }
 

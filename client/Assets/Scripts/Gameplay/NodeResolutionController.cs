@@ -14,10 +14,12 @@ namespace Pets.Gameplay
     /// - PvE and Gym leave for the Battle scene, handing it the encounter through PendingBattle.
     ///   BattleScreenController is what writes the result back to the run (Morale, EXP, a catch) and
     ///   sends the player back here — see its OnResultContinueClicked.
-    /// - Camp (shown as the Pokémon Center) and the Event/PvP stubs resolve in place, as overlays
-    ///   over the map. Each covers the canvas and takes the raycast, so the nodes underneath can't
-    ///   be clicked until it's dismissed — without that, walking on would be a way to skip the node
-    ///   you just stepped onto.
+    /// - Camp, shown as the Pokémon Center, leaves for the PokemonCenter scene — a shop (ADR 0013).
+    ///   Its shelf is rolled here, from the node's seed, and kept on the run, so the scene itself
+    ///   only has to show it; its Leave button brings the player back to this node.
+    /// - The Event/PvP stubs resolve in place, as an overlay over the map. It covers the canvas and
+    ///   takes the raycast, so the nodes underneath can't be clicked until it's dismissed — without
+    ///   that, walking on would be a way to skip the node you just stepped onto.
     ///
     /// Resolution is skipped entirely when there's no species library behind the screen
     /// (ActiveRun.Library) — the Map scene opened on its own, with no run, can't roll an encounter
@@ -27,19 +29,15 @@ namespace Pets.Gameplay
     {
         [SerializeField] private LocationMapController map;
         [SerializeField] private ResourceBarController resourceBar;
-        [SerializeField] private CampPanelController campOverlay;
         [SerializeField] private NodeEventOverlayController eventOverlay;
 
         /// <summary>True while a node's overlay is up — the map is not to be walked on until it's
         /// dismissed. Exposed for the PlayMode tests, which resolve a node the way a player does.</summary>
-        public bool IsResolvingInPlace =>
-            campOverlay.gameObject.activeSelf || eventOverlay.gameObject.activeSelf;
+        public bool IsResolvingInPlace => eventOverlay.gameObject.activeSelf;
 
         private void Start()
         {
-            campOverlay.gameObject.SetActive(false);
             eventOverlay.gameObject.SetActive(false);
-            campOverlay.OnContinue = CloseOverlays;
             eventOverlay.OnContinue = CloseOverlays;
 
             map.NodeArrived += OnNodeArrived;
@@ -82,8 +80,8 @@ namespace Pets.Gameplay
                         library, typeBias, run.BadgeCount, run.LineUp.Count, SeedFor(run, node)), node, isGym: true);
                     break;
                 case NodeType.Camp:
-                    campOverlay.gameObject.SetActive(true);
-                    campOverlay.Begin(run);
+                    PokemonCenterShop.OpenFor(run, node.Id, SeedFor(run, node), library);
+                    ScreenFade.TransitionTo(SceneNames.PokemonCenter);
                     break;
                 default:
                     ShowStub(node.Type);
@@ -124,7 +122,6 @@ namespace Pets.Gameplay
 
         private void CloseOverlays()
         {
-            campOverlay.gameObject.SetActive(false);
             eventOverlay.gameObject.SetActive(false);
             resourceBar.Refresh(map.Run);
         }

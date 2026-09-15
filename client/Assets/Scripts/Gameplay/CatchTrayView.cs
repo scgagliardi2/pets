@@ -222,7 +222,9 @@ namespace Pets.Gameplay
             }
         }
 
-        private static Color TintFor(BallTier tier)
+        /// <summary>A tier's colour. Shared with the Pokémon Center's shelf (PokemonCenterController), so
+        /// a ball looks the same where it's bought as where it's thrown.</summary>
+        internal static Color TintFor(BallTier tier)
         {
             switch (tier)
             {

@@ -558,6 +558,98 @@ namespace Pets.Tests
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
         }
 
+        /// <summary>Items are put on mons by dragging (design doc §13, ADR 0013): a bag chip onto a
+        /// card equips it, the badge that then appears on the card hands it to another mon, and the
+        /// badge dropped back on the bag takes it off. Uses the real Muscle Band from the scene's own
+        /// item library, so its +3 Attack is pinned here too.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DraggingItems_EquipsHandsOverAndUnequips()
+        {
+            const string band = "muscle-band";
+            var run = MakeRun(2);
+            run.Items.Add(band);
+            ActiveRun.Begin(run, MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+            int leadAttack = run.LineUp[0].CurrentStats.Attack;
+            int supportAttack = run.LineUp[1].CurrentStats.Attack;
+
+            var chip = GameObject.Find($"BagItem_{band}");
+            Assert.IsNotNull(chip, "the bag should show the item the run owns");
+            yield return DragItem(chip.GetComponent<ItemDragSource>(), SlotView("PartySlot0"));
+
+            Assert.AreEqual(band, run.LineUp[0].HeldItemId);
+            Assert.IsEmpty(run.Items);
+            Assert.AreEqual(leadAttack + 3, run.LineUp[0].CurrentStats.Attack, "a Muscle Band is +3 Attack");
+            StringAssert.Contains($"ATK {leadAttack + 3}", SlotText("PartySlot0", "StatsText"));
+            Assert.IsNull(GameObject.Find($"BagItem_{band}"), "nothing left in the bag");
+
+            yield return DragItem(HeldBadge("PartySlot0"), SlotView("PartySlot1"));
+
+            Assert.IsNull(run.LineUp[0].HeldItemId);
+            Assert.AreEqual(band, run.LineUp[1].HeldItemId);
+            Assert.AreEqual(leadAttack, run.LineUp[0].CurrentStats.Attack);
+            Assert.AreEqual(supportAttack + 3, run.LineUp[1].CurrentStats.Attack);
+            Assert.AreEqual(2, run.LineUp.Count, "dragging an item must never move the mon it's on");
+
+            var badge = HeldBadge("PartySlot1");
+            var bag = Object.FindFirstObjectByType<ItemBagDropZone>();
+            Assert.IsNotNull(bag, "the Team scene should have a bag drop zone");
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = badge.gameObject };
+            badge.OnBeginDrag(eventData);
+            badge.OnDrag(eventData);
+            bag.OnDrop(eventData);
+            badge.OnEndDrag(eventData);
+            yield return null;
+
+            Assert.IsNull(run.LineUp[1].HeldItemId);
+            CollectionAssert.AreEqual(new[] { band }, run.Items);
+            Assert.AreEqual(supportAttack, run.LineUp[1].CurrentStats.Attack);
+        }
+
+        /// <summary>A held-item badge sits inside its mon's slot; dropping it on the release zone must
+        /// not read as the mon being dragged there.</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_DroppingAHeldItemOnTheReleaseZone_DoesNotAskToReleaseTheMon()
+        {
+            const string band = "muscle-band";
+            var run = MakeRun(2);
+            run.LineUp[0].HeldItemId = band;
+            ActiveRun.Begin(run, MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            var badge = HeldBadge("PartySlot0");
+            var zone = Object.FindFirstObjectByType<ReleaseZoneView>();
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = badge.gameObject };
+            badge.OnBeginDrag(eventData);
+            zone.OnDrop(eventData);
+            badge.OnEndDrag(eventData);
+            yield return null;
+
+            Assert.IsNull(GameObject.Find("ReleaseConfirm"));
+            Assert.AreEqual(2, run.LineUp.Count);
+        }
+
+        private static ItemDragSource HeldBadge(string slotName)
+        {
+            var slot = GameObject.Find(slotName);
+            Assert.IsNotNull(slot, $"Expected a slot named '{slotName}' in the Team scene");
+            var badge = slot.transform.Find("Card/HeldItem");
+            Assert.IsNotNull(badge, $"{slotName}'s card should show the item its mon holds");
+            return badge.GetComponent<ItemDragSource>();
+        }
+
+        private static IEnumerator DragItem(ItemDragSource source, TeamSlotView target)
+        {
+            var eventData = new PointerEventData(EventSystem.current) { pointerDrag = source.gameObject };
+            source.OnBeginDrag(eventData);
+            source.OnDrag(eventData);
+            target.OnDrop(eventData);
+            source.OnEndDrag(eventData);
+            yield return null;
+        }
+
         /// <summary>The dev way into a fight until map nodes start one.</summary>
         [UnityTest]
         public IEnumerator TeamScene_DevBattleButton_OpensTheBattleScreen()

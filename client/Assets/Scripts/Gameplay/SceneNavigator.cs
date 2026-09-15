@@ -35,6 +35,11 @@ namespace Pets.Gameplay
 
         public void GoToRegionHub() => ScreenFade.TransitionTo(SceneNames.RegionHub);
 
+        /// <summary>The Pokémon Center's Leave: straight back to the Location map it was walked into
+        /// from. Not <see cref="GoToMap"/> — a Center is only ever reached from a map, so there's no
+        /// Region Hub case to route around.</summary>
+        public void ReturnToMap() => ScreenFade.TransitionTo(SceneNames.Map);
+
         /// <summary>Where "the map" is for this run right now: the Location's map, or the Region Hub
         /// while a next Location still has to be picked.</summary>
         public static string MapOrHubFor(Pets.Meta.RunState state) =>

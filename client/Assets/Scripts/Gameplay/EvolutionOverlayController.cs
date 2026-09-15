@@ -19,7 +19,7 @@ namespace Pets.Gameplay
     /// Every evolution in the report is shown before the panel behind it appears — see
     /// BattleScreenController.ShowResult, which hands the queue over and waits on
     /// <see cref="OnComplete"/>. That callback is assigned at runtime by the host rather than
-    /// serialized, for the same reason CampPanelController's is: the host is a scene-only object
+    /// serialized, for the same reason NodeEventOverlayController's is: the host is a scene-only object
     /// this prefab shouldn't know about.
     ///
     /// The whole thing is skippable with a click anywhere — it's an animation, not a decision, and

@@ -73,7 +73,7 @@ namespace Pets.Gameplay
                     ExperienceResolver.CreateAtExp(support, "player-support", 0, speciesLibrary)
                 }
             };
-            // Standing in for the Shop, which doesn't exist yet — see BallInventory.StartingStock.
+            // A starting stock on top of what the Pokémon Center sells — see BallInventory.StartingStock.
             state.Balls.GrantStartingStock();
             return state;
         }
