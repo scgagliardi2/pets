@@ -123,7 +123,7 @@ namespace Pets.Gameplay
             button.targetGraphic = go.GetComponent<Image>();
             button.onClick.AddListener(() => AddToRun(species));
 
-            PokemonCardBuilder.AddSprite(go.transform, PokemonSprites.Load(species), CardSpriteHeight);
+            PokemonCardBuilder.AddSprite(go.transform, PokemonSprites.LoadFront(species), CardSpriteHeight);
             PokemonCardBuilder.AddLine(go.transform, species.DisplayName, CardNameFontSize, FontStyle.Bold, Theme.TextDark);
             PokemonCardBuilder.AddTypeIcons(go.transform, typeIconPrefab, CardTypesRowHeight,
                 species.Type1, species.HasSecondType, species.Type2);

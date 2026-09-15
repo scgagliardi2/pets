@@ -156,7 +156,7 @@ namespace Pets.Gameplay
             // Named for the species so the PlayMode tests (and anyone reading the hierarchy) can
             // still tell the cards apart by object name.
             card.Root.name = $"Card_{species.DisplayName}";
-            card.Sprite.sprite = PokemonSprites.Load(species);
+            card.Sprite.sprite = PokemonSprites.LoadFront(species);
             card.NameRow.Name.text = species.DisplayName;
             card.NameRow.Attack.text = species.BaseAttack.ToString();
             card.TypeIcons.SetTypes(species.Type1, species.HasSecondType, species.Type2);

@@ -136,6 +136,12 @@ namespace Pets.Gameplay
             public Text Damage;
             public BattleCombatant Bound;
 
+            /// <summary>True for the player's own two slots, which draw the back sprite — the
+            /// over-the-shoulder view the main-series games use, where your mon faces away and the
+            /// foe faces you. A property of the slot rather than of the mon standing in it, since
+            /// the same species can be on either side of the same fight.</summary>
+            public bool DrawsBackSprite;
+
             /// <summary>The drop-and-fade on this slot's sprite. Looked up off the sprite rather
             /// than serialized separately — the two always live on the same object (see
             /// BattleSceneBuilder.CreateFieldSprite), and a slot with one and not the other would
@@ -224,8 +230,8 @@ namespace Pets.Gameplay
             // Copied: the runner removes fainted mons from its own lists, and the strip keeps showing them.
             party = new List<BattleCombatant>(playerLineUp);
 
-            playerLead = new FieldSlot { Role = "Lead", Stats = playerLeadStats, Sprite = playerLeadSprite, Damage = playerLeadDamage };
-            playerSupport = new FieldSlot { Role = "Support", Stats = playerSupportStats, Sprite = playerSupportSprite, Damage = playerSupportDamage };
+            playerLead = new FieldSlot { Role = "Lead", Stats = playerLeadStats, Sprite = playerLeadSprite, Damage = playerLeadDamage, DrawsBackSprite = true };
+            playerSupport = new FieldSlot { Role = "Support", Stats = playerSupportStats, Sprite = playerSupportSprite, Damage = playerSupportDamage, DrawsBackSprite = true };
             enemyLead = new FieldSlot { Role = "Lead", Stats = enemyLeadStats, Sprite = enemyLeadSprite, Damage = enemyLeadDamage };
             enemySupport = new FieldSlot { Role = "Support", Stats = enemySupportStats, Sprite = enemySupportSprite, Damage = enemySupportDamage };
 
@@ -234,7 +240,7 @@ namespace Pets.Gameplay
                 if (i < party.Count)
                 {
                     var species = SpeciesOf(party[i]);
-                    partySlots[i].SetMon(PokemonSprites.Load(species), DisplayName(party[i]));
+                    partySlots[i].SetMon(PokemonSprites.LoadFront(species), DisplayName(party[i]));
                 }
             }
 
@@ -997,7 +1003,9 @@ namespace Pets.Gameplay
                     species != null ? species.Type2 : PokemonType.Normal,
                     mon.CurrentStats.Attack, mon.CurrentStats.Speed, SpeedCeilingFor(mon));
                 slot.Stats.HealthBar.SetHealth(mon.CurrentHP, maxHp);
-                slot.Sprite.sprite = PokemonSprites.Load(species);
+                slot.Sprite.sprite = slot.DrawsBackSprite
+                    ? PokemonSprites.LoadBack(species)
+                    : PokemonSprites.LoadFront(species);
                 // Whoever was here last may have fallen out of frame; the mon promoted into their
                 // place stands where they stood.
                 slot.Faint?.Clear();
