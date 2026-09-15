@@ -99,6 +99,16 @@ namespace Pets.Gameplay
         private const float FallbackBallColumnWidth = 140f;
         private const float FallbackBallColumnGap = 10f;
 
+        [Header("Sprite scale")]
+        /// <summary>Magnification for the player's own two mons. 3x against the foe's 2x reads as
+        /// depth without either side being drawn at a fractional scale, which pixel art can't take
+        /// cleanly. At 3x a median 61px-tall sprite stands about 183px on the 720-unit canvas.</summary>
+        [SerializeField] private float playerSpriteScale = 3f;
+
+        /// <summary>Magnification for the foe's two mons — smaller than the player's because they're
+        /// across the clearing rather than because their sprites are smaller.</summary>
+        [SerializeField] private float enemySpriteScale = 2f;
+
         [Header("Catching")]
         /// <summary>The column of ball rows beside the Throw button. Built empty by
         /// BattleSceneBuilder and filled by CatchTrayView at runtime, the same arrangement as the
@@ -135,6 +145,18 @@ namespace Pets.Gameplay
             public Image Sprite;
             public Text Damage;
             public BattleCombatant Bound;
+
+            /// <summary>How much this slot magnifies its sprite's own pixels — see
+            /// BattleSpriteScaler. The player's side is drawn larger than the foe's, which is the
+            /// depth cue the main-series games use: your mon is stood next to you and theirs is
+            /// across the clearing. Both are whole numbers because these are pixel art.</summary>
+            public float SpriteScale;
+
+            /// <summary>True for the player's own two slots, which draw the back sprite — the
+            /// over-the-shoulder view the main-series games use, where your mon faces away and the
+            /// foe faces you. A property of the slot rather than of the mon standing in it, since
+            /// the same species can be on either side of the same fight.</summary>
+            public bool DrawsBackSprite;
 
             /// <summary>The drop-and-fade on this slot's sprite. Looked up off the sprite rather
             /// than serialized separately — the two always live on the same object (see
@@ -224,17 +246,24 @@ namespace Pets.Gameplay
             // Copied: the runner removes fainted mons from its own lists, and the strip keeps showing them.
             party = new List<BattleCombatant>(playerLineUp);
 
-            playerLead = new FieldSlot { Role = "Lead", Stats = playerLeadStats, Sprite = playerLeadSprite, Damage = playerLeadDamage };
-            playerSupport = new FieldSlot { Role = "Support", Stats = playerSupportStats, Sprite = playerSupportSprite, Damage = playerSupportDamage };
-            enemyLead = new FieldSlot { Role = "Lead", Stats = enemyLeadStats, Sprite = enemyLeadSprite, Damage = enemyLeadDamage };
-            enemySupport = new FieldSlot { Role = "Support", Stats = enemySupportStats, Sprite = enemySupportSprite, Damage = enemySupportDamage };
+            playerLead = new FieldSlot { Role = "Lead", Stats = playerLeadStats, Sprite = playerLeadSprite, Damage = playerLeadDamage, DrawsBackSprite = true, SpriteScale = playerSpriteScale };
+            playerSupport = new FieldSlot { Role = "Support", Stats = playerSupportStats, Sprite = playerSupportSprite, Damage = playerSupportDamage, DrawsBackSprite = true, SpriteScale = playerSpriteScale };
+            enemyLead = new FieldSlot { Role = "Lead", Stats = enemyLeadStats, Sprite = enemyLeadSprite, Damage = enemyLeadDamage, SpriteScale = enemySpriteScale };
+            enemySupport = new FieldSlot { Role = "Support", Stats = enemySupportStats, Sprite = enemySupportSprite, Damage = enemySupportDamage, SpriteScale = enemySpriteScale };
+
+            // Turn each slot's fixed art box into a spot on the ground the mon stands on, so that
+            // sizing a sprite to its own pixels grows it upward instead of out of position.
+            foreach (var slot in new[] { playerLead, playerSupport, enemyLead, enemySupport })
+            {
+                BattleSpriteScaler.AnchorToGround(slot.Sprite != null ? slot.Sprite.rectTransform : null);
+            }
 
             for (int i = 0; i < partySlots.Length; i++)
             {
                 if (i < party.Count)
                 {
                     var species = SpeciesOf(party[i]);
-                    partySlots[i].SetMon(PokemonSprites.Load(species), DisplayName(party[i]));
+                    partySlots[i].SetMon(PokemonSprites.LoadFront(species), DisplayName(party[i]));
                 }
             }
 
@@ -988,7 +1017,12 @@ namespace Pets.Gameplay
                     species != null ? species.Type2 : PokemonType.Normal,
                     mon.CurrentStats.Attack, mon.CurrentStats.Speed, SpeedCeilingFor(mon));
                 slot.Stats.HealthBar.SetHealth(mon.CurrentHP, maxHp);
-                slot.Sprite.sprite = PokemonSprites.Load(species);
+                slot.Sprite.sprite = slot.DrawsBackSprite
+                    ? PokemonSprites.LoadBack(species)
+                    : PokemonSprites.LoadFront(species);
+                // Sized from the sprite's own pixels, not the slot, so a Ralts is drawn small and a
+                // Lugia large — see BattleSpriteScaler.
+                BattleSpriteScaler.ApplyScale(slot.Sprite, slot.SpriteScale);
                 // Whoever was here last may have fallen out of frame; the mon promoted into their
                 // place stands where they stood.
                 slot.Faint?.Clear();

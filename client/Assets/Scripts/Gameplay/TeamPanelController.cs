@@ -405,7 +405,7 @@ namespace Pets.Gameplay
                 : $"T{tier}  {mon.Exp} EXP";
             PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
                 CardRoleFontSize, FontStyle.Bold, Theme.TextMuted).name = "RoleText";
-            PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.Load(species), CardSpriteHeight);
+            PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.LoadFront(species), CardSpriteHeight);
             PokemonCardBuilder.AddLine(card.transform, DisplayName(mon, species),
                 CardNameFontSize, FontStyle.Bold, Theme.TextDark).name = "NameText";
             if (species != null)

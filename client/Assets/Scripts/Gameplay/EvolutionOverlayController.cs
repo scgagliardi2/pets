@@ -116,8 +116,8 @@ namespace Pets.Gameplay
 
         private IEnumerator PlayOne(ExperienceResolver.Evolution evolution)
         {
-            var before = PokemonSprites.Load(evolution.From);
-            var after = PokemonSprites.Load(evolution.To);
+            var before = PokemonSprites.LoadFront(evolution.From);
+            var after = PokemonSprites.LoadFront(evolution.To);
 
             SetFlashAlpha(0f);
             sprite.sprite = before;

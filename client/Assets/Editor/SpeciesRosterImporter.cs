@@ -45,6 +45,7 @@ namespace Pets.EditorTools
         private const string SpeciesLibraryPath = "Assets/Content/PokemonSpeciesLibrary.asset";
         private const string PassiveLibraryPath = "Assets/Content/PassiveLibrary.asset";
         private const string ArtFolder = "Assets/Art/Pokemon";
+        private const string BattleSpriteFolder = "Assets/Art/Pokemon-Sprites/animated_sprites";
 
         /// <summary>Sheet columns, by their spreadsheet letter. Read by letter rather than by
         /// position in the row: a row's cells are only present when they hold a value, so an empty
@@ -176,6 +177,7 @@ namespace Pets.EditorTools
             var updated = new List<string>();
             int unchanged = 0;
             var missingArt = new List<string>();
+            var missingBattleSprites = new List<string>();
 
             // Batched: without this, each CreateAsset kicks off its own import, which at 183
             // species turns a two-second run into a minute of churn.
@@ -194,6 +196,7 @@ namespace Pets.EditorTools
 
                     bool changed = ApplySheetFields(species, entry);
                     changed |= AssignSpriteIfMissing(species, entry, missingArt);
+                    changed |= AssignBattleSpritesIfMissing(species, entry, missingBattleSprites);
                     changed |= AssignDefaultPassiveIfMissing(species, passiveLibrary);
 
                     if (isNew)
@@ -239,6 +242,15 @@ namespace Pets.EditorTools
                 summary.AppendLine("Updated: " + string.Join(", ", updated));
             }
             Debug.Log(summary.ToString().TrimEnd());
+
+            if (missingBattleSprites.Count > 0)
+            {
+                // A warning, not an error: PokemonSprites falls back to the official artwork, so
+                // these render — just in a different style from everything around them.
+                Debug.LogWarning($"{missingBattleSprites.Count} species have no battle sprite and will fall back " +
+                                 $"to their official artwork — expected {BattleSpriteFolder}/front/{{slug}}.gif " +
+                                 $"for: {string.Join(", ", missingBattleSprites)}");
+            }
 
             if (missingArt.Count > 0)
             {
@@ -307,6 +319,58 @@ namespace Pets.EditorTools
             species.Sprite = sprite;
             return true;
         }
+
+        /// <summary>Fills in the front and back battle sprites from
+        /// Assets/Art/Pokemon-Sprites/animated_sprites, which are keyed by PokeAPI name slug rather
+        /// than by id like the artwork next door. Only fills empty references, so a hand-picked
+        /// override sticks — same rule as AssignSpriteIfMissing.
+        ///
+        /// The set doesn't quite match the roster and this is where that shows up. Two species
+        /// (Nidoran-M and Nidoran-F) have no sprite of either facing, and two sprites in the folder
+        /// (Pichu, Magmortar) belong to species the roster doesn't carry — the fetch script that
+        /// produced them clearly worked from a slightly different list. Rather than fail, the two
+        /// Nidoran fall back to their official artwork (PokemonSprites.LoadFront) and get named in
+        /// a warning, because a mismatch that silently renders the wrong art style for two species
+        /// is worse than one that says so.</summary>
+        private static bool AssignBattleSpritesIfMissing(PokemonSpeciesDefinitionAsset species, RosterRow entry, List<string> missing)
+        {
+            if (species.FrontSprite != null && species.BackSprite != null)
+            {
+                return false;
+            }
+
+            string slug = ToSpriteSlug(entry.DisplayName);
+            var front = AssetDatabase.LoadAssetAtPath<Sprite>($"{BattleSpriteFolder}/front/{slug}.gif");
+            var back = AssetDatabase.LoadAssetAtPath<Sprite>($"{BattleSpriteFolder}/back/{slug}.gif");
+
+            if (front == null && back == null)
+            {
+                missing.Add($"{entry.DisplayName} (slug {slug})");
+                return false;
+            }
+
+            bool changed = false;
+            if (species.FrontSprite == null && front != null)
+            {
+                species.FrontSprite = front;
+                changed = true;
+            }
+            if (species.BackSprite == null && back != null)
+            {
+                species.BackSprite = back;
+                changed = true;
+            }
+            return changed;
+        }
+
+        /// <summary>In-game name → the PokeAPI name slug the sprite files are named by: lower case,
+        /// spaces and the gendered Nidoran's suffix hyphen preserved, apostrophes and full stops
+        /// dropped. Ho-Oh is the only name in the roster where the hyphen is part of the real
+        /// name rather than punctuation, and lower-casing handles it without a special case.</summary>
+        private static string ToSpriteSlug(string displayName) =>
+            new string(displayName.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == ' ').ToArray())
+                .Replace(' ', '-')
+                .ToLowerInvariant();
 
         private static bool AssignDefaultPassiveIfMissing(PokemonSpeciesDefinitionAsset species, PassiveLibrary passiveLibrary)
         {

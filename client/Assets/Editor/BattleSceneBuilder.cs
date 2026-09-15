@@ -36,6 +36,13 @@ namespace Pets.EditorTools
 
         // The backdrop's clearing and foreground patch are drawn where these sprites stand. The foe
         // pair's feet stay above y 322, where the player's stat boxes start, so neither is hidden.
+        //
+        // Since BattleSpriteScaler, only the **bottom centre** of each of these rects is used: it's
+        // the spot on the ground the mon stands on, and the sprite is sized from its own pixels
+        // rather than stretched to fill the rect. The width and height still matter for working out
+        // where that bottom centre lands, so they're left as authored — but a big mon now overflows
+        // its rect on purpose, and making one of these taller no longer makes its mon bigger. Change
+        // BattleScreenController's playerSpriteScale / enemySpriteScale for that.
         private static readonly Rect EnemyLeadSpriteRect = new Rect(750f, 130f, 190f, 190f);
         private static readonly Rect EnemySupportSpriteRect = new Rect(985f, 150f, 150f, 150f);
         private static readonly Rect PlayerLeadSpriteRect = new Rect(470f, 330f, 240f, 240f);
@@ -312,6 +319,9 @@ namespace Pets.EditorTools
         /// <summary>A mon standing on the field, with the "-12" for the Step just played as a child,
         /// and the faint animation that drops it off the field when it runs out of HP
         /// (Pets.UI.FaintAnimationView).</summary>
+        /// <summary>A mon's place on the field. The rect positions it; it does not bound it — see
+        /// the note on the sprite rect constants, and BattleSpriteScaler.AnchorToGround, which
+        /// converts the rect to a ground point at runtime so this doesn't need re-authoring.</summary>
         private static Image CreateFieldSprite(RectTransform board, string name, Rect r, bool bottom, out Text damage)
         {
             var go = new GameObject(name, typeof(RectTransform));

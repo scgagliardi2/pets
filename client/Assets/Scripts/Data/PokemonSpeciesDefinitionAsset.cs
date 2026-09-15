@@ -100,6 +100,26 @@ namespace Pets.Data
         [Header("Presentation")]
         public Sprite Sprite;
 
+        /// <summary>The game-style battle sprite seen from the front, under
+        /// Assets/Art/Pokemon-Sprites. This is what every screen that shows a Pokémon draws — cards,
+        /// the Pokédex, the party strip, the foe's side of the battlefield — in place of the
+        /// official artwork in <see cref="Sprite"/>, which is a different look entirely (smooth
+        /// illustration rather than pixel art) and now serves as the fallback.
+        ///
+        /// Nullable, and deliberately so: the sprite set doesn't quite cover the roster (see
+        /// SpeciesRosterImporter.AssignBattleSpritesIfMissing), and a species without one should
+        /// fall back to its artwork rather than draw nothing. Read through
+        /// Pets.Data.PokemonSprites.LoadFront, which does that.</summary>
+        public Sprite FrontSprite;
+
+        /// <summary>The same sprite seen from behind, drawn only for the player's own Lead and
+        /// Support on the battlefield — the over-the-shoulder view the main-series games use, where
+        /// your mon faces away and the foe faces you. Every other place a Pokémon appears uses
+        /// <see cref="FrontSprite"/>.
+        ///
+        /// Nullable on the same terms as FrontSprite; read through Pets.Data.PokemonSprites.LoadBack.</summary>
+        public Sprite BackSprite;
+
         public bool IsLegendary;
     }
 }
