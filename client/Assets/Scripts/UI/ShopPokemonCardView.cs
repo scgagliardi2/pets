@@ -6,12 +6,12 @@ namespace Pets.UI
 {
     /// <summary>One Pokémon up for adoption at the Pokémon Center. See
     /// Assets/Prefabs/UI/ShopPokemonCard.prefab (built by Pets.EditorTools.ShopPrefabBuilder): the
-    /// sprite on a display pad, the battle screen's own BattleStatsBox prefab nested beside it — so a
-    /// mon on the shelf reads exactly like one in a fight — then its tier and growth, a gold price
-    /// tag and an Adopt button. Once adopted the card stays on the shelf, faded, stamped Adopted.</summary>
+    /// sprite on a display pad with its tier and growth under it, the battle screen's own BattleStatsBox
+    /// prefab nested beside it at three-quarter scale — so a mon on the shelf reads exactly like one in
+    /// a fight — then a gold price tag and an Adopt button. Once adopted the card stays on the shelf, faded, stamped Adopted.</summary>
     public sealed class ShopPokemonCardView : MonoBehaviour
     {
-        public static readonly Vector2 Size = new Vector2(720f, 136f);
+        public static readonly Vector2 Size = new Vector2(360f, 140f);
 
         private const float SoldAlpha = 0.55f;
 

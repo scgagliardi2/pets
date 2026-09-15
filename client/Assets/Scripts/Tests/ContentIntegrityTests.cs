@@ -68,16 +68,19 @@ namespace Pets.Tests
             }
         }
 
-        /// <summary>The one item there is, and exactly what it was asked to do.</summary>
-        [Test]
-        public void MuscleBand_GivesPlusThreeAttack_AndNothingElse()
+        /// <summary>Each held item, and exactly what it was asked to do (ADR 0013, ADR 0014).</summary>
+        [TestCase("muscle-band", 3, 0, 0)]
+        [TestCase("assault-vest", 0, 4, 0)]
+        [TestCase("choice-band", 5, -2, 0)]
+        [TestCase("quick-claw", 0, 0, 1)]
+        public void HeldItem_HasItsStatModifiers(string id, int attack, int health, int speed)
         {
-            var band = LoadSingle<ItemLibrary>().GetById("muscle-band");
+            var item = LoadSingle<ItemLibrary>().GetById(id);
 
-            Assert.IsNotNull(band);
-            Assert.AreEqual(3, band.StatModifiers.Attack);
-            Assert.AreEqual(0, band.StatModifiers.Health);
-            Assert.AreEqual(0, band.StatModifiers.Speed);
+            Assert.IsNotNull(item, $"no item '{id}' in ItemLibrary");
+            Assert.AreEqual(attack, item.StatModifiers.Attack);
+            Assert.AreEqual(health, item.StatModifiers.Health);
+            Assert.AreEqual(speed, item.StatModifiers.Speed);
         }
 
         [Test]

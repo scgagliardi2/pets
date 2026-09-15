@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Pets.Meta;
 using Pets.Simulation;
 
 namespace Pets.Gameplay
@@ -29,6 +30,11 @@ namespace Pets.Gameplay
         /// the node and the battle it leads to are one reproducible unit (design doc §10.5).</summary>
         public static int Seed;
 
+        /// <summary>Set for an Event node's Legendary fight (Meta/RoadEvents): what beating it pays on
+        /// top of an ordinary win. Its presence is also what tells the Battle screen the fight is a
+        /// Legendary's — no catching, and no Gym rules.</summary>
+        public static LegendaryBounty Bounty;
+
         public static bool HasPending => EnemyLineUp != null && EnemyLineUp.Count > 0;
 
         public static void Set(List<PokemonInstance> enemyLineUp, string nodeId, bool isGym, int seed)
@@ -37,6 +43,13 @@ namespace Pets.Gameplay
             NodeId = nodeId;
             IsGym = isGym;
             Seed = seed;
+            Bounty = null;
+        }
+
+        public static void SetLegendary(List<PokemonInstance> enemyLineUp, string nodeId, int seed, LegendaryBounty bounty)
+        {
+            Set(enemyLineUp, nodeId, isGym: false, seed);
+            Bounty = bounty;
         }
 
         public static void Clear()
@@ -45,6 +58,7 @@ namespace Pets.Gameplay
             NodeId = null;
             IsGym = false;
             Seed = 0;
+            Bounty = null;
         }
     }
 }

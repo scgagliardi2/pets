@@ -38,25 +38,15 @@ namespace Pets.Gameplay
         public const float CardHeight = 205f;
 
         private const int CardSpriteHeight = 96;
-        private const int CardNameFontSize = 17;
-        private const int CardTypesRowHeight = 30;
-        // 2x the sword's 12px art, so its pixels stay square.
-        private const int CardAttackIconSize = 24;
-        // The card's 6 padding plus this clears the TextBox art's 10-unit border, so the rows that
-        // run edge to edge (name/attack, the bars) don't sit on the bevel.
-        private const int CardSideInset = 6;
 
         /// <summary>One reusable card in the grid, holding the pieces a rebind has to write to.
         /// The alternative — finding them by name or index on the card each time — is the kind of
-        /// thing that breaks silently when a line is added to the card.</summary>
+        /// thing that breaks silently when a line is added to the card. The body is
+        /// PokemonCardBuilder's stat card, the same one the Team screen's slots draw.</summary>
         private sealed class CardView
         {
             public GameObject Root;
-            public Image Sprite;
-            public PokemonCardBuilder.NameAttackRow NameRow;
-            public PokemonCardBuilder.TypeIconRow TypeIcons;
-            public HealthBarView HealthBar;
-            public StatBarView SpeedBar;
+            public PokemonCardBuilder.StatCard Body;
             public PokemonSpeciesDefinitionAsset Species;
         }
 
@@ -131,12 +121,8 @@ namespace Pets.Gameplay
             var view = new CardView
             {
                 Root = go,
-                Sprite = PokemonCardBuilder.AddSprite(go.transform, null, CardSpriteHeight),
-                // Bold — Handjet's Regular weight is too thin to hold up at card sizes.
-                NameRow = PokemonCardBuilder.AddNameAttackRow(go.transform, CardNameFontSize, Theme.TextDark, CardSideInset, CardAttackIconSize),
-                TypeIcons = PokemonCardBuilder.AddTypeIconRow(go.transform, typeIconPrefab, CardTypesRowHeight),
-                HealthBar = PokemonCardBuilder.AddStatBar<HealthBarView>(go.transform, healthBarPrefab, CardSideInset),
-                SpeedBar = PokemonCardBuilder.AddStatBar<StatBarView>(go.transform, speedBarPrefab, CardSideInset),
+                Body = PokemonCardBuilder.AddStatCardBody(go.transform, typeIconPrefab, healthBarPrefab, speedBarPrefab,
+                    CardSpriteHeight),
             };
 
             button.onClick.AddListener(() =>
@@ -158,15 +144,15 @@ namespace Pets.Gameplay
             card.Root.name = $"Card_{species.DisplayName}";
             // Sized in proportion to the rest of the roster rather than stretched to fill the
             // portrait, so the grid shows how big these species actually are relative to each other.
-            PokemonCardBuilder.SetSprite(card.Sprite, PokemonSprites.LoadFront(species), CardSpriteHeight);
-            card.NameRow.Name.text = species.DisplayName;
-            card.NameRow.Attack.text = species.BaseAttack.ToString();
-            card.TypeIcons.SetTypes(species.Type1, species.HasSecondType, species.Type2);
             // A mon shown here hasn't fought, so its HP bar is full — the readout is what tells the
             // species apart. Speed, by contrast, is drawn against the roster-wide cap, so the bar
             // itself compares species.
-            card.HealthBar.SetHealth(species.BaseHealth, species.BaseHealth);
-            card.SpeedBar.SetValue(species.BaseSpeed, SpeciesTier.MaxSpeed);
+            var stats = new Pets.Simulation.Stats
+            {
+                Attack = species.BaseAttack, Health = species.BaseHealth, Speed = species.BaseSpeed,
+            };
+            PokemonCardBuilder.BindStatCard(card.Body, PokemonSprites.LoadFront(species), species.DisplayName, stats,
+                species.BaseHealth, SpeciesTier.MaxSpeed, species.Type1, species.HasSecondType, species.Type2);
             card.Root.SetActive(true);
         }
     }

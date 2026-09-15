@@ -8,9 +8,10 @@ using Pets.UI;
 
 namespace Pets.Gameplay
 {
-    /// <summary>Character Select screen (design doc §3): pick a Starter, then a Secondary, then
-    /// start a run with that Lead/Support pair. Design doc §3's "3 secondary options" narrowing and
-    /// cosmetic customization aren't implemented — both picks show the same grid instead.
+    /// <summary>Character Select screen (design doc §3): pick a Starter, then a Secondary, look over
+    /// the team those two make, then start a run with that Lead/Support pair — or start over and pick
+    /// again. Design doc §3's "3 secondary options" narrowing and cosmetic customization aren't
+    /// implemented — both picks show the same grid instead.
     ///
     /// **Not the whole roster.** The library holds all 183 species (PLAN.md §8), and a run has to
     /// start on something a player can grow out of, so this screen offers only the bottom tier of
@@ -20,7 +21,11 @@ namespace Pets.Gameplay
     /// A Type filter and Attack/Speed/Health sort toggles sit above the grid
     /// (<see cref="SpeciesRosterToolbar"/>) and apply to whichever pick is currently showing —
     /// state carries over between the two picks rather than resetting, since a player filtering for
-    /// e.g. Water types likely wants that for both.</summary>
+    /// e.g. Water types likely wants that for both.
+    ///
+    /// **The team preview** replaces the grid and toolbar once both picks are in: the pair as the
+    /// same cards the grid draws, labelled Lead and Support, with Begin Adventure and Start Over under
+    /// them. Nothing is committed until Begin Adventure.</summary>
     public sealed class CharacterSelectController : MonoBehaviour
     {
         /// <summary>Highest species tier offerable as a Starter or Secondary.
@@ -31,6 +36,8 @@ namespace Pets.Gameplay
         /// growing to do, which is exactly the pick this screen is for. It lives here rather than as
         /// a flag on the asset because it's this screen's rule, not a property of the species.</summary>
         public const int MaxStarterTier = SpeciesTier.MinTier;
+
+        public const string StarterPrompt = "Choose your Starter";
 
         [SerializeField] private PokemonSpeciesLibrary speciesLibrary;
         [SerializeField] private Text promptText;
@@ -45,13 +52,24 @@ namespace Pets.Gameplay
         [SerializeField] private GameObject healthBarPrefab;
         [SerializeField] private GameObject speedBarPrefab;
 
+        [Header("Team preview")]
+        [SerializeField] private GameObject toolbarBar;
+        [SerializeField] private GameObject speciesScroll;
+        [SerializeField] private GameObject teamPreview;
+        [SerializeField] private RectTransform teamPreviewCards;
+        [SerializeField] private Button startOverButton;
+
         private PokemonSpeciesDefinitionAsset chosenLead;
         private PokemonSpeciesDefinitionAsset chosenSupport;
 
         private SpeciesGridView grid;
+        private SpeciesGridView previewCards;
         private SpeciesRosterToolbar toolbar;
         private List<PokemonSpeciesDefinitionAsset> currentPhaseRoster;
         private Action<PokemonSpeciesDefinitionAsset> currentPhaseHandler;
+
+        /// <summary>True while the chosen pair is on show, waiting on Begin Adventure or Start Over.</summary>
+        public bool IsShowingTeamPreview => teamPreview.activeSelf;
 
         /// <summary>The species this screen is allowed to offer. Public so the Pokédex can label
         /// which of its cards are startable and the PlayMode tests can check the grid against the
@@ -62,9 +80,10 @@ namespace Pets.Gameplay
 
         private void Start()
         {
-            confirmButton.gameObject.SetActive(false);
             grid = new SpeciesGridView(gridContainer, typeIconPrefab, healthBarPrefab, speedBarPrefab,
                 () => currentPhaseHandler);
+            // The preview's cards do nothing when pressed — the two buttons under them are the choice.
+            previewCards = new SpeciesGridView(teamPreviewCards, typeIconPrefab, healthBarPrefab, speedBarPrefab, () => null);
             toolbar = new SpeciesRosterToolbar(typeFilterDropdown, sortAttackButton, sortSpeedButton,
                 sortHealthButton, RefreshGrid);
             ShowStarterGrid();
@@ -72,7 +91,10 @@ namespace Pets.Gameplay
 
         private void ShowStarterGrid()
         {
-            promptText.text = "Choose your Starter";
+            chosenLead = null;
+            chosenSupport = null;
+            SetPreviewVisible(false);
+            promptText.text = StarterPrompt;
             currentPhaseRoster = speciesLibrary.AllSpecies.Where(IsStarterEligible).ToList();
             currentPhaseHandler = OnStarterChosen;
             RefreshGrid();
@@ -97,14 +119,20 @@ namespace Pets.Gameplay
         private void OnSecondaryChosen(PokemonSpeciesDefinitionAsset species)
         {
             chosenSupport = species;
+            currentPhaseHandler = null;
             grid.Clear();
-            promptText.text = $"Lead: {chosenLead.DisplayName}   Support: {chosenSupport.DisplayName}";
+            promptText.text = $"Your team   Lead: {chosenLead.DisplayName}   Support: {chosenSupport.DisplayName}";
             confirmButtonLabel.text = "Begin Adventure";
-            confirmButton.gameObject.SetActive(true);
+            SetPreviewVisible(true);
+            previewCards.Show(new[] { chosenLead, chosenSupport });
         }
 
         public void OnConfirmClicked()
         {
+            if (chosenLead == null || chosenSupport == null)
+            {
+                return;
+            }
             PendingRunSelection.Lead = chosenLead;
             PendingRunSelection.Support = chosenSupport;
             // To the Region Hub, which bootstraps the run from this pair and offers its first
@@ -112,11 +140,38 @@ namespace Pets.Gameplay
             ScreenFade.TransitionTo(SceneNames.RegionHub);
         }
 
+        /// <summary>Drops both picks and goes back to choosing a Starter. The toolbar's filter and sort
+        /// are kept, for the same reason they carry over between the two picks.</summary>
+        public void OnStartOverClicked() => ShowStarterGrid();
+
         public void OnSortAttackClicked() => toolbar.SortByAttack();
         public void OnSortSpeedClicked() => toolbar.SortBySpeed();
         public void OnSortHealthClicked() => toolbar.SortByHealth();
         public void OnResetClicked() => toolbar.Reset();
 
-        private void RefreshGrid() => grid.Show(toolbar.Apply(currentPhaseRoster));
+        /// <summary>The grid and toolbar, or the preview and its two buttons — never both.</summary>
+        private void SetPreviewVisible(bool preview)
+        {
+            teamPreview.SetActive(preview);
+            confirmButton.gameObject.SetActive(preview);
+            startOverButton.gameObject.SetActive(preview);
+            toolbarBar.SetActive(!preview);
+            speciesScroll.SetActive(!preview);
+            if (!preview)
+            {
+                previewCards?.Clear();
+            }
+        }
+
+        private void RefreshGrid()
+        {
+            // The toolbar is hidden during the preview, but a queued filter change mustn't bring the
+            // grid back over it.
+            if (currentPhaseHandler == null)
+            {
+                return;
+            }
+            grid.Show(toolbar.Apply(currentPhaseRoster));
+        }
     }
 }

@@ -16,13 +16,13 @@ using Pets.UI;
 
 namespace Pets.Tests
 {
-    /// <summary>The saved Pokémon Center scene against PokemonCenterController (ADR 0013): every Buy
-    /// and Adopt button reaches the controller with its own card index, a purchase shows up in the
-    /// run and on the screen at once, the shelf is the run's own, and Team/Leave navigate.</summary>
+    /// <summary>The saved Pokémon Center scene against PokemonCenterController (ADR 0013, ADR 0014): its
+    /// three rows — Pokémon, Poké Balls, held items — every Buy and Adopt button reaching the controller
+    /// with its own card index, a purchase showing up in the run and on the screen at once, the shelf
+    /// being the run's own, and Team/Leave navigating.</summary>
     public class PokemonCenterScenePlayModeTests
     {
         private const string ScenePath = "Assets/Scenes/PokemonCenter.unity";
-        private const string MuscleBandId = "muscle-band";
 
         [SetUp]
         public void SetUp() => ResetRunState();
@@ -56,20 +56,43 @@ namespace Pets.Tests
             AssertWired(FindButton("TeamButton"), typeof(SceneNavigator), nameof(SceneNavigator.GoToTeam));
             AssertWired(FindButton("LeaveButton"), typeof(SceneNavigator), nameof(SceneNavigator.ReturnToMap));
 
-            var supplies = SupplyCards();
-            Assert.AreEqual(PokemonCenterController.BallCardCount + 1, supplies.Length, "one card per ball tier, then the one item");
-            for (int i = 0; i < supplies.Length; i++)
+            AssertRowWired("PokemonCard", PokemonCenterShop.PokemonOnOffer, nameof(PokemonCenterController.OnAdoptClicked),
+                i => PokemonCard(i).BuyButton);
+            AssertRowWired("BallCard", BallCatalog.AllTiers.Length, nameof(PokemonCenterController.OnBuyBallClicked),
+                i => BallCard(i).BuyButton);
+            AssertRowWired("ItemCard", PokemonCenterShop.ItemsOnOffer, nameof(PokemonCenterController.OnBuyItemClicked),
+                i => ItemCard(i).BuyButton);
+            Assert.AreEqual(BallCatalog.AllTiers.Length + PokemonCenterShop.ItemsOnOffer,
+                Object.FindObjectsByType<ShopItemCardView>(FindObjectsSortMode.None).Length, "one card per ball tier and per item on offer");
+        }
+
+        /// <summary>The item row once ran under the footer on a screen wider than 16:9, because the
+        /// canvas matched width and came out ~600 units tall. Expand keeps it at least 1280x720, and the
+        /// three shelves have to fit above the footer inside that.</summary>
+        [UnityTest]
+        public IEnumerator Shelves_ClearTheFooter_AndTheCanvasNeverShrinksBelowTheReference()
+        {
+            BeginRun(money: 50);
+            yield return LoadScene();
+
+            var scaler = GameObject.Find("Canvas").GetComponent<CanvasScaler>();
+            Assert.AreEqual(CanvasScaler.ScreenMatchMode.Expand, scaler.screenMatchMode,
+                "match-width lets a wide screen cut the canvas below the 720 units the shelves need");
+
+            var footerTop = Corners("BottomBar")[1].y;
+            foreach (var shelf in new[] { "PokemonShelf", "BallShelf", "ItemShelf" })
             {
-                var button = SupplyCard(i).BuyButton;
-                AssertWired(button, typeof(PokemonCenterController), nameof(PokemonCenterController.OnBuySupplyClicked));
-                Assert.AreEqual(i, IntArgument(button), $"SupplyCard{i} should buy its own supply");
+                Assert.GreaterOrEqual(Corners(shelf)[0].y, footerTop - 0.5f, $"{shelf} runs under the footer");
             }
-            for (int i = 0; i < PokemonCenterShop.PokemonOnOffer; i++)
-            {
-                var button = PokemonCard(i).BuyButton;
-                AssertWired(button, typeof(PokemonCenterController), nameof(PokemonCenterController.OnAdoptClicked));
-                Assert.AreEqual(i, IntArgument(button), $"PokemonCard{i} should adopt its own Pokémon");
-            }
+        }
+
+        private static Vector3[] Corners(string name)
+        {
+            var go = GameObject.Find(name);
+            Assert.IsNotNull(go, $"expected {name}");
+            var corners = new Vector3[4];
+            go.GetComponent<RectTransform>().GetWorldCorners(corners);
+            return corners;
         }
 
         [UnityTest]
@@ -88,12 +111,29 @@ namespace Pets.Tests
                 Assert.AreEqual($"${PokemonCenterShop.PokemonPrice}", card.PriceText.text);
                 Assert.IsTrue(card.BuyButton.interactable);
             }
-            for (int i = 0; i < PokemonCenterController.BallCardCount; i++)
+            for (int i = 0; i < BallCatalog.AllTiers.Length; i++)
             {
-                Assert.AreEqual(BallCatalog.DisplayName(BallCatalog.AllTiers[i]), SupplyCard(i).NameText.text);
+                Assert.AreEqual(BallCatalog.DisplayName(BallCatalog.AllTiers[i]), BallCard(i).NameText.text);
             }
             Assert.AreEqual(PokemonCenterController.WelcomeLine, Controller().ClerkText.text);
             Assert.AreEqual("Money 50", Label("MoneyValue"));
+        }
+
+        [UnityTest]
+        public IEnumerator ItemRow_ShowsThreeDifferentItemsRolledOntoTheShelf()
+        {
+            var run = BeginRun(money: 50);
+            yield return LoadScene();
+
+            var stock = Controller().Stock;
+            Assert.AreSame(run.CenterStock, stock);
+            Assert.AreEqual(PokemonCenterShop.ItemsOnOffer, stock.Items.Count, "the item library has at least as many items as the row");
+            CollectionAssert.AllItemsAreUnique(stock.Items);
+            for (int i = 0; i < stock.Items.Count; i++)
+            {
+                Assert.IsNotEmpty(ItemCard(i).NameText.text, $"ItemCard{i} should name its item");
+                Assert.IsTrue(ItemCard(i).BuyButton.interactable);
+            }
         }
 
         [UnityTest]
@@ -103,27 +143,31 @@ namespace Pets.Tests
             int greatCard = System.Array.IndexOf(BallCatalog.AllTiers, BallTier.Great);
             yield return LoadScene();
 
-            SupplyCard(greatCard).BuyButton.onClick.Invoke();
+            BallCard(greatCard).BuyButton.onClick.Invoke();
 
             Assert.AreEqual(1, run.Balls.CountOf(BallTier.Great), "it goes into the inventory the battle tray throws from");
             Assert.AreEqual(20 - PokemonCenterShop.BallPrice(BallTier.Great), run.Money);
             Assert.AreEqual("Balls 1", Label("BallsValue"));
             Assert.AreEqual($"Money {run.Money}", Label("MoneyValue"));
-            Assert.AreEqual("Have 1", SupplyCard(greatCard).OwnedText.text);
+            Assert.AreEqual("Have 1", BallCard(greatCard).OwnedText.text);
+            Assert.IsFalse(BallCard(greatCard).IsSold, "balls never run out");
         }
 
         [UnityTest]
-        public IEnumerator BuyingTheMuscleBand_PutsItInTheBag()
+        public IEnumerator BuyingAnItem_PutsItInTheBag_AndStampsItsCard()
         {
-            var run = BeginRun(money: 20);
+            var run = BeginRun(money: 50);
             yield return LoadScene();
+            string offered = Controller().Stock.Items[0];
 
-            SupplyCard(PokemonCenterController.BallCardCount).BuyButton.onClick.Invoke();
+            ItemCard(0).BuyButton.onClick.Invoke();
 
-            CollectionAssert.AreEqual(new[] { MuscleBandId }, run.Items);
-            Assert.Less(run.Money, 20);
+            CollectionAssert.AreEqual(new[] { offered }, run.Items);
+            Assert.Less(run.Money, 50);
             Assert.AreEqual("Items 1", Label("ItemsValue"));
             StringAssert.Contains("bag", Controller().ClerkText.text);
+            Assert.IsTrue(ItemCard(0).IsSold);
+            Assert.IsFalse(ItemCard(0).BuyButton.interactable, "each item on offer sells once");
         }
 
         [UnityTest]
@@ -151,7 +195,7 @@ namespace Pets.Tests
             BeginRun(money: 0);
             yield return LoadScene();
 
-            foreach (var card in SupplyCards())
+            foreach (var card in Object.FindObjectsByType<ShopItemCardView>(FindObjectsSortMode.None))
             {
                 Assert.IsFalse(card.BuyButton.interactable, $"{card.name} shouldn't be buyable with no money");
             }
@@ -168,6 +212,7 @@ namespace Pets.Tests
 
             StringAssert.Contains("closed", Controller().ClerkText.text);
             Assert.IsNull(GameObject.Find("PokemonCard0"));
+            Assert.IsNull(GameObject.Find("ItemCard0"));
         }
 
         [UnityTest]
@@ -214,21 +259,27 @@ namespace Pets.Tests
             return controller;
         }
 
-        private static ShopItemCardView[] SupplyCards() =>
-            Object.FindObjectsByType<ShopItemCardView>(FindObjectsSortMode.None).OrderBy(c => c.name).ToArray();
+        private static ShopItemCardView BallCard(int index) => Card<ShopItemCardView>($"BallCard{index}");
 
-        private static ShopItemCardView SupplyCard(int index)
+        private static ShopItemCardView ItemCard(int index) => Card<ShopItemCardView>($"ItemCard{index}");
+
+        private static ShopPokemonCardView PokemonCard(int index) => Card<ShopPokemonCardView>($"PokemonCard{index}");
+
+        private static T Card<T>(string name) where T : Component
         {
-            var card = GameObject.Find($"SupplyCard{index}");
-            Assert.IsNotNull(card, $"expected SupplyCard{index}");
-            return card.GetComponent<ShopItemCardView>();
+            var card = GameObject.Find(name);
+            Assert.IsNotNull(card, $"expected {name}");
+            return card.GetComponent<T>();
         }
 
-        private static ShopPokemonCardView PokemonCard(int index)
+        private static void AssertRowWired(string prefix, int count, string methodName, System.Func<int, Button> buttonAt)
         {
-            var card = GameObject.Find($"PokemonCard{index}");
-            Assert.IsNotNull(card, $"expected PokemonCard{index}");
-            return card.GetComponent<ShopPokemonCardView>();
+            for (int i = 0; i < count; i++)
+            {
+                var button = buttonAt(i);
+                AssertWired(button, typeof(PokemonCenterController), methodName);
+                Assert.AreEqual(i, IntArgument(button), $"{prefix}{i} should act on its own card");
+            }
         }
 
         private static string Label(string name)

@@ -12,22 +12,21 @@ using static Pets.EditorTools.SceneBuilderUtils;
 namespace Pets.EditorTools
 {
     /// <summary>Builds the Pokémon Center scene (ADR 0013) as a shop front: a striped awning under the
-    /// title bar and two shelves of cards with a wooden plank under each row — Pokémon up for adoption
-    /// on the left, the Poké Mart's supplies on the right as a two-column grid — with the clerk's line
-    /// in a TextBox across the footer between Team and Leave. The run's Money, Balls and bag sit in the
-    /// title bar.
+    /// title bar and three full-width shelf rows (ADR 0014), each with a dark sign on its left and a
+    /// wooden plank under its cards — Pokémon up for adoption, then Poké Balls, then held items — with
+    /// the clerk's line in a TextBox across the footer between Team and Leave. The run's Money, Balls
+    /// and bag sit in the title bar.
     ///
     /// Every card is an instance of a prefab (ShopPrefabBuilder), and every button the Button prefab,
     /// so the look lives in Assets/Prefabs/UI rather than here. Card counts are fixed at build time:
-    /// PokemonCenterShop.PokemonOnOffer Pokémon cards, then one supply card per ball tier
-    /// (BallCatalog.AllTiers) followed by one per item in the ItemLibrary — add an item, rebuild this
-    /// scene. The supply grid has room for two rows; the build fails loudly rather than laying a third
-    /// row over the footer.
+    /// PokemonCenterShop.PokemonOnOffer Pokémon, one card per ball tier (BallCatalog.AllTiers), and
+    /// PokemonCenterShop.ItemsOnOffer items — which items is rolled per visit, so adding an item to the
+    /// library needs no rebuild. The build fails loudly rather than overrunning a row or the footer.
     ///
     /// Everything is anchored by hand; the only layout group is the resource bar's, left live.
     ///
     /// Re-run via Pets &gt; Build Pokemon Center Scene (or Pets &gt; Build All Scenes) after changing
-    /// PokemonCenterController's serialized fields, the shop prefabs, or the item library.</summary>
+    /// PokemonCenterController's serialized fields or the shop prefabs.</summary>
     public static class PokemonCenterSceneBuilder
     {
         public const string ScenePath = "Assets/Scenes/" + SceneNames.PokemonCenter + ".unity";
@@ -49,16 +48,14 @@ namespace Pets.EditorTools
         private const float AwningStripeWidth = 40f;
         private const float AwningTrimHeight = 4f;
 
-        private const float ShelfTop = TitleHeight + AwningHeight + 12f;
-        private const float ShelfGap = 20f;
-        private const float ShelfHeaderHeight = 40f;
-        private const float ShelfPadding = 10f;
-        private const float PlankHeight = 10f;
-        private const float RowGap = 8f;
-        private const float ColumnGap = 16f;
-
-        private const float PokemonShelfWidth = 740f;
-        private const int SupplyColumns = 2;
+        private const float ShelfTop = TitleHeight + AwningHeight + 8f;
+        private const float ShelfGap = 8f;
+        private const float ShelfInset = 8f;
+        private const float PlankHeight = 8f;
+        private const float ShelfBottomPadding = 4f;
+        private const float SignWidth = 104f;
+        private const float CardsLeft = ShelfInset + SignWidth + 10f;
+        private const float CardGap = 12f;
 
         private static readonly Color Wall = new Color(0.97f, 0.93f, 0.85f);
         private static readonly Color Floor = new Color(0.82f, 0.74f, 0.62f);
@@ -66,6 +63,8 @@ namespace Pets.EditorTools
         private static readonly Color Plank = new Color(0.55f, 0.36f, 0.20f);
         private static readonly Color AwningRed = new Color(0.86f, 0.24f, 0.24f);
         private static readonly Color AwningWhite = new Color(0.98f, 0.97f, 0.94f);
+
+        private static float ShelfWidth => ReferenceResolution.x - 2f * SideMargin;
 
         [MenuItem("Pets/Build Pokemon Center Scene")]
         public static void Build()
@@ -76,14 +75,19 @@ namespace Pets.EditorTools
                 throw new System.InvalidOperationException($"Pokémon Center scene build failed: no ItemLibrary at {ItemLibraryPath}.");
             }
 
-            int supplyCount = PokemonCenterController.BallCardCount + itemLibrary.AllItems.Count;
-            int supplyRows = Mathf.CeilToInt(supplyCount / (float)SupplyColumns);
+            int pokemonCount = PokemonCenterShop.PokemonOnOffer;
+            int ballCount = BallCatalog.AllTiers.Length;
+            int itemCount = PokemonCenterShop.ItemsOnOffer;
+            CheckRowFits("Pokémon", pokemonCount, ShopPokemonCardView.Size);
+            CheckRowFits("Poké Ball", ballCount, ShopItemCardView.Size);
+            CheckRowFits("item", itemCount, ShopItemCardView.Size);
             float floorTop = ReferenceResolution.y - BottomBarHeight;
-            if (ShelfTop + ShelfHeight(supplyRows, ShopItemCardView.Size.y) > floorTop)
+            float shelvesBottom = ShelfTopFor(2, ShopPokemonCardView.Size.y, ShopItemCardView.Size.y)
+                + ShelfHeight(ShopItemCardView.Size.y);
+            if (shelvesBottom > floorTop)
             {
                 throw new System.InvalidOperationException(
-                    $"Pokémon Center scene build failed: {supplyCount} supplies need {supplyRows} rows of the Poké Mart " +
-                    "shelf, and it only has room for two. Rework the shelf layout before adding another item.");
+                    $"Pokémon Center scene build failed: the three shelves reach {shelvesBottom} and the footer starts at {floorTop}.");
             }
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -91,6 +95,11 @@ namespace Pets.EditorTools
             CreateMainCamera(Theme.ChromeBg);
             CreateEventSystem();
             var canvasRect = CreateCanvas(ReferenceResolution);
+            // Expand, not the default match-width: the three shelves need the full 720 units of
+            // height, and matching width on a screen wider than 16:9 (a 2.1:1 window is ~600 units
+            // tall) ran the item row under the footer. Expand guarantees at least 1280x720 at any
+            // aspect, and the extra room lands at the sides, where the shelves are centred.
+            canvasRect.GetComponent<CanvasScaler>().screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
 
             CreatePanel(canvasRect, "Background", Wall, Vector2.zero, Vector2.one);
             var floor = CreatePanel(canvasRect, "Floor", Floor, Vector2.zero, new Vector2(1f, 0f));
@@ -106,28 +115,31 @@ namespace Pets.EditorTools
 
             CreateAwning(canvasRect);
 
-            // Left: Pokémon for adoption, one to a row.
-            int pokemonCount = PokemonCenterShop.PokemonOnOffer;
-            var pokemonShelf = CreateShelf(canvasRect, "PokemonShelf", "Pokémon for Adoption",
-                SideMargin, PokemonShelfWidth, pokemonCount, ShopPokemonCardView.Size.y);
+            var pokemonShelf = CreateShelf(canvasRect, "PokemonShelf", "Pokémon",
+                ShelfTopFor(0, ShopPokemonCardView.Size.y, ShopItemCardView.Size.y), ShopPokemonCardView.Size.y);
             var pokemonCards = new ShopPokemonCardView[pokemonCount];
             for (int i = 0; i < pokemonCount; i++)
             {
                 pokemonCards[i] = PlaceCard<ShopPokemonCardView>(pokemonShelf, ShopPrefabBuilder.ShopPokemonCardPrefabPath,
-                    $"PokemonCard{i}", row: i, column: 0, columns: 1, ShopPokemonCardView.Size);
+                    $"PokemonCard{i}", i, ShopPokemonCardView.Size);
             }
 
-            // Right: supplies — one card per ball tier, then every item — two to a row.
-            float supplyShelfLeft = SideMargin + PokemonShelfWidth + ShelfGap;
-            float supplyShelfWidth = ReferenceResolution.x - supplyShelfLeft - SideMargin;
-            var supplyShelf = CreateShelf(canvasRect, "SupplyShelf", "Poké Mart", supplyShelfLeft, supplyShelfWidth,
-                supplyRows, ShopItemCardView.Size.y);
-            var supplyCards = new ShopItemCardView[supplyCount];
-            for (int i = 0; i < supplyCount; i++)
+            var ballShelf = CreateShelf(canvasRect, "BallShelf", "Poké\nBalls",
+                ShelfTopFor(1, ShopPokemonCardView.Size.y, ShopItemCardView.Size.y), ShopItemCardView.Size.y);
+            var ballCards = new ShopItemCardView[ballCount];
+            for (int i = 0; i < ballCount; i++)
             {
-                supplyCards[i] = PlaceCard<ShopItemCardView>(supplyShelf, ShopPrefabBuilder.ShopItemCardPrefabPath,
-                    $"SupplyCard{i}", row: i / SupplyColumns, column: i % SupplyColumns, columns: SupplyColumns,
-                    ShopItemCardView.Size);
+                ballCards[i] = PlaceCard<ShopItemCardView>(ballShelf, ShopPrefabBuilder.ShopItemCardPrefabPath,
+                    $"BallCard{i}", i, ShopItemCardView.Size);
+            }
+
+            var itemShelf = CreateShelf(canvasRect, "ItemShelf", "Held\nItems",
+                ShelfTopFor(2, ShopPokemonCardView.Size.y, ShopItemCardView.Size.y), ShopItemCardView.Size.y);
+            var itemCards = new ShopItemCardView[itemCount];
+            for (int i = 0; i < itemCount; i++)
+            {
+                itemCards[i] = PlaceCard<ShopItemCardView>(itemShelf, ShopPrefabBuilder.ShopItemCardPrefabPath,
+                    $"ItemCard{i}", i, ShopItemCardView.Size);
             }
 
             // Footer: Team (and back here) on the left, Leave for the map on the right, and the clerk's
@@ -144,11 +156,14 @@ namespace Pets.EditorTools
                 fontSize: 18, anchor: TextAnchor.MiddleLeft);
             clerkText.fontStyle = FontStyle.Bold;
             clerkText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            // Stretched between the two buttons, so a wider-than-reference canvas widens the counter
+            // rather than leaving a gap before Leave.
             var clerkBox = (RectTransform)clerkText.transform.parent;
-            clerkBox.anchorMin = clerkBox.anchorMax = clerkBox.pivot = new Vector2(0f, 0.5f);
-            clerkBox.sizeDelta = new Vector2(
-                ReferenceResolution.x - 2f * SideMargin - TeamButtonWidth - LeaveButtonWidth - 2f * ClerkBoxGap, ClerkBoxHeight);
-            clerkBox.anchoredPosition = new Vector2(SideMargin + TeamButtonWidth + ClerkBoxGap, 0f);
+            clerkBox.anchorMin = new Vector2(0f, 0.5f);
+            clerkBox.anchorMax = new Vector2(1f, 0.5f);
+            clerkBox.pivot = new Vector2(0.5f, 0.5f);
+            clerkBox.offsetMin = new Vector2(SideMargin + TeamButtonWidth + ClerkBoxGap, -ClerkBoxHeight / 2f);
+            clerkBox.offsetMax = new Vector2(-(SideMargin + LeaveButtonWidth + ClerkBoxGap), ClerkBoxHeight / 2f);
 
             var controller = new GameObject("PokemonCenter").AddComponent<PokemonCenterController>();
             SetField(controller, "itemLibrary", itemLibrary);
@@ -156,16 +171,21 @@ namespace Pets.EditorTools
             SetField(controller, "ballsValue", resourceValues[1]);
             SetField(controller, "itemsValue", resourceValues[2]);
             SetField(controller, "clerkText", clerkText);
-            SetField(controller, "supplyCards", supplyCards);
             SetField(controller, "pokemonCards", pokemonCards);
+            SetField(controller, "ballCards", ballCards);
+            SetField(controller, "itemCards", itemCards);
 
-            for (int i = 0; i < supplyCount; i++)
-            {
-                UnityEventTools.AddIntPersistentListener(supplyCards[i].BuyButton.onClick, controller.OnBuySupplyClicked, i);
-            }
             for (int i = 0; i < pokemonCount; i++)
             {
                 UnityEventTools.AddIntPersistentListener(pokemonCards[i].BuyButton.onClick, controller.OnAdoptClicked, i);
+            }
+            for (int i = 0; i < ballCount; i++)
+            {
+                UnityEventTools.AddIntPersistentListener(ballCards[i].BuyButton.onClick, controller.OnBuyBallClicked, i);
+            }
+            for (int i = 0; i < itemCount; i++)
+            {
+                UnityEventTools.AddIntPersistentListener(itemCards[i].BuyButton.onClick, controller.OnBuyItemClicked, i);
             }
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
@@ -180,11 +200,29 @@ namespace Pets.EditorTools
             Debug.Log($"Pokémon Center scene rebuilt at {ScenePath}");
         }
 
-        private static float RowTop(int row, float cardHeight) =>
-            ShelfHeaderHeight + ShelfPadding + row * (cardHeight + PlankHeight + RowGap);
+        private static float ShelfHeight(float cardHeight) => ShelfInset + cardHeight + PlankHeight + ShelfBottomPadding;
 
-        private static float ShelfHeight(int rows, float cardHeight) =>
-            RowTop(rows, cardHeight) - RowGap + ShelfPadding;
+        /// <summary>Row 0 holds the Pokémon; rows 1 and 2 hold supply cards.</summary>
+        private static float ShelfTopFor(int row, float pokemonCardHeight, float supplyCardHeight)
+        {
+            float top = ShelfTop;
+            for (int r = 0; r < row; r++)
+            {
+                top += ShelfHeight(r == 0 ? pokemonCardHeight : supplyCardHeight) + ShelfGap;
+            }
+            return top;
+        }
+
+        private static void CheckRowFits(string what, int count, Vector2 cardSize)
+        {
+            float needed = CardsLeft + count * cardSize.x + (count - 1) * CardGap + ShelfInset;
+            if (needed > ShelfWidth)
+            {
+                throw new System.InvalidOperationException(
+                    $"Pokémon Center scene build failed: {count} {what} cards need {needed} units of a {ShelfWidth}-unit shelf. " +
+                    "Rework the shelf layout before offering more.");
+            }
+        }
 
         /// <summary>Red and white stripes across the top of the shop, with a dark trim under them.</summary>
         private static void CreateAwning(RectTransform canvasRect)
@@ -194,7 +232,9 @@ namespace Pets.EditorTools
             awning.offsetMin = new Vector2(0f, -(TitleHeight + AwningHeight));
             awning.offsetMax = new Vector2(0f, -TitleHeight);
 
-            int stripes = Mathf.CeilToInt(ReferenceResolution.x / AwningStripeWidth);
+            // Enough stripes for a canvas twice the reference width — Expand widens it on wide screens,
+            // and the awning is clipped by nothing, so extra stripes past the edge are simply offscreen.
+            int stripes = Mathf.CeilToInt(2f * ReferenceResolution.x / AwningStripeWidth);
             for (int i = 0; i < stripes; i++)
             {
                 var stripe = CreatePanel(awning, $"Stripe{i}", i % 2 == 0 ? AwningRed : AwningWhite, Vector2.zero, new Vector2(0f, 1f));
@@ -210,37 +250,36 @@ namespace Pets.EditorTools
             trim.offsetMax = new Vector2(0f, AwningTrimHeight);
         }
 
-        /// <summary>A shelf unit: a wooden-backed panel with a dark sign across the top and one plank under
-        /// each row of cards.</summary>
-        private static RectTransform CreateShelf(RectTransform canvasRect, string name, string title, float left, float width,
-            int rows, float cardHeight)
+        /// <summary>A full-width shelf row: a wooden-backed panel with a dark sign naming the row on its
+        /// left and a plank under the cards.</summary>
+        private static RectTransform CreateShelf(RectTransform canvasRect, string name, string title, float top, float cardHeight)
         {
+            // Centred across the top rather than pinned to the left edge, so a canvas wider than the
+            // reference (Expand, on a wide screen) splits its extra room evenly either side.
             var shelf = CreatePanel(canvasRect, name, ShelfBack, Vector2.zero, Vector2.zero);
-            PlaceTopLeft(shelf, left, ShelfTop, width, ShelfHeight(rows, cardHeight));
+            shelf.anchorMin = shelf.anchorMax = shelf.pivot = new Vector2(0.5f, 1f);
+            shelf.sizeDelta = new Vector2(ShelfWidth, ShelfHeight(cardHeight));
+            shelf.anchoredPosition = new Vector2(0f, -top);
 
-            var header = CreatePanel(shelf, "Header", Theme.PanelHeaderBg, new Vector2(0f, 1f), Vector2.one);
-            header.pivot = new Vector2(0.5f, 1f);
-            header.offsetMin = new Vector2(0f, -ShelfHeaderHeight);
-            var headerText = CreatePlainText(header, "Title", title, Theme.FontSizeHeading + 2, TextAnchor.MiddleCenter, Theme.TextLight);
-            headerText.fontStyle = FontStyle.Bold;
-            StretchTo(headerText.rectTransform, Vector2.zero, Vector2.one);
+            var sign = CreatePanel(shelf, "Sign", Theme.PanelHeaderBg, Vector2.zero, Vector2.zero);
+            PlaceTopLeft(sign, ShelfInset, ShelfInset, SignWidth, cardHeight);
+            var signText = CreatePlainText(sign, "Title", title, Theme.FontSizeHeading + 2, TextAnchor.MiddleCenter, Theme.TextLight);
+            signText.fontStyle = FontStyle.Bold;
+            StretchTo(signText.rectTransform, Vector2.zero, Vector2.one);
 
-            for (int i = 0; i < rows; i++)
-            {
-                var plank = CreatePanel(shelf, $"Plank{i}", Plank, new Vector2(0f, 1f), Vector2.one);
-                plank.GetComponent<Image>().raycastTarget = false;
-                plank.pivot = new Vector2(0.5f, 1f);
-                float top = RowTop(i, cardHeight) + cardHeight;
-                plank.offsetMin = new Vector2(4f, -(top + PlankHeight));
-                plank.offsetMax = new Vector2(-4f, -top);
-            }
+            var plank = CreatePanel(shelf, "Plank", Plank, new Vector2(0f, 1f), Vector2.one);
+            plank.GetComponent<Image>().raycastTarget = false;
+            plank.pivot = new Vector2(0.5f, 1f);
+            float plankTop = ShelfInset + cardHeight;
+            plank.offsetMin = new Vector2(4f, -(plankTop + PlankHeight));
+            plank.offsetMax = new Vector2(-4f, -plankTop);
             return shelf;
         }
 
-        /// <summary>A card prefab instance standing on row <paramref name="row"/>'s plank, in column
-        /// <paramref name="column"/> of a grid centred across the shelf.</summary>
-        private static T PlaceCard<T>(RectTransform shelf, string prefabPath, string name, int row, int column, int columns,
-            Vector2 size) where T : Component
+        /// <summary>A card prefab instance standing on the shelf's plank, in column <paramref name="column"/>
+        /// to the right of the sign.</summary>
+        private static T PlaceCard<T>(RectTransform shelf, string prefabPath, string name, int column, Vector2 size)
+            where T : Component
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
             if (prefab == null)
@@ -250,10 +289,7 @@ namespace Pets.EditorTools
             }
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, shelf);
             instance.name = name;
-            var rect = instance.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 1f);
-            rect.sizeDelta = size;
-            rect.anchoredPosition = new Vector2((column - (columns - 1) / 2f) * (size.x + ColumnGap), -RowTop(row, size.y));
+            PlaceTopLeft(instance.GetComponent<RectTransform>(), CardsLeft + column * (size.x + CardGap), ShelfInset, size.x, size.y);
             return instance.GetComponent<T>();
         }
 

@@ -16,11 +16,17 @@ namespace Pets.EditorTools
     /// their text at runtime — see CreateModal.</summary>
     public static class NodeOverlayLayout
     {
-        public static readonly Vector2 DialogSize = new Vector2(620f, 300f);
+        /// <summary>Tall enough for an encounter's scene over three stacked choice buttons (ADR 0014).</summary>
+        public static readonly Vector2 DialogSize = new Vector2(720f, 440f);
 
         private const float Padding = 28f;
         private const float TitleHeight = 52f;
-        private static readonly Vector2 ButtonSize = new Vector2(220f, 64f);
+        private static readonly Vector2 ButtonSize = new Vector2(220f, 52f);
+        private const float ChoiceGap = 8f;
+        private const int ChoiceRows = 3;
+
+        /// <summary>The body stops above the full stack of choice rows, whichever buttons are showing.</summary>
+        private static float ButtonAreaHeight => ChoiceRows * ButtonSize.y + (ChoiceRows - 1) * ChoiceGap;
 
         public static Text AddTitle(RectTransform dialog, string title)
         {
@@ -45,9 +51,30 @@ namespace Pets.EditorTools
             var rect = text.rectTransform;
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
-            rect.offsetMin = new Vector2(Padding, Padding + ButtonSize.y + 16f);
+            rect.offsetMin = new Vector2(Padding, Padding + ButtonAreaHeight + 16f);
             rect.offsetMax = new Vector2(-Padding, -(Padding + TitleHeight + 8f));
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
             return text;
+        }
+
+        /// <summary>Full-width buttons stacked up from the bottom of the dialog, slot 0 at the top, so
+        /// the bottom slot sits where Continue does.</summary>
+        public static UiButton[] AddChoiceButtons(RectTransform dialog, int count)
+        {
+            var buttons = new UiButton[count];
+            for (int i = 0; i < count; i++)
+            {
+                var button = CreateButton(dialog, $"ChoiceButton{i}", "Choice", Theme.ButtonStyle.Primary, useSprite: true);
+                var rect = button.GetComponent<RectTransform>();
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = new Vector2(1f, 0f);
+                rect.pivot = new Vector2(0.5f, 0f);
+                float bottom = Padding + (count - 1 - i) * (ButtonSize.y + ChoiceGap);
+                rect.offsetMin = new Vector2(Padding, bottom);
+                rect.offsetMax = new Vector2(-Padding, bottom + ButtonSize.y);
+                buttons[i] = button.GetComponent<UiButton>();
+            }
+            return buttons;
         }
 
         public static Button AddContinueButton(RectTransform dialog)

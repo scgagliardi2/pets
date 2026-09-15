@@ -37,17 +37,13 @@ namespace Pets.Gameplay
         /// of Box management.</summary>
         public const int SlotsPerRow = 6;
 
-        // Card budget for the 186-unit slot cell TeamSceneBuilder lays out, in the same terms as
-        // CharacterSelectController's: 12 padding + 20 role + 80 sprite + 23 name + 26 types row +
-        // 21 stats + 4 one-unit gaps = 186. Every line sits above Theme.FontSizeSmall (13) rather
-        // than at it — at 13 the stat line came out as grey mush in the first capture of this
-        // screen, the same way Character Select's card did before its sizes went up. Grow
-        // TeamSceneBuilder.SlotHeight with any of these.
-        private const int CardSpriteHeight = 80;
-        private const int CardNameFontSize = 17;
+        // Card budget for the 200-unit slot cell TeamSceneBuilder lays out. The body is Character
+        // Select's stat card (PokemonCardBuilder.AddStatCardBody) with a smaller sprite, under a role
+        // line: 12 padding + 20 role + 72 sprite + 24 name + 30 types + 18 HP + 18 SPD + 5 one-unit
+        // gaps = 199. Grow TeamSceneBuilder.SlotHeight with any of these.
+        private const int CardSpriteHeight = 72;
         private const int CardLineFontSize = 15;
         private const int CardRoleFontSize = 14;
-        private const int CardTypesRowHeight = 26;
 
         /// <summary>How far a Reserve slot's card is faded, to show that everything behind the
         /// Support is dormant (design doc §7) without hiding what it is — far enough to read as
@@ -68,6 +64,8 @@ namespace Pets.Gameplay
         [SerializeField] private Text partyHeaderText;
         [SerializeField] private Text boxHeaderText;
         [SerializeField] private GameObject typeIconPrefab;
+        [SerializeField] private GameObject healthBarPrefab;
+        [SerializeField] private GameObject speedBarPrefab;
 
         [Header("Items")]
         /// <summary>The bag: one ItemChip per kind of item the run owns and no mon is holding.
@@ -403,21 +401,20 @@ namespace Pets.Gameplay
             string growth = toGo.HasValue
                 ? $"T{tier}  Evo in {toGo.Value}"
                 : $"T{tier}  {mon.Exp} EXP";
-            PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
-                CardRoleFontSize, FontStyle.Bold, Theme.TextMuted).name = "RoleText";
-            PokemonCardBuilder.AddSprite(card.transform, PokemonSprites.LoadFront(species), CardSpriteHeight);
-            PokemonCardBuilder.AddLine(card.transform, DisplayName(mon, species),
-                CardNameFontSize, FontStyle.Bold, Theme.TextDark).name = "NameText";
-            if (species != null)
-            {
-                PokemonCardBuilder.AddTypeIcons(card.transform, typeIconPrefab, CardTypesRowHeight,
-                    species.Type1, species.HasSecondType, species.Type2);
-            }
-            // The instance's own stats, not the species' base ones: these are what a fight would
-            // actually use once levels and line-up modifiers are folded in (battle-sim-spec.md §8).
-            PokemonCardBuilder.AddLine(card.transform,
-                $"ATK {mon.CurrentStats.Attack}  HP {mon.CurrentStats.Health}  SPD {mon.CurrentStats.Speed}",
-                CardLineFontSize, FontStyle.Bold, Theme.TextDark).name = "StatsText";
+            // Left-aligned, so the held-item badge pinned to the top-right corner doesn't sit on it.
+            var role = PokemonCardBuilder.AddLine(card.transform, $"{roleLabel}  {growth}",
+                CardRoleFontSize, FontStyle.Bold, Theme.TextMuted);
+            role.name = "RoleText";
+            role.alignment = TextAnchor.MiddleLeft;
+
+            // The same stat card Character Select draws. The instance's own stats, not the species'
+            // base ones: these are what a fight actually uses — growth and a held item included.
+            var body = PokemonCardBuilder.AddStatCardBody(card.transform, typeIconPrefab, healthBarPrefab, speedBarPrefab,
+                CardSpriteHeight);
+            PokemonCardBuilder.BindStatCard(body, PokemonSprites.LoadFront(species), DisplayName(mon, species),
+                mon.CurrentStats, mon.CurrentStats.Health, SpeciesTier.MaxSpeed,
+                species != null ? species.Type1 : PokemonType.Normal, species != null && species.HasSecondType,
+                species != null ? species.Type2 : PokemonType.Normal);
 
             if (!string.IsNullOrEmpty(mon.HeldItemId))
             {

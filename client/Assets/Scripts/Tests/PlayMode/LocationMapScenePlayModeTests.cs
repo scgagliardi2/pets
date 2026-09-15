@@ -306,15 +306,64 @@ namespace Pets.Tests
             yield return WaitForMoveToFinish();
 
             Assert.IsTrue(Resolution().IsResolvingInPlace, $"the Encounter node resolved into nothing. {Seed()}");
+            var roadEvent = Resolution().CurrentEvent;
+            Assert.IsNotNull(roadEvent, "an Event node rolls one of RoadEvents' encounters");
             var overlay = GameObject.Find("NodeEventOverlay");
             Assert.IsNotNull(overlay, "the event overlay should be showing");
-            Assert.AreEqual("Encounter", overlay.transform.Find("Dialog/TitleText").GetComponent<Text>().text);
+            var message = overlay.transform.Find("Dialog/MessageText").GetComponent<Text>();
+            Assert.AreEqual(roadEvent.Title, overlay.transform.Find("Dialog/TitleText").GetComponent<Text>().text);
+            Assert.AreEqual(roadEvent.Body, message.text);
+
+            for (int i = 0; i < roadEvent.Choices.Count; i++)
+            {
+                var button = FindActiveButton($"ChoiceButton{NodeEventOverlayController.SlotForChoice(i, roadEvent.Choices.Count)}");
+                Assert.AreEqual(roadEvent.Choices[i].Available, button.interactable, roadEvent.Choices[i].Label);
+            }
+            Assert.IsNull(FindActiveButtonOrNull("ContinueButton"), "an encounter waits on a choice, not Continue");
+
+            yield return ChooseSafely(roadEvent);
+
+            Assert.IsTrue(Resolution().IsResolvingInPlace, "the overlay stays up to say what the choice did");
+            Assert.AreNotEqual(roadEvent.Body, message.text);
+            Assert.IsNull(FindActiveButtonOrNull("ChoiceButton0"), "the choices are gone once one is taken");
 
             OverlayContinueButton().onClick.Invoke();
             yield return null;
 
             Assert.IsFalse(Resolution().IsResolvingInPlace, "Continue should dismiss the overlay");
             Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId, "the player stays where they walked to");
+        }
+
+        /// <summary>A beaten Legendary pays its bounty on top of the win: the encounter's Challenge
+        /// choice leaves for the Battle scene, and the result comes back to the run.</summary>
+        [UnityTest]
+        public IEnumerator ChallengingALegendary_FightsIt_AndPaysTheBountyOnAWin()
+        {
+            yield return ReloadWithSeededRun(SeedWithOpeningNode(NodeType.Event));
+            var run = ActiveRun.State;
+            var target = OpeningNodeOfType(NodeType.Event);
+            ButtonFor(target.Id).onClick.Invoke();
+            yield return WaitForMoveToFinish();
+
+            // Whatever the node rolled, put the Legendary up in its place — the same thing the node does.
+            var itemLibrary = Resources.FindObjectsOfTypeAll<ItemLibrary>().FirstOrDefault();
+            var legendary = RoadEvents.Build(RoadEventKind.LegendarySighting, run, ActiveRun.Library, itemLibrary, seed: 17);
+            Resolution().ShowRoadEvent(legendary, target.Id);
+            int moneyBefore = run.Money;
+            int itemsBefore = run.Items.Count;
+
+            FindActiveButton($"ChoiceButton{NodeEventOverlayController.SlotForChoice(0, legendary.Choices.Count)}").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Battle);
+
+            var battle = Object.FindFirstObjectByType<BattleScreenController>();
+            StringAssert.StartsWith(RoadEvents.LegendaryInstancePrefix, battle.State.LineUpB[0].InstanceId);
+            Assert.IsTrue(ActiveRun.Library.GetById(battle.State.LineUpB[0].Source.SpeciesId).IsLegendary);
+
+            yield return FinishFightAndReturnToMap();
+
+            Assert.AreEqual(moneyBefore + BattleRewardResolver.MoneyPerWildWin + RoadEvents.LegendaryBountyMoney, run.Money);
+            Assert.AreEqual(itemsBefore + 1, run.Items.Count, "the bounty's held item is in the bag");
+            Assert.AreEqual(target.Id, controller.Traversal.CurrentNodeId);
         }
 
         /// <summary>The Pokémon Center only ever lands mid-run (LocationMapGenerator keeps it to one
@@ -448,6 +497,11 @@ namespace Pets.Tests
 
             if (Resolution().IsResolvingInPlace)
             {
+                var roadEvent = Resolution().CurrentEvent;
+                if (roadEvent != null)
+                {
+                    yield return ChooseSafely(roadEvent);
+                }
                 OverlayContinueButton().onClick.Invoke();
                 yield return null;
                 yield break;
@@ -469,6 +523,17 @@ namespace Pets.Tests
             }
 
             yield return FinishFightAndReturnToMap();
+        }
+
+        /// <summary>Takes the encounter's choice that never starts a fight or risks Morale, so a walk
+        /// through several Event nodes can't end the run: Team Rocket's toll (money only), and every
+        /// other encounter's last choice (slip away, the loose coins, decline).</summary>
+        private static IEnumerator ChooseSafely(RoadEvent roadEvent)
+        {
+            int choice = roadEvent.Kind == RoadEventKind.RocketAmbush ? 0 : roadEvent.Choices.Count - 1;
+            FindActiveButton($"ChoiceButton{NodeEventOverlayController.SlotForChoice(choice, roadEvent.Choices.Count)}")
+                .onClick.Invoke();
+            yield return null;
         }
 
         private IEnumerator FinishFightAndReturnToMap()
@@ -579,11 +644,14 @@ namespace Pets.Tests
 
         private static Button FindActiveButton(string name)
         {
-            var button = Object.FindObjectsByType<Button>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
-                .FirstOrDefault(b => b.name == name);
+            var button = FindActiveButtonOrNull(name);
             Assert.IsNotNull(button, $"expected an active Button named '{name}'");
             return button;
         }
+
+        private static Button FindActiveButtonOrNull(string name) =>
+            Object.FindObjectsByType<Button>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
+                .FirstOrDefault(b => b.name == name);
 
         private IEnumerator WaitForMoveToFinish()
         {

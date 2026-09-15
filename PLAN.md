@@ -198,17 +198,20 @@ doesn't map cleanly onto phase boundaries. The honest summary:
 `CharacterSelect` (pick Starter + Secondary, from the 54 tier-1 species) →
 `RegionHub` (pick one of three Locations) → `LocationMap` (walk a branching node map to the Gym) —
 and **arriving at a node resolves it**: a Battle node fights a seeded wild encounter on `Battle`
-with passives on, the Pokémon Center opens a shop (`PokemonCenter`: Poké Balls, a held item, and
-Pokémon to adopt — ADR 0013), the Gym fights the Location's Gym Leader, and Event/PvP show an honest
-"not built yet" modal. A won fight pays EXP and money and offers the stubbed catch;
+with passives on, the Pokémon Center opens a shop (`PokemonCenter`: three rows — Pokémon to adopt,
+Poké Balls, and three held items — ADR 0013, ADR 0014), the Gym fights the Location's Gym Leader, an
+Event rolls one of four encounters with choices (a Legendary to fight, the Game Corner, a trader, a
+Team Rocket ambush — ADR 0014), and PvP shows an honest "not built yet" modal. A won fight pays EXP and money and offers the stubbed catch;
 a lost one costs Morale, and at 0 Morale the run ends at Home. **Beating a Gym earns a badge and
 returns to the Region Hub** for the next Location; the eighth badge wins the run (ADR 0007).
 `IngameMenu` → `Team` (drag to rearrange/release, and to put items on mons) /
 `DevRoster` (stuff mons into the run) still hang off the map, plus `History` and `Credits` off Home,
 and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run nothing.
 
-*Verified green as of this writing (2026-09-14, after catching and the Pokémon Center shop — ADR 0012, ADR 0013):* 240 EditMode and 111 PlayMode tests pass (see CLAUDE.md for
-the CLI commands).
+*Test status (2026-09-15, after road events, three held items and the three-row Center — ADR 0014):*
+263 EditMode (262 pass) and 113 PlayMode (110 pass). All four failures predate ADR 0014: the Nidoran-F/M
+sprite and card-overflow tests, and the battle HP-drain test the lead lunge broke (see CLAUDE.md for
+details and the CLI commands).
 
 **Built and covered by tests:**
 - `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
@@ -255,7 +258,9 @@ the CLI commands).
     like a battle panel: name with a sword + attack, type icons, and HP/SPD bars from
     `Prefabs/UI/HealthBar.prefab` / `SpeedBar.prefab`, speed drawn against the 3 cap) with a Type
     filter and Attack/Speed/Health sort toggles — both from `Gameplay/SpeciesGridView.cs` and
-    `Gameplay/SpeciesRosterToolbar.cs`, shared with the Pokédex; picks Starter then Secondary, hands
+    `Gameplay/SpeciesRosterToolbar.cs`, shared with the Pokédex; picks Starter then Secondary, then shows the pair as a "Your Team" preview (the grid's own cards,
+    labelled Lead and Support) with Begin Adventure and Start Over — Start Over drops both picks and
+    reopens the Starter grid — and on Begin Adventure hands
     the pair via `PendingRunSelection` to the Region Hub's `RunBootstrapper`. Simpler than design doc §3 (which wants
     a fixed/chosen starter, a narrowed 3-option secondary, and cosmetics) — full §3 parity is open.
   - `Pokedex.unity` — Character Select's grid over the *whole* 183-species roster, reached from
@@ -277,19 +282,25 @@ the CLI commands).
     button comes straight back here (`SceneNavigator.GoToTeam`/`ReturnFromTeam`). Walking onto a node resolves it
     (`Gameplay/NodeResolutionController`): Battle/Gym hand an encounter to `Battle.unity` through
     `PendingBattle` and leave; the Pokémon Center rolls its shelf onto the run and leaves for
-    `PokemonCenter.unity`; the Event/PvP stub (`NodeEventOverlay.prefab`) resolves in place as a
-    modal over the map. Resolution is skipped when the scene is opened with no run behind it, so the
+    `PokemonCenter.unity`; an Event rolls a `Meta/RoadEvents` encounter and resolves it in place in
+    `NodeEventOverlay.prefab` (up to three choice buttons, then the outcome and Continue — the
+    Legendary's Challenge choice leaves for `Battle.unity` with a bounty in `PendingBattle`), and the
+    PvP stub uses the same modal (ADR 0014). Resolution is skipped when the scene is opened with no run behind it, so the
     map is still walkable on its own.
   - `PokemonCenter.unity` — the Pokémon Center as a shop (ADR 0013), via
-    `Gameplay/PokemonCenterController`: a striped awning over two shelves of prefab cards — three
-    Pokémon for adoption (`Prefabs/UI/ShopPokemonCard.prefab`, which nests `BattleStatsBox.prefab`)
-    and the Poké Mart's supplies, one card per ball tier plus one per item in `ItemLibrary`
-    (`ShopItemCard.prefab`, a 2×2 grid) — with gold price tags, a clerk's line in the footer answering each
+    `Gameplay/PokemonCenterController`: a striped awning over three full-width shelf rows (ADR 0014) —
+    three Pokémon for adoption (`Prefabs/UI/ShopPokemonCard.prefab`, which nests `BattleStatsBox.prefab`
+    at 3/4 scale), one card per ball tier, and three held items rolled from `ItemLibrary` per visit
+    (`ShopItemCard.prefab`; each item and each Pokémon sells once, balls never run out) — with gold price tags, a clerk's line in the footer answering each
     purchase, and Money/Balls/Items in the title bar. Team (and back here) and Leave (back to the map's node)
-    in the footer. Opened with no run, it says it's closed.
+    in the footer. Opened with no run, it says it's closed. Its canvas scales with `Expand` rather than
+    the project's usual match-width, so the three rows keep their 720 units of height on screens wider
+    than 16:9 (match-width ran the item row under the footer there).
   - `IngameMenu.unity` — Back to Map / Team / Dev: Add Pokemon / Quit to Home. (This scene is the
     old Forest hub `Game.unity`, converted rather than kept alongside.)
-  - `Team.unity` — party and Box as six slots each, real mon cards via `UI/PokemonCardBuilder.cs`,
+  - `Team.unity` — party and Box as six slots each, each card Character Select's stat card (sprite, name with sword + attack, type icons, HP and SPD
+    bars — `PokemonCardBuilder.AddStatCardBody`, shared with the grid) under a role/growth line, bound to
+    the mon's own current stats,
     slot 0 Lead / slot 1 Support / rest Reserve and dimmed (only the front two are ever active,
     design doc §7), each card showing its tier and how far it is from its next evolution. Drag a card onto
     another slot to trade or append; drag onto the bottom bar's release zone to release it for good
@@ -389,8 +400,9 @@ the 183 species have a real PokeAPI evolution link; the three branching lines (E
 Nincada) deliberately have none, so they can't evolve until a branch picker exists.
 
 **What the loop still doesn't do** (deliberate, see ADR 0003): a lost non-Gym fight costs Morale and
-nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; Event
-and PvP nodes show an honest "not built yet" modal and pay nothing; and the money a win pays and the
+nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; PvP
+nodes show an honest "not built yet" modal and pay nothing, and Event encounters (ADR 0014) are four
+hand-written C# scenes with untuned numbers rather than content assets; and the money a win pays and the
 Pokémon Center's prices are first guesses, untuned (ADR 0013). Balls are bought there per tier, but a
 run is still also handed ADR 0012's fixed starting stock (`BallInventory.GrantStartingStock`) — and
 handed it again when a wild fight starts with none — which undercuts buying them until that shrinks.
@@ -412,8 +424,8 @@ handed it again when a wild fight starts with none — which undercuts buying th
 
 **Also not built:** the Trailblazer minigame
 (no `Scripts/Minigame` folder — it was never started), Pokémon Center healing, items
-beyond the one flat-stat Muscle Band (passive overrides, locking, more than one slot), type synergy bonuses, the badge-as-relic reward behind the Gym win, Event and PvP node
-behavior, paging the Box past six slots, and **any save/load
+beyond the four flat-stat held items (passive overrides, locking, more than one slot), type synergy bonuses, the badge-as-relic reward behind the Gym win, PvP node
+behavior, Event encounters as data or biased by Location, paging the Box past six slots, and **any save/load
 layer** — which is why "Continue Run" only resumes a run still in memory this session, and why
 History has nothing to list even now that a run can be won. Save/load is Phase 2 in the list
 below but is arguably the thing most blocking the shell from feeling real.
@@ -459,8 +471,8 @@ retired hub scene (ADR 0002, ADR 0003).*
   is still there on the result panel and still works — it covers mons that fainted rather than
   being caught, so the two are complementary, not duplicates.
 - Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center healing, type synergy bonuses, the
-  badge-as-relic reward, the Line-Up menu before a Gym, real Event and PvP nodes in
-  place of their modals, and the real Trailblazer minigame (lane obstacle-dodge, Speed/Type-driven
+  badge-as-relic reward, the Line-Up menu before a Gym, a real PvP node in place of its modal
+  (Event nodes now have four encounters — ADR 0014), and the real Trailblazer minigame (lane obstacle-dodge, Speed/Type-driven
   per §6 of the design doc). Each is its own piece of work, not a finishing touch on the above.
 
 **Phase 2 — Content & breadth**
