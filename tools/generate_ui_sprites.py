@@ -187,6 +187,60 @@ ICONS = {
         ],
         {"o": (28, 32, 44), "r": (220, 60, 48), "R": (252, 150, 120), "d": (150, 28, 30)},
     ),
+    # The Assault Vest: a navy vest, open at the neck, with a gold zip down the middle.
+    "ItemAssaultVest": (
+        [
+            "............",
+            "..ooo..ooo..",
+            ".obbo..obbo.",
+            "obbbboobbbbo",
+            "obbbbyybbbbo",
+            "obbbbyybbbbo",
+            "obbbbyybbbbo",
+            "obbbbyybbbbo",
+            "obddbyybddbo",
+            "obddbyybddbo",
+            "oooooooooooo",
+            "............",
+        ],
+        {"o": (28, 32, 44), "b": (60, 72, 150), "d": (38, 46, 108), "y": (240, 196, 40)},
+    ),
+    # The Choice Band: the Muscle Band's shape in the main-series gold, so the two read as kin.
+    "ItemChoiceBand": (
+        [
+            "............",
+            "............",
+            "...oooooo...",
+            "..oYYYYYYo..",
+            ".oYyyyyyyyo.",
+            ".oyyo..oyyo.",
+            ".oyyo..oyyo.",
+            ".oyyyyyyyyo.",
+            ".oddyyyyddo.",
+            "..oddddddo..",
+            "...oooooo...",
+            "............",
+        ],
+        {"o": (28, 32, 44), "y": (236, 188, 40), "Y": (252, 232, 140), "d": (176, 124, 22)},
+    ),
+    # The Quick Claw: three white talons over a blue grip.
+    "ItemQuickClaw": (
+        [
+            "............",
+            "..o...o...o.",
+            ".owo.owo.owo",
+            ".owo.owo.owo",
+            "owwoowwoowwo",
+            "owwoowwoowwo",
+            "obbbbbbbbbbo",
+            "obBBBBBBBBbo",
+            "obbbbbbbbbbo",
+            ".obbbbbbbbo.",
+            "..oooooooo..",
+            "............",
+        ],
+        {"o": (28, 32, 44), "w": (236, 240, 246), "b": (52, 140, 236), "B": (130, 200, 252)},
+    ),
 }
 
 # The solid buttons carry two white specular pixels in each top corner, like the original

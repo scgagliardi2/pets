@@ -140,7 +140,10 @@ namespace Pets.Gameplay
 
         /// <summary>Which fight this is, and therefore what the end of it means — see the class
         /// doc. Decided once, in Start, by whether a map node left an encounter pending.</summary>
-        private enum BattleContext { DevRandom, MapPvE, MapGym }
+        private enum BattleContext { DevRandom, MapPvE, MapGym, MapLegendary }
+
+        /// <summary>A Legendary fight's bounty (PendingBattle.Bounty), paid on a win. Null otherwise.</summary>
+        private LegendaryBounty legendaryBounty;
 
         private sealed class FieldSlot
         {
@@ -299,7 +302,10 @@ namespace Pets.Gameplay
         private List<BattleCombatant> StartNodeFight()
         {
             var state = ActiveRun.State;
-            context = PendingBattle.IsGym ? BattleContext.MapGym : BattleContext.MapPvE;
+            legendaryBounty = PendingBattle.Bounty;
+            context = PendingBattle.IsGym ? BattleContext.MapGym
+                : legendaryBounty != null ? BattleContext.MapLegendary
+                : BattleContext.MapPvE;
             nodeEnemyLineUp = PendingBattle.EnemyLineUp;
             nodeId = PendingBattle.NodeId;
             int seed = PendingBattle.Seed;
@@ -921,6 +927,14 @@ namespace Pets.Gameplay
             resultLines.AddRange(growth.GainLines());
             pendingEvolutions.AddRange(growth.Evolutions);
             resultLines.Add($"You earn ${BattleRewardResolver.GrantWinMoney(state, isGym)}.");
+
+            if (context == BattleContext.MapLegendary)
+            {
+                RoadEvents.GrantBounty(state, legendaryBounty);
+                resultLines.Add(string.IsNullOrEmpty(legendaryBounty.ItemName)
+                    ? $"The Legendary leaves ${legendaryBounty.Money} behind."
+                    : $"The Legendary leaves ${legendaryBounty.Money} and a {legendaryBounty.ItemName} behind.");
+            }
 
             if (isGym)
             {

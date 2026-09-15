@@ -48,6 +48,17 @@ namespace Pets.EditorTools
         public static void CaptureCharacterSelectScenePlaying() =>
             CapturePlaying(CharacterSelectSceneBuilder.ScenePath);
 
+        /// <summary>Character Select after both picks: the team preview with Begin Adventure and Start
+        /// Over. Picks by clicking the grid's first two cards, the way a player would.</summary>
+        [MenuItem("Pets/Dev/Capture Character Select Team Preview (Playing)")]
+        public static void CaptureCharacterSelectTeamPreviewPlaying() =>
+            CapturePlaying(CharacterSelectSceneBuilder.ScenePath, () =>
+            {
+                var content = GameObject.Find("Canvas").transform.Find("SpeciesScroll/Viewport/Content");
+                content.GetComponentsInChildren<UnityEngine.UI.Button>()[0].onClick.Invoke();
+                content.GetComponentsInChildren<UnityEngine.UI.Button>()[0].onClick.Invoke();
+            });
+
         /// <summary>The Pokédex builds its 183 cards in PokedexController.Start, so like
         /// Character Select there's nothing to look at outside Play mode.</summary>
         [MenuItem("Pets/Dev/Capture Pokedex Scene (Playing)")]
@@ -199,19 +210,44 @@ namespace Pets.EditorTools
         private static double captureAt;
 
         /// <summary>The Pokémon Center shop, mid-visit: a two-mon party a Location in, some money, one
-        /// Pokémon already adopted so the Adopted stamp shows, and a Muscle Band already bought.</summary>
+        /// Pokémon adopted and one item bought so both stamps show, and a Muscle Band in the bag.</summary>
         [MenuItem("Pets/Dev/Capture Pokemon Center Scene (Playing)")]
         public static void CapturePokemonCenterScenePlaying()
         {
             var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var items = AssetDatabase.LoadAssetAtPath<Pets.Data.ItemLibrary>(PokemonCenterSceneBuilder.ItemLibraryPath);
             var run = new Pets.Meta.RunState { RunSeed = 777, Money = 16 };
             run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-0", 4, library));
             run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[3], "capture-1", 3, library));
             run.Items.Add("muscle-band");
-            Pets.Meta.PokemonCenterShop.OpenFor(run, "capture-center", 2024, library);
+            Pets.Meta.PokemonCenterShop.OpenFor(run, "capture-center", 2024, library, items);
             run.CenterStock.Pokemon[1] = null;
+            run.CenterStock.Items[2] = null;
             Pets.Gameplay.ActiveRun.Begin(run, library);
             CapturePlaying(PokemonCenterSceneBuilder.ScenePath);
+        }
+
+        /// <summary>An Event node's encounter over the map, waiting on a choice (ADR 0014). Rocket shows
+        /// all three choices with one of them dead (an empty bag); Legendary shows the two-choice shape.</summary>
+        [MenuItem("Pets/Dev/Capture Road Event Rocket (Playing)")]
+        public static void CaptureRoadEventRocketPlaying() => CaptureRoadEvent(Pets.Meta.RoadEventKind.RocketAmbush);
+
+        [MenuItem("Pets/Dev/Capture Road Event Legendary (Playing)")]
+        public static void CaptureRoadEventLegendaryPlaying() => CaptureRoadEvent(Pets.Meta.RoadEventKind.LegendarySighting);
+
+        private static void CaptureRoadEvent(Pets.Meta.RoadEventKind kind)
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var items = AssetDatabase.LoadAssetAtPath<Pets.Data.ItemLibrary>(PokemonCenterSceneBuilder.ItemLibraryPath);
+            var run = new Pets.Meta.RunState { RunSeed = 31, Money = 9 };
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-0", 2, library));
+            run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[3], "capture-1", 2, library));
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+            CapturePlaying(LocationMapSceneBuilder.ScenePath, () =>
+            {
+                var resolution = Object.FindFirstObjectByType<Pets.Gameplay.NodeResolutionController>();
+                resolution.ShowRoadEvent(Pets.Meta.RoadEvents.Build(kind, run, library, items, seed: 5), "capture-node");
+            });
         }
 
         /// <summary>The Team screen's bag and held items: a Lead holding a Muscle Band, and two more

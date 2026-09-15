@@ -238,18 +238,57 @@ namespace Pets.Tests
             Assert.Less(PokemonCenterShop.BallPrice(BallTier.Great), PokemonCenterShop.BallPrice(BallTier.Ultra));
         }
 
-        [Test]
-        public void BuyItem_PutsOneInTheBag_AsOftenAsThePlayerCanPay()
+        private static ItemLibrary MakeItemLibrary(params ItemDefinitionAsset[] items)
         {
-            var band = MakeBand(price: 8);
-            var state = new RunState { Money = 20 };
+            var library = ScriptableObject.CreateInstance<ItemLibrary>();
+            library.AllItems = items.ToList();
+            return library;
+        }
 
-            Assert.AreEqual(PokemonCenterShop.Purchase.Bought, PokemonCenterShop.BuyItem(state, band));
-            Assert.AreEqual(PokemonCenterShop.Purchase.Bought, PokemonCenterShop.BuyItem(state, band));
-            Assert.AreEqual(PokemonCenterShop.Purchase.NotEnoughMoney, PokemonCenterShop.BuyItem(state, band));
+        [Test]
+        public void BuyItem_PutsTheOfferedItemInTheBag_OnlyOnce()
+        {
+            var (state, library) = MakeRun();
+            state.Money = 20;
+            var items = MakeItemLibrary(MakeBand("a", price: 8), MakeBand("b", price: 8), MakeBand("c", price: 8));
+            var stock = PokemonCenterShop.OpenFor(state, "center", seed: 3, library, items);
+            string offered = stock.Items[0];
 
-            CollectionAssert.AreEqual(new[] { band.Id, band.Id }, state.Items);
-            Assert.AreEqual(4, state.Money);
+            Assert.AreEqual(PokemonCenterShop.Purchase.Bought, PokemonCenterShop.BuyItem(state, 0, items));
+            CollectionAssert.AreEqual(new[] { offered }, state.Items);
+            Assert.IsNull(stock.Items[0], "a bought item is off the shelf");
+            Assert.AreEqual(12, state.Money);
+
+            Assert.AreEqual(PokemonCenterShop.Purchase.SoldOut, PokemonCenterShop.BuyItem(state, 0, items));
+            Assert.AreEqual(12, state.Money, "a sold-out item costs nothing");
+        }
+
+        [Test]
+        public void BuyItem_IsRefused_WhenThePlayerCantAffordIt()
+        {
+            var (state, library) = MakeRun();
+            state.Money = 7;
+            var items = MakeItemLibrary(MakeBand("a", price: 8));
+            var stock = PokemonCenterShop.OpenFor(state, "center", seed: 3, library, items);
+
+            Assert.AreEqual(PokemonCenterShop.Purchase.NotEnoughMoney, PokemonCenterShop.BuyItem(state, 0, items));
+            Assert.IsEmpty(state.Items);
+            Assert.IsNotNull(stock.Items[0]);
+        }
+
+        [Test]
+        public void ItemOffers_AreDifferentItemsFromTheLibrary_ReproducibleFromTheSeed()
+        {
+            var items = MakeItemLibrary(Enumerable.Range(0, 6).Select(i => MakeBand($"item-{i}")).ToArray());
+
+            var offers = PokemonCenterShop.GenerateItemOffers(items, seed: 42);
+
+            Assert.AreEqual(PokemonCenterShop.ItemsOnOffer, offers.Count);
+            CollectionAssert.AllItemsAreUnique(offers);
+            CollectionAssert.AreEqual(offers, PokemonCenterShop.GenerateItemOffers(items, seed: 42));
+            CollectionAssert.IsEmpty(PokemonCenterShop.GenerateItemOffers(null, seed: 42), "no library, nothing on the row");
+            Assert.AreEqual(2, PokemonCenterShop.GenerateItemOffers(MakeItemLibrary(MakeBand("x"), MakeBand("y")), 1).Count,
+                "fewer items than the row holds offers what there is");
         }
 
         [Test]

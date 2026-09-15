@@ -24,24 +24,23 @@ namespace Pets.EditorTools
         public const string ShopPokemonCardPrefabPath = FolderPath + "/ShopPokemonCard.prefab";
         public const string ItemChipPrefabPath = FolderPath + "/ItemChip.prefab";
 
-        // Pokémon card (720x136).
-        private const float Inset = 14f;
-        private const float PadSize = 108f;
-        private static readonly Vector2 PriceTagSize = new Vector2(86f, 52f);
-        private const float BuyButtonHeight = 56f;
-        private const float PokemonBuyButtonWidth = 140f;
+        // Both cards are 360x140, three to a shelf row (PokemonCenterSceneBuilder, ADR 0014).
+        private const float Inset = 8f;
+        private static readonly Vector2 PriceTagSize = new Vector2(70f, 40f);
+        private const float BuyButtonWidth = 104f;
+        private const float BuyButtonHeight = 42f;
 
-        // Supply card (220x214): icon pad with the name and count beside it, the description under
-        // both, then the price tag and Buy along the bottom.
-        private const float ItemInset = 12f;
+        // Pokémon card: portrait pad with tier/growth under it, the stats box at 3/4 scale beside it,
+        // then the price tag and Adopt along the bottom.
+        private const float PadSize = 84f;
+        private const float InfoTop = Inset + PadSize + 4f;
+        private const float StatsBoxLeft = Inset + PadSize + 8f;
+        private const float StatsBoxScale = 0.75f;
+
+        // Supply card: icon pad with the name, count and description beside it, then the price tag
+        // and Buy along the bottom.
         private const float ItemPadSize = 64f;
-        private const float ItemTextLeft = ItemInset + ItemPadSize + 10f;
-        private static readonly Vector2 ItemPriceTagSize = new Vector2(76f, 48f);
-        private const float ItemBuyButtonWidth = 110f;
-        private const float ItemBuyButtonHeight = 52f;
-
-        private const float StatsBoxLeft = 130f;
-        private const float PokemonInfoLeft = StatsBoxLeft + 320f + 14f;
+        private const float ItemTextLeft = Inset + ItemPadSize + 10f;
 
         [MenuItem("Pets/Build Shop Prefabs")]
         public static void Build()
@@ -56,26 +55,28 @@ namespace Pets.EditorTools
         private static void BuildShopItemCard()
         {
             var go = CreateRoot("ShopItemCard", ShopItemCardView.Size, Theme.TextBoxSprite);
+            var group = go.AddComponent<CanvasGroup>();
 
             var pad = CreateSlicedImage(go.transform, "IconPad", Theme.SlotDarkSprite);
-            PlaceTopLeft(pad.rectTransform, ItemInset, ItemInset, ItemPadSize, ItemPadSize);
-            var icon = CreateInsetImage(pad.transform, "Icon", 12f);
+            PlaceTopLeft(pad.rectTransform, Inset, Inset, ItemPadSize, ItemPadSize);
+            var icon = CreateInsetImage(pad.transform, "Icon", 10f);
 
             var name = CreateCardText(go.transform, "NameText", "Item", 20, TextAnchor.MiddleLeft, Theme.TextDark, bold: true);
             name.horizontalOverflow = HorizontalWrapMode.Wrap;
             name.resizeTextForBestFit = true;
             name.resizeTextMinSize = Theme.FontSizeSmall;
             name.resizeTextMaxSize = 20;
-            PinBetween(name.rectTransform, ItemTextLeft, ItemInset, top: 14f, height: 28f);
-            var owned = CreateCardText(go.transform, "OwnedText", "Have 0", 16, TextAnchor.MiddleLeft, Theme.TextMuted, bold: true);
-            PinBetween(owned.rectTransform, ItemTextLeft, ItemInset, top: 44f, height: 24f);
+            PinBetween(name.rectTransform, ItemTextLeft, Inset, top: 6f, height: 26f);
+            var owned = CreateCardText(go.transform, "OwnedText", "Have 0", 15, TextAnchor.MiddleLeft, Theme.TextMuted, bold: true);
+            PinBetween(owned.rectTransform, ItemTextLeft, Inset, top: 32f, height: 20f);
 
-            var description = CreateCardText(go.transform, "DescriptionText", "What it does.", 14, TextAnchor.UpperLeft, Theme.TextMuted, bold: true);
+            var description = CreateCardText(go.transform, "DescriptionText", "What it does.", 13, TextAnchor.UpperLeft, Theme.TextMuted, bold: true);
             description.horizontalOverflow = HorizontalWrapMode.Wrap;
-            PinBetween(description.rectTransform, ItemInset + 4f, ItemInset + 4f, top: 86f, height: 56f);
+            PinBetween(description.rectTransform, ItemTextLeft, Inset, top: 54f, height: 36f);
 
-            var price = CreatePriceTag(go.transform, ItemInset, ItemPriceTagSize, ItemInset);
-            var buy = CreateBuyButton(go.transform, "BuyButton", "Buy", ItemBuyButtonWidth, ItemBuyButtonHeight, ItemInset);
+            var price = CreatePriceTag(go.transform, Inset, PriceTagSize, Inset);
+            var buy = CreateBuyButton(go.transform, "BuyButton", "Buy", BuyButtonWidth, BuyButtonHeight, Inset);
+            var stamp = CreateSoldStamp(go.transform, "SOLD");
 
             var view = go.AddComponent<ShopItemCardView>();
             SetField(view, "icon", icon);
@@ -84,6 +85,8 @@ namespace Pets.EditorTools
             SetField(view, "descriptionText", description);
             SetField(view, "priceText", price);
             SetField(view, "buyButton", buy);
+            SetField(view, "soldStamp", stamp);
+            SetField(view, "group", group);
             icon.sprite = Theme.PokeballSprite;
 
             SavePrefab(go, ShopItemCardPrefabPath);
@@ -99,18 +102,35 @@ namespace Pets.EditorTools
             var portrait = CreateInsetImage(pad.transform, "Portrait", 10f);
 
             var statsBox = InstantiateNested<BattleStatsBoxView>(UiPrefabBuilder.BattleStatsBoxPrefabPath, go.transform, "StatsBox");
-            PlaceTopLeft((RectTransform)statsBox.transform, StatsBoxLeft,
-                (ShopPokemonCardView.Size.y - BattleStatsBoxView.Size.y) / 2f, BattleStatsBoxView.Size.x, BattleStatsBoxView.Size.y);
+            var statsRect = (RectTransform)statsBox.transform;
+            PlaceTopLeft(statsRect, StatsBoxLeft, Inset, BattleStatsBoxView.Size.x, BattleStatsBoxView.Size.y);
+            statsRect.localScale = new Vector3(StatsBoxScale, StatsBoxScale, 1f);
 
-            var info = CreateCardText(go.transform, "InfoText", "Tier 1", 18, TextAnchor.MiddleLeft, Theme.TextDark, bold: true);
-            PinBetween(info.rectTransform, PokemonInfoLeft, Inset, top: 14f, height: 30f);
+            var info = CreateCardText(go.transform, "InfoText", "Tier 1", 14, TextAnchor.UpperCenter, Theme.TextDark, bold: true);
+            info.horizontalOverflow = HorizontalWrapMode.Wrap;
+            PlaceTopLeft(info.rectTransform, Inset, InfoTop, PadSize, ShopPokemonCardView.Size.y - InfoTop - 4f);
 
-            var price = CreatePriceTag(go.transform, PokemonInfoLeft, PriceTagSize, Inset);
-            var buy = CreateBuyButton(go.transform, "BuyButton", "Adopt", PokemonBuyButtonWidth, BuyButtonHeight, Inset);
+            var price = CreatePriceTag(go.transform, StatsBoxLeft, PriceTagSize, Inset);
+            var buy = CreateBuyButton(go.transform, "BuyButton", "Adopt", BuyButtonWidth, BuyButtonHeight, Inset);
+            var stamp = CreateSoldStamp(go.transform, "ADOPTED");
 
-            // Over everything, off until the mon is adopted. No raycast, so the card underneath still
-            // reads as a card rather than a blocked-off area.
-            var stamp = CreateCardText(go.transform, "SoldStamp", "ADOPTED", 44, TextAnchor.MiddleCenter, Theme.Danger, bold: true);
+            var view = go.AddComponent<ShopPokemonCardView>();
+            SetField(view, "portrait", portrait);
+            SetField(view, "statsBox", statsBox);
+            SetField(view, "infoText", info);
+            SetField(view, "priceText", price);
+            SetField(view, "buyButton", buy);
+            SetField(view, "soldStamp", stamp);
+            SetField(view, "group", group);
+
+            SavePrefab(go, ShopPokemonCardPrefabPath);
+        }
+
+        /// <summary>Over everything, off until the card's thing is bought. No raycast, so the card
+        /// underneath still reads as a card rather than a blocked-off area.</summary>
+        private static GameObject CreateSoldStamp(Transform card, string label)
+        {
+            var stamp = CreateCardText(card, "SoldStamp", label, 36, TextAnchor.MiddleCenter, Theme.Danger, bold: true);
             var stampRect = stamp.rectTransform;
             stampRect.anchorMin = Vector2.zero;
             stampRect.anchorMax = Vector2.one;
@@ -119,17 +139,7 @@ namespace Pets.EditorTools
             stampRect.localEulerAngles = new Vector3(0f, 0f, 8f);
             stamp.gameObject.AddComponent<Outline>().effectColor = Theme.TextLight;
             stamp.gameObject.SetActive(false);
-
-            var view = go.AddComponent<ShopPokemonCardView>();
-            SetField(view, "portrait", portrait);
-            SetField(view, "statsBox", statsBox);
-            SetField(view, "infoText", info);
-            SetField(view, "priceText", price);
-            SetField(view, "buyButton", buy);
-            SetField(view, "soldStamp", stamp.gameObject);
-            SetField(view, "group", group);
-
-            SavePrefab(go, ShopPokemonCardPrefabPath);
+            return stamp.gameObject;
         }
 
         private static void BuildItemChip()

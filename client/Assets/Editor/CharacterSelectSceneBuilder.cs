@@ -45,6 +45,14 @@ namespace Pets.EditorTools
         private const float GridSpacing = 24f;
         private const float GridPadding = 16f;
 
+        private const float PreviewHeadingHeight = 48f;
+        private const float PreviewLabelHeight = 30f;
+        private const float PreviewCardGap = 48f;
+        private const float PreviewButtonWidth = 300f;
+        private const float PreviewButtonHeight = 64f;
+        private const float PreviewButtonsBottom = BottomMargin + 16f;
+        private const float PreviewButtonGap = 24f;
+
         /// <summary>Card width that divides the grid viewport into exactly GridColumns columns
         /// (200 at the current numbers). Derived rather than hand-typed so changing a margin or the
         /// column count can't silently leave the last column half off-screen — the old hardcoded
@@ -129,17 +137,44 @@ namespace Pets.EditorTools
             var fitter = content.gameObject.AddComponent<ContentSizeFitter>();
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            // Floats over the bottom of the grid area rather than reserving its own band above it:
-            // CharacterSelectController only shows this button once both picks are in, and it
-            // clears the grid at the same moment, so the two are never visible together — and the
-            // ~95 units a reserved band would cost is a whole extra row of cards in landscape.
-            var confirmButton = CreateButton(canvasRect, "ConfirmButton", "Begin Adventure", Theme.ButtonStyle.Confirm, useSprite: true);
-            var confirmRect = confirmButton.GetComponent<RectTransform>();
-            confirmRect.anchorMin = new Vector2(0.5f, 0f);
-            confirmRect.anchorMax = new Vector2(0.5f, 0f);
-            confirmRect.pivot = new Vector2(0.5f, 0f);
-            confirmRect.sizeDelta = new Vector2(320f, 64f);
-            confirmRect.anchoredPosition = new Vector2(0f, BottomMargin + 16f);
+            // The team preview: shown in place of the grid and toolbar once both picks are in — a
+            // heading, the pair as the grid's own cards with Lead/Support over them, and the two
+            // buttons below. Hand-anchored; only the two-card row keeps a live layout group, since
+            // its cards are built at runtime.
+            var teamPreview = CreatePanel(canvasRect, "TeamPreview", Color.clear, Vector2.zero, Vector2.one);
+            teamPreview.offsetMin = new Vector2(SideMargin, PreviewButtonsBottom + PreviewButtonHeight + 12f);
+            teamPreview.offsetMax = new Vector2(-SideMargin, -TitleHeight);
+
+            float previewRowWidth = 2f * CellWidth + PreviewCardGap;
+            var previewGroup = CreatePanel(teamPreview, "Group", Color.clear, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+            previewGroup.sizeDelta = new Vector2(previewRowWidth, PreviewHeadingHeight + PreviewLabelHeight + SpeciesGridView.CardHeight);
+
+            var heading = CreatePlainText(previewGroup, "HeadingText", "Your Team", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextDark);
+            heading.fontStyle = FontStyle.Bold;
+            PinToTop(heading.rectTransform, 0f, PreviewHeadingHeight);
+
+            for (int i = 0; i < 2; i++)
+            {
+                var label = CreatePlainText(previewGroup, i == 0 ? "LeadLabel" : "SupportLabel", i == 0 ? "Lead" : "Support",
+                    Theme.FontSizeHeading, TextAnchor.MiddleCenter, Theme.TextMuted);
+                label.fontStyle = FontStyle.Bold;
+                var labelRect = label.rectTransform;
+                labelRect.anchorMin = labelRect.anchorMax = labelRect.pivot = new Vector2(0f, 1f);
+                labelRect.sizeDelta = new Vector2(CellWidth, PreviewLabelHeight);
+                labelRect.anchoredPosition = new Vector2(i * (CellWidth + PreviewCardGap), -PreviewHeadingHeight);
+            }
+
+            var previewCards = CreatePanel(previewGroup, "Cards", Color.clear, Vector2.zero, Vector2.one);
+            PinToTop(previewCards, PreviewHeadingHeight + PreviewLabelHeight, SpeciesGridView.CardHeight);
+            var previewGrid = previewCards.gameObject.AddComponent<GridLayoutGroup>();
+            previewGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            previewGrid.constraintCount = 2;
+            previewGrid.cellSize = new Vector2(CellWidth, SpeciesGridView.CardHeight);
+            previewGrid.spacing = new Vector2(PreviewCardGap, 0f);
+            previewGrid.childAlignment = TextAnchor.UpperCenter;
+
+            var startOverButton = CreatePreviewButton(canvasRect, "StartOverButton", "Start Over", Theme.ButtonStyle.Secondary, -1f);
+            var confirmButton = CreatePreviewButton(canvasRect, "ConfirmButton", "Begin Adventure", Theme.ButtonStyle.Confirm, 1f);
             var confirmLabel = confirmButton.GetComponentInChildren<Text>();
 
             var library = AssetDatabase.LoadAssetAtPath<PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
@@ -159,12 +194,18 @@ namespace Pets.EditorTools
             SetField(controller, "typeIconPrefab", typeIconPrefab);
             SetField(controller, "healthBarPrefab", healthBarPrefab);
             SetField(controller, "speedBarPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.SpeedBarPrefabPath));
+            SetField(controller, "toolbarBar", toolbar.gameObject);
+            SetField(controller, "speciesScroll", speciesScrollRect.gameObject);
+            SetField(controller, "teamPreview", teamPreview.gameObject);
+            SetField(controller, "teamPreviewCards", previewCards);
+            SetField(controller, "startOverButton", startOverButton);
 
             // Dropdown.onValueChanged is a UnityEvent<int> — UnityEventTools only exposes
             // baked-constant persistent listeners (AddIntPersistentListener requires a fixed
             // int), not a dynamic passthrough, so this one is wired at runtime in
             // CharacterSelectController.Start() instead of here.
             UnityEventTools.AddVoidPersistentListener(confirmButton.onClick, controller.OnConfirmClicked);
+            UnityEventTools.AddVoidPersistentListener(startOverButton.onClick, controller.OnStartOverClicked);
             UnityEventTools.AddVoidPersistentListener(sortAttackButton.onClick, controller.OnSortAttackClicked);
             UnityEventTools.AddVoidPersistentListener(sortSpeedButton.onClick, controller.OnSortSpeedClicked);
             UnityEventTools.AddVoidPersistentListener(sortHealthButton.onClick, controller.OnSortHealthClicked);
@@ -177,7 +218,14 @@ namespace Pets.EditorTools
             // ILayoutGroup (confirmed in UGUI source), so without listing it explicitly it gets
             // silently destroyed by the same bake pass, which is exactly what broke scrolling the
             // starter/secondary grid the first time this shipped.
-            ForceLayoutRebuild(canvasRect, content, scrollRect);
+            // The preview's card row stays live too: its two cards are built when the second pick lands.
+            ForceLayoutRebuild(canvasRect, content, scrollRect, previewCards);
+
+            // Off until both picks are in (CharacterSelectController.SetPreviewVisible), after the
+            // bake so the layout pass still reaches them.
+            teamPreview.gameObject.SetActive(false);
+            confirmButton.gameObject.SetActive(false);
+            startOverButton.gameObject.SetActive(false);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -185,6 +233,19 @@ namespace Pets.EditorTools
             SceneCatalog.EnsureBuildScenes();
 
             Debug.Log($"Character Select scene rebuilt at {ScenePath}");
+        }
+
+        /// <summary>One of the preview's two buttons, bottom-centre of the canvas, to the left
+        /// (<paramref name="side"/> -1) or right (+1) of centre.</summary>
+        private static Button CreatePreviewButton(RectTransform canvasRect, string name, string label, Theme.ButtonStyle style, float side)
+        {
+            var button = CreateButton(canvasRect, name, label, style, useSprite: true);
+            var rect = button.GetComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(side < 0f ? 1f : 0f, 0f);
+            rect.sizeDelta = new Vector2(PreviewButtonWidth, PreviewButtonHeight);
+            rect.anchoredPosition = new Vector2(side * PreviewButtonGap / 2f, PreviewButtonsBottom);
+            return button;
         }
 
         /// <summary>Stretches a rect across the full canvas width and pins it to the top edge with

@@ -13,6 +13,7 @@ using Pets.Data;
 using Pets.Gameplay;
 using Pets.Meta;
 using Pets.Simulation;
+using Pets.UI;
 
 namespace Pets.Tests
 {
@@ -250,19 +251,19 @@ namespace Pets.Tests
 
             yield return LoadScene(TeamScenePath);
 
-            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
-            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameText"));
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameRow/Name"));
+            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameRow/Name"));
             StringAssert.StartsWith("Lead", SlotText("PartySlot0", "RoleText"));
             StringAssert.StartsWith("Support", SlotText("PartySlot1", "RoleText"));
-            StringAssert.Contains("ATK 10", SlotText("PartySlot0", "StatsText"));
+            Assert.AreEqual("10", SlotText("PartySlot0", "NameRow/AttackValue"), "attack sits beside the name, as on Character Select");
 
             var swapButton = FindButton("SwapButton");
             Assert.IsTrue(swapButton.interactable, "Swap should be available with two mons in the line-up");
             swapButton.onClick.Invoke();
             yield return null;
 
-            Assert.AreEqual("Beta", SlotText("PartySlot0", "NameText"));
-            Assert.AreEqual("Alpha", SlotText("PartySlot1", "NameText"));
+            Assert.AreEqual("Beta", SlotText("PartySlot0", "NameRow/Name"));
+            Assert.AreEqual("Alpha", SlotText("PartySlot1", "NameRow/Name"));
         }
 
         /// <summary>Six party slots and six Box slots are always drawn, filled or not: the point
@@ -283,7 +284,7 @@ namespace Pets.Tests
 
             // The run's two mons fill Lead and Support; everything behind them is a labelled
             // reserve slot with no mon in it, and the Box is empty in a fresh run.
-            Assert.IsNull(GameObject.Find("PartySlot2").transform.Find("Card/NameText"),
+            Assert.IsNull(GameObject.Find("PartySlot2").transform.Find("Card/NameRow/Name"),
                 "an unfilled party slot should hold no mon");
             StringAssert.StartsWith("Reserve", SlotText("PartySlot2", "RoleText"));
             Assert.AreEqual("Empty", SlotText("BoxSlot0", "RoleText"));
@@ -304,6 +305,21 @@ namespace Pets.Tests
                 }
             }
             Assert.AreEqual(1, visibleIcons, "the test species is single-typed");
+
+            // The Character Select card body: HP and SPD bars for the mon's own stats, fitting the slot.
+            var card = GameObject.Find("PartySlot0").transform.Find("Card");
+            var lead = ActiveRun.State.LineUp[0];
+            var hp = card.GetComponentInChildren<HealthBarView>();
+            var spd = card.GetComponentInChildren<StatBarView>();
+            Assert.IsNotNull(hp, "a filled slot should show an HP bar");
+            Assert.IsNotNull(spd, "a filled slot should show a SPD bar");
+            Assert.AreEqual(lead.CurrentStats.Health, hp.Max);
+            Assert.AreEqual(lead.CurrentStats.Speed, spd.Value);
+            Assert.AreEqual(SpeciesTier.MaxSpeed, spd.Max);
+            Assert.IsNotNull(card.Find("NameRow/AttackIcon"), "the sword beside the attack value");
+            var cardRect = card.GetComponent<RectTransform>();
+            Assert.LessOrEqual(LayoutUtility.GetPreferredHeight(cardRect), cardRect.rect.height + 0.5f,
+                "the card's rows overflow its slot — grow TeamSceneBuilder.SlotHeight");
         }
 
         /// <summary>Dragging a card onto another slot is how the line-up is reordered, so this
@@ -319,8 +335,8 @@ namespace Pets.Tests
 
             yield return Drag("PartySlot0", "PartySlot2");
 
-            Assert.AreEqual("Gamma", SlotText("PartySlot0", "NameText"), "the third mon should now lead");
-            Assert.AreEqual("Alpha", SlotText("PartySlot2", "NameText"));
+            Assert.AreEqual("Gamma", SlotText("PartySlot0", "NameRow/Name"), "the third mon should now lead");
+            Assert.AreEqual("Alpha", SlotText("PartySlot2", "NameRow/Name"));
             Assert.AreEqual(3, ActiveRun.State.LineUp.Count, "a trade shouldn't change the party size");
         }
 
@@ -335,8 +351,8 @@ namespace Pets.Tests
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
             Assert.AreEqual(1, ActiveRun.State.Box.Count);
-            Assert.AreEqual("Beta", SlotText("BoxSlot0", "NameText"));
-            Assert.IsNull(GameObject.Find("PartySlot1").transform.Find("Card/NameText"),
+            Assert.AreEqual("Beta", SlotText("BoxSlot0", "NameRow/Name"));
+            Assert.IsNull(GameObject.Find("PartySlot1").transform.Find("Card/NameRow/Name"),
                 "the slot the mon left should be drawn empty again");
             Assert.IsFalse(FindButton("SwapButton").interactable,
                 "a one-mon line-up has nothing to swap");
@@ -355,7 +371,7 @@ namespace Pets.Tests
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count, "the party must never be emptied");
             Assert.IsEmpty(ActiveRun.State.Box);
-            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"),
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameRow/Name"),
                 "the refused card should be back in its own slot");
         }
 
@@ -375,8 +391,8 @@ namespace Pets.Tests
             source.OnEndDrag(eventData);
             yield return null;
 
-            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
-            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameText"));
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameRow/Name"));
+            Assert.AreEqual("Beta", SlotText("PartySlot1", "NameRow/Name"));
             Assert.AreEqual(0, GameObject.Find("DragLayer").transform.childCount,
                 "no card should be left on the drag layer");
         }
@@ -394,7 +410,7 @@ namespace Pets.Tests
             yield return Drag("PartySlot3", "PartySlot0");
 
             Assert.AreEqual(1, ActiveRun.State.LineUp.Count);
-            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameRow/Name"));
         }
 
         /// <summary>Releasing is irreversible, so the drop only asks the question — nothing leaves
@@ -420,7 +436,7 @@ namespace Pets.Tests
             CollectionAssert.DoesNotContain(
                 ActiveRun.State.LineUp.Select(m => m.SpeciesId).ToList(), 2, "Beta should be gone from the run");
             Assert.IsEmpty(ActiveRun.State.Box, "a release is not a move to the Box");
-            Assert.AreEqual("Gamma", SlotText("PartySlot1", "NameText"), "the row should have closed up");
+            Assert.AreEqual("Gamma", SlotText("PartySlot1", "NameRow/Name"), "the row should have closed up");
             Assert.IsNull(GameObject.Find("ReleaseConfirm"), "the confirmation should be closed again");
         }
 
@@ -515,7 +531,7 @@ namespace Pets.Tests
             yield return null;
 
             Assert.AreEqual(2, ActiveRun.State.LineUp.Count);
-            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameText"));
+            Assert.AreEqual("Alpha", SlotText("PartySlot0", "NameRow/Name"));
             Assert.IsNull(GameObject.Find("ReleaseConfirm"));
         }
 
@@ -581,7 +597,7 @@ namespace Pets.Tests
             Assert.AreEqual(band, run.LineUp[0].HeldItemId);
             Assert.IsEmpty(run.Items);
             Assert.AreEqual(leadAttack + 3, run.LineUp[0].CurrentStats.Attack, "a Muscle Band is +3 Attack");
-            StringAssert.Contains($"ATK {leadAttack + 3}", SlotText("PartySlot0", "StatsText"));
+            Assert.AreEqual($"{leadAttack + 3}", SlotText("PartySlot0", "NameRow/AttackValue"));
             Assert.IsNull(GameObject.Find($"BagItem_{band}"), "nothing left in the bag");
 
             yield return DragItem(HeldBadge("PartySlot0"), SlotView("PartySlot1"));

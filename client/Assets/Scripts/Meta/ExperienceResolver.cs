@@ -157,13 +157,20 @@ namespace Pets.Meta
 
         /// <summary>Growth plus whatever the mon is holding (PokemonInstance.HeldItemStats). The item
         /// is the one input to a mon's stats that isn't species and EXP, and it has to be added here,
-        /// in the derivation, or the next grant would recompute it away.</summary>
+        /// in the derivation, or the next grant would recompute it away.
+        ///
+        /// An item can take a stat away (the Choice Band's -2 Health), so each is floored: Health at
+        /// <see cref="MinHeldItemHealth"/>, since a mon that starts a fight at 0 HP has already lost it,
+        /// and Attack and Speed at 0.</summary>
         private static Stats WithHeldItem(Stats grown, PokemonInstance mon) => new Stats
         {
-            Attack = grown.Attack + mon.HeldItemStats.Attack,
-            Health = grown.Health + mon.HeldItemStats.Health,
-            Speed = grown.Speed + mon.HeldItemStats.Speed,
+            Attack = Math.Max(0, grown.Attack + mon.HeldItemStats.Attack),
+            Health = Math.Max(MinHeldItemHealth, grown.Health + mon.HeldItemStats.Health),
+            Speed = Math.Max(0, grown.Speed + mon.HeldItemStats.Speed),
         };
+
+        /// <summary>The least Health a held item can leave a mon with.</summary>
+        public const int MinHeldItemHealth = 1;
 
         /// <summary>Grants EXP and applies the growth and evolutions it earns, in place.</summary>
         public static GrowthReport GrantExp(PokemonInstance mon, int amount, PokemonSpeciesLibrary library)

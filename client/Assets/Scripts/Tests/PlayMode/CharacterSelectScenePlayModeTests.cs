@@ -277,6 +277,79 @@ namespace Pets.Tests
             StringAssert.Contains(supportName, summaryBeforeConfirm);
         }
 
+        /// <summary>Both picks in, the screen shows the team before anything is committed: the pair as
+        /// the grid's own cards, Lead then Support, with the grid and toolbar out of the way and both
+        /// buttons up.</summary>
+        [UnityTest]
+        public IEnumerator AfterBothPicks_TheTeamPreviewShowsTheLeadAndSupport_InPlaceOfTheGrid()
+        {
+            var (lead, support) = PickFirstTwo();
+            yield return null;
+
+            var controller = Object.FindFirstObjectByType<CharacterSelectController>();
+            Assert.IsTrue(controller.IsShowingTeamPreview);
+            var canvas = GameObject.Find("Canvas").transform;
+            Assert.IsFalse(canvas.Find("SpeciesScroll").gameObject.activeInHierarchy, "the grid should be hidden");
+            Assert.IsFalse(canvas.Find("ToolbarBar").gameObject.activeInHierarchy, "the toolbar should be hidden");
+            Assert.IsTrue(canvas.Find("ConfirmButton").gameObject.activeInHierarchy);
+            Assert.IsTrue(canvas.Find("StartOverButton").gameObject.activeInHierarchy);
+
+            var cards = canvas.Find("TeamPreview/Group/Cards").GetComponentsInChildren<Button>();
+            CollectionAssert.AreEqual(new[] { lead, support }, cards.Select(c => c.gameObject.name).ToArray(),
+                "the Lead's card first, then the Support's");
+            foreach (var card in cards)
+            {
+                Assert.IsNotNull(card.GetComponentInChildren<HealthBarView>(), $"{card.name} should be a full stat card");
+                Assert.IsNotNull(card.transform.Find("Sprite").GetComponent<Image>().sprite, $"{card.name}'s sprite failed to load");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator StartOver_GoesBackToTheStarterGrid_AndANewPairCanBeChosen()
+        {
+            PickFirstTwo();
+            yield return null;
+
+            var canvas = GameObject.Find("Canvas").transform;
+            canvas.Find("StartOverButton").GetComponent<Button>().onClick.Invoke();
+            yield return null;
+
+            var controller = Object.FindFirstObjectByType<CharacterSelectController>();
+            Assert.IsFalse(controller.IsShowingTeamPreview);
+            Assert.AreEqual(CharacterSelectController.StarterPrompt, canvas.Find("PromptText").GetComponent<Text>().text);
+            Assert.AreEqual(StarterEligibleCount(), GridContent().GetComponentsInChildren<Button>().Length,
+                "the whole starter grid is back, including the species picked before");
+            Assert.IsFalse(canvas.Find("ConfirmButton").gameObject.activeInHierarchy, "nothing to confirm after starting over");
+            Assert.IsFalse(canvas.Find("StartOverButton").gameObject.activeInHierarchy);
+
+            // A different pair this time, picked from the back of the grid.
+            var starters = GridContent().GetComponentsInChildren<Button>();
+            string lead = starters[starters.Length - 1].gameObject.name;
+            starters[starters.Length - 1].onClick.Invoke();
+            yield return null;
+            var secondaries = GridContent().GetComponentsInChildren<Button>();
+            string support = secondaries[secondaries.Length - 1].gameObject.name;
+            secondaries[secondaries.Length - 1].onClick.Invoke();
+            yield return null;
+
+            Assert.IsTrue(controller.IsShowingTeamPreview);
+            var cards = canvas.Find("TeamPreview/Group/Cards").GetComponentsInChildren<Button>();
+            CollectionAssert.AreEqual(new[] { lead, support }, cards.Select(c => c.gameObject.name).ToArray(),
+                "the preview shows the new pair, not the one started over from");
+        }
+
+        /// <summary>Clicks the first Starter and then the first Secondary, returning their card names.</summary>
+        private static (string Lead, string Support) PickFirstTwo()
+        {
+            var starter = GridContent().GetComponentsInChildren<Button>()[0];
+            string lead = starter.gameObject.name;
+            starter.onClick.Invoke();
+            var secondary = GridContent().GetComponentsInChildren<Button>()[0];
+            string support = secondary.gameObject.name;
+            secondary.onClick.Invoke();
+            return (lead, support);
+        }
+
         /// <summary>Filtering and sorting rebind the existing cards rather than destroying the grid
         /// and building a new one. Asserted on the total child count — including inactive — because
         /// the failure mode if this regresses is silent: the screen looks identical while every

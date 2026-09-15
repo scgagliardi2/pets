@@ -37,7 +37,7 @@ namespace Pets.EditorTools
         private const float SectionGap = 10f;
         /// <summary>Slot cell height — TeamPanelController's card budget is written against
         /// exactly this number, so the two move together.</summary>
-        private const float SlotHeight = 186f;
+        private const float SlotHeight = 200f;
         private const float SlotSpacing = 12f;
         private const float ReleaseZoneHeight = 64f;
         private static readonly Vector2 DialogSize = new Vector2(560f, 260f);
@@ -136,6 +136,10 @@ namespace Pets.EditorTools
             SetField(teamPanel, "boxHeaderText", boxHeader);
             SetField(teamPanel, "typeIconPrefab",
                 AssetDatabase.LoadAssetAtPath<GameObject>(TypeIconPrefabBuilder.PrefabPath));
+            SetField(teamPanel, "healthBarPrefab",
+                AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.HealthBarPrefabPath));
+            SetField(teamPanel, "speedBarPrefab",
+                AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.SpeedBarPrefabPath));
             SetField(teamPanel, "bagRow", bagRow);
             SetField(teamPanel, "bagHeaderText", bagHeader);
             SetField(teamPanel, "itemChipPrefab",

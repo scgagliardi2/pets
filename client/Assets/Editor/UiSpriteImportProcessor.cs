@@ -41,6 +41,9 @@ namespace Pets.EditorTools
 
             var importer = (TextureImporter)assetImporter;
             importer.textureType = TextureImporterType.Sprite;
+            // Set explicitly: a new PNG whose .meta doesn't say otherwise can import as a Cubemap, which
+            // has no Sprite sub-asset at all — every reference to it reads back null.
+            importer.textureShape = TextureImporterShape.Texture2D;
             importer.spriteImportMode = SpriteImportMode.Single;
             importer.spritePixelsPerUnit = PixelsPerUnit;
             importer.spriteBorder = new Vector4(SpriteBorder, SpriteBorder, SpriteBorder, SpriteBorder);

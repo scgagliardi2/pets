@@ -249,6 +249,58 @@ namespace Pets.UI
             return new NameAttackRow(name, attack);
         }
 
+        // The stat card's metrics, shared by every screen that draws one so they can't drift apart.
+        public const int StatCardNameFontSize = 17;
+        public const int StatCardTypesRowHeight = 30;
+        // 2x the sword's 12px art, so its pixels stay square.
+        public const int StatCardAttackIconSize = 24;
+        // The card's 6 padding plus this clears the TextBox art's 10-unit border, so the rows that
+        // run edge to edge (name/attack, the bars) don't sit on the bevel.
+        public const int StatCardSideInset = 6;
+
+        /// <summary>The body of a stat card — the Character Select look, laid out like a battle panel:
+        /// sprite, name with a sword and attack at its right end, type icons, then HP and SPD bars.
+        /// Built empty and bound with <see cref="BindStatCard"/>, so a pooled card can be re-pointed.</summary>
+        public sealed class StatCard
+        {
+            public Image Sprite;
+            public int SpriteHeight;
+            public NameAttackRow NameRow;
+            public TypeIconRow TypeIcons;
+            public HealthBarView HealthBar;
+            public StatBarView SpeedBar;
+        }
+
+        /// <summary>Adds a stat card's rows to <paramref name="card"/> (from <see cref="CreateCard"/>).
+        /// Height used, before the card's own padding: sprite + 24 name + 30 types + 18 HP + 18 SPD,
+        /// plus the card's one-unit gaps — each caller budgets that into its cell.</summary>
+        public static StatCard AddStatCardBody(Transform card, GameObject typeIconPrefab, GameObject healthBarPrefab,
+            GameObject speedBarPrefab, int spriteHeight)
+        {
+            return new StatCard
+            {
+                Sprite = AddSprite(card, null, spriteHeight),
+                SpriteHeight = spriteHeight,
+                NameRow = AddNameAttackRow(card, StatCardNameFontSize, Theme.TextDark, StatCardSideInset, StatCardAttackIconSize),
+                TypeIcons = AddTypeIconRow(card, typeIconPrefab, StatCardTypesRowHeight),
+                HealthBar = AddStatBar<HealthBarView>(card, healthBarPrefab, StatCardSideInset),
+                SpeedBar = AddStatBar<StatBarView>(card, speedBarPrefab, StatCardSideInset),
+            };
+        }
+
+        /// <param name="speedMax">What the SPD bar is drawn against — the roster-wide cap, so the bar
+        /// compares mons rather than filling for each one.</param>
+        public static void BindStatCard(StatCard card, Sprite sprite, string displayName, Stats stats, int currentHp,
+            int speedMax, PokemonType type1, bool hasSecondType, PokemonType type2)
+        {
+            SetSprite(card.Sprite, sprite, card.SpriteHeight);
+            card.NameRow.Name.text = displayName;
+            card.NameRow.Attack.text = stats.Attack.ToString();
+            card.TypeIcons.SetTypes(type1, hasSecondType, type2);
+            card.HealthBar.SetHealth(currentHp, stats.Health);
+            card.SpeedBar.SetValue(stats.Speed, speedMax);
+        }
+
         private static Text CreateText(Transform parent, string name, int fontSize, FontStyle style, Color color, TextAnchor alignment)
         {
             var go = new GameObject(name, typeof(RectTransform));

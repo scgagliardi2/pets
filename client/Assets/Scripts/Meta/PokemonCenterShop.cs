@@ -6,23 +6,26 @@ using Pets.Simulation;
 
 namespace Pets.Meta
 {
-    /// <summary>What one visit to a Pokémon Center has for sale: the Pokémon on offer, generated once
-    /// when the player walks onto the node and kept on RunState so leaving for the Team screen and
-    /// coming back finds the same shelf. An adopted Pokémon's entry becomes null — sold out.</summary>
+    /// <summary>What one visit to a Pokémon Center has for sale: the Pokémon and the items on offer,
+    /// generated once when the player walks onto the node and kept on RunState so leaving for the Team
+    /// screen and coming back finds the same shelf. A bought entry becomes null — sold out.</summary>
     public sealed class PokemonCenterStock
     {
         /// <summary>The map node this stock belongs to. A different Center is a different shelf.</summary>
         public string NodeId;
 
         public List<PokemonInstance> Pokemon = new List<PokemonInstance>();
+
+        /// <summary>Item ids on offer, one purchase each.</summary>
+        public List<string> Items = new List<string>();
     }
 
     /// <summary>The Pokémon Center as a shop (design doc §12.2, §13; ADR 0013): balls of every tier, items, and
     /// Pokémon to adopt, all for money. It replaced Camp's rest — the Center no longer grants EXP or a
     /// next-fight Attack buff; what makes a team stronger here is what the player chooses to buy.
     ///
-    /// **Balls and items never run out**; the price is the only limit. **Each Pokémon on offer
-    /// can be adopted once.**
+    /// Three rows (ADR 0014): **three Pokémon**, **balls of every tier**, and **three items** drawn
+    /// from the ItemLibrary. Balls never run out; each Pokémon and each item on offer sells once.
     ///
     /// **The Pokémon on offer match the party.** They are drawn from the tiers the line-up's own mons
     /// started at (a species' tier *is* its stat total — Pets.Data.SpeciesTier) and carry the
@@ -33,6 +36,7 @@ namespace Pets.Meta
     {
         public const int PokemonOnOffer = 3;
         public const int PokemonPrice = 10;
+        public const int ItemsOnOffer = 3;
 
         public enum Purchase
         {
@@ -44,7 +48,8 @@ namespace Pets.Meta
 
         /// <summary>The stock for the Center at <paramref name="nodeId"/>: the run's current one if it
         /// was already opened there, otherwise a fresh shelf rolled from <paramref name="seed"/>.</summary>
-        public static PokemonCenterStock OpenFor(RunState state, string nodeId, int seed, PokemonSpeciesLibrary library)
+        public static PokemonCenterStock OpenFor(RunState state, string nodeId, int seed, PokemonSpeciesLibrary library,
+            ItemLibrary items = null)
         {
             if (state.CenterStock != null && state.CenterStock.NodeId == nodeId)
             {
@@ -55,8 +60,25 @@ namespace Pets.Meta
             {
                 NodeId = nodeId,
                 Pokemon = GenerateOffers(state, nodeId, seed, library),
+                Items = GenerateItemOffers(items, seed),
             };
             return state.CenterStock;
+        }
+
+        /// <summary>Up to <see cref="ItemsOnOffer"/> different items from the library. Its own salt on the
+        /// seed, so adding items to the library never reshuffles which Pokémon a shelf offers.</summary>
+        public static List<string> GenerateItemOffers(ItemLibrary items, int seed)
+        {
+            var pool = items?.AllItems.Where(i => i != null).Select(i => i.Id).Distinct().ToList() ?? new List<string>();
+            var offers = new List<string>(ItemsOnOffer);
+            var rng = new DeterministicRandom(seed ^ 0x2c1b3c6d);
+            for (int i = 0; i < ItemsOnOffer && pool.Count > 0; i++)
+            {
+                int pick = rng.NextInt(pool.Count);
+                offers.Add(pool[pick]);
+                pool.RemoveAt(pick);
+            }
+            return offers;
         }
 
         public static List<PokemonInstance> GenerateOffers(RunState state, string nodeId, int seed,
@@ -153,8 +175,20 @@ namespace Pets.Meta
             return Purchase.Bought;
         }
 
-        public static Purchase BuyItem(RunState state, ItemDefinitionAsset item)
+        /// <summary>Buys the item at <paramref name="index"/> of the current stock into the bag. Each
+        /// item on offer sells once.</summary>
+        public static Purchase BuyItem(RunState state, int index, ItemLibrary items)
         {
+            var stock = state?.CenterStock;
+            if (stock == null || index < 0 || index >= stock.Items.Count)
+            {
+                return Purchase.Unavailable;
+            }
+            if (stock.Items[index] == null)
+            {
+                return Purchase.SoldOut;
+            }
+            var item = items?.GetById(stock.Items[index]);
             if (item == null)
             {
                 return Purchase.Unavailable;
@@ -163,6 +197,8 @@ namespace Pets.Meta
             {
                 return Purchase.NotEnoughMoney;
             }
+
+            stock.Items[index] = null;
             state.Items.Add(item.Id);
             return Purchase.Bought;
         }

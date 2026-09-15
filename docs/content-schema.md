@@ -157,7 +157,9 @@ it's implemented.
 **As built** (`Data/ItemDefinitionAsset`, ADR 0013): `Id`, `DisplayName`, `Description`, `Price` (what
 the Pokémon Center charges), `StatModifiers` (a `Stats`), and `Icon`. `passiveOverride` and `lockable`
 aren't implemented. Every item asset lives under `Assets/Content/Items` and must be registered in
-`ItemLibrary`, which is also the Pokémon Center's stock list. A mon holds **one** item — a single
+`ItemLibrary`, which is also what the Pokémon Center's item row and the Event encounters draw from
+(ADR 0014). A modifier may be negative (the Choice Band's −2 Health); the holder's derived stats are
+floored at 1 Health and 0 Attack/Speed. Items: `muscle-band`, `assault-vest`, `choice-band`, `quick-claw`. A mon holds **one** item — a single
 field, not yet the tunable slot count above. The run's unequipped items are `RunState.Items`, one id
 per item.
 

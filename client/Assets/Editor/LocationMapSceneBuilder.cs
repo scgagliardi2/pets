@@ -171,6 +171,8 @@ namespace Pets.EditorTools
             SetField(resolution, "map", controller);
             SetField(resolution, "resourceBar", resourceBarController);
             SetField(resolution, "eventOverlay", eventOverlay);
+            SetField(resolution, "itemLibrary",
+                AssetDatabase.LoadAssetAtPath<Pets.Data.ItemLibrary>(PokemonCenterSceneBuilder.ItemLibraryPath));
 
             var navigator = new GameObject("SceneNavigator").AddComponent<SceneNavigator>();
             UnityEventTools.AddVoidPersistentListener(menuButton.onClick, navigator.GoToIngameMenu);
