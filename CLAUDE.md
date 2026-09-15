@@ -236,6 +236,11 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.
 
+  **Device testing (iPhone):** needs the Unity iOS module. `Pets > Build iOS Xcode Project` (or
+  `-buildTarget iOS -executeMethod Pets.EditorTools.IosBuild.Build -quit`) exports an Xcode project
+  to `client/Builds/iOS` (git-ignored); open `Unity-iPhone.xcodeproj`, pick a signing team, and run
+  on the connected phone. Set `APPLE_TEAM_ID` to skip the team step. Personal testing only.
+
   Note a batch run that has just exited can leave `client/Temp/UnityLockfile` behind for a few
   seconds; a second run started immediately fails with a bare exit code 1 and an almost empty log.
   Wait for the process to clear rather than debugging the log.
