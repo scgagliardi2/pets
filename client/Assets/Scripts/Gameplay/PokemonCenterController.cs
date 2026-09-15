@@ -185,7 +185,9 @@ namespace Pets.Gameplay
                 string info = toGo.HasValue
                     ? $"Tier {species.Tier}   Evo in {toGo.Value}"
                     : $"Tier {species.Tier}   {mon.Exp} EXP";
-                card.Show(PokemonSprites.Load(species), species.DisplayName, species.Type1, species.HasSecondType,
+                // LoadFront, not Load: the adoption cards sit alongside the Pokédex and the party,
+                // and the official artwork here would be the one screen still showing illustrations.
+                card.Show(PokemonSprites.LoadFront(species), species.DisplayName, species.Type1, species.HasSecondType,
                     species.Type2, mon.CurrentStats, SpeciesTier.MaxSpeed, info, PokemonCenterShop.PokemonPrice,
                     state.Money >= PokemonCenterShop.PokemonPrice);
             }

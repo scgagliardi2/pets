@@ -206,19 +206,19 @@ namespace Pets.Tests
             }
         }
 
-        /// <summary>Pins the known gap in the battle sprite set rather than asserting it away.
+        /// <summary>Every curated species has a battle sprite of both facings.
         ///
-        /// The sprites under Assets/Art/Pokemon-Sprites cover 181 of the 183 curated species: the
-        /// two gendered Nidoran have no sprite of either facing, and the folder carries two sprites
-        /// (Pichu, Magmortar) for species the roster doesn't have — the fetch script worked from a
-        /// slightly different list. Those two fall back to their official artwork, so they render,
-        /// just in a different style from everything around them.
+        /// This started life pinning a known gap — the set shipped covering 181 of 183, with the two
+        /// gendered Nidoran missing — and was written to fail if that count moved in *either*
+        /// direction, so that closing the gap would force the test to be tightened rather than
+        /// quietly leaving a weaker assertion in place. The Nidoran sprites have since been added,
+        /// so it now demands full coverage.
         ///
-        /// The test fails if that count moves in either direction: fetching the missing pair should
-        /// take it to zero and this assertion should then be tightened, and a *new* gap appearing
-        /// means something regressed in the importer's slug matching.</summary>
+        /// A failure here means either a species was added to the roster without a sprite, or
+        /// SpeciesRosterImporter.ToSpriteSlug stopped matching a filename under
+        /// Assets/Art/Pokemon-Sprites/animated_sprites.</summary>
         [Test]
-        public void TheBattleSpriteSet_CoversEverySpeciesExceptTheKnownTwo()
+        public void EverySpecies_HasABattleSpriteOfBothFacings()
         {
             var library = LoadSingle<PokemonSpeciesLibrary>();
 
@@ -227,15 +227,15 @@ namespace Pets.Tests
             var withoutBack = library.AllSpecies.Where(s => s.BackSprite == null)
                 .Select(s => s.DisplayName).OrderBy(n => n).ToArray();
 
-            var expected = new[] { "Nidoran-F", "Nidoran-M" };
-            CollectionAssert.AreEqual(expected, withoutFront,
-                "The set of species missing a front battle sprite has changed. If the Nidoran sprites " +
-                "were added, tighten this test to expect none; if something else is now missing, check " +
+            CollectionAssert.IsEmpty(withoutFront,
+                "These species have no front battle sprite and will fall back to their official " +
+                "artwork, which looks nothing like the sprites around it. Check the slug matching in " +
                 "SpeciesRosterImporter.ToSpriteSlug against the filenames under " +
-                "Assets/Art/Pokemon-Sprites/animated_sprites/front.");
-            CollectionAssert.AreEqual(expected, withoutBack,
-                "The set of species missing a back battle sprite has changed — see the front-sprite " +
-                "assertion above for what to check.");
+                "Assets/Art/Pokemon-Sprites/animated_sprites/front, then re-run " +
+                "Pets > Content > Import Species From Roster Sheet.");
+            CollectionAssert.IsEmpty(withoutBack,
+                "These species have no back battle sprite, so the player's own side of the field " +
+                "will fall back to their front sprite — see the front-sprite assertion above.");
         }
 
         [Test]
