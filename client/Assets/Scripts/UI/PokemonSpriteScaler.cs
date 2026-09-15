@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 namespace Pets.UI
 {
-    /// <summary>Draws a battle sprite at a fixed multiple of its own pixel size, rather than
+    /// <summary>Draws a Pokémon sprite at a size derived from its own pixels, rather than
     /// stretching it to fill a fixed box.
     ///
     /// The distinction matters because the sprite set is drawn at true relative scale: Ralts is
@@ -21,8 +21,32 @@ namespace Pets.UI
     /// - **Scales should be whole numbers.** These are pixel art; a 1.5x scale renders some source
     ///   pixels two screen-pixels wide and some three, which reads as a wobble along every edge that
     ///   Point filtering then makes crisply visible. Integers keep every pixel the same size.</summary>
-    public static class BattleSpriteScaler
+    public static class PokemonSpriteScaler
     {
+        /// <summary>The pixel height a sprite needs to be to fill a slot completely, used by
+        /// <see cref="RelativeSize"/>. Set just above the tallest sprite in the set (117), so the
+        /// largest species almost fills its box and everything else is drawn in proportion beneath
+        /// it — and so adding a slightly taller sprite later doesn't immediately overflow.</summary>
+        public const float ReferenceHeight = 120f;
+
+        /// <summary>The size to draw <paramref name="sprite"/> at inside a slot
+        /// <paramref name="slotHeight"/> tall, keeping every species in proportion to every other.
+        ///
+        /// For the screens that show Pokémon in small fixed boxes — the character select grid, the
+        /// Pokédex, roster cards — where a whole-number scale like the battlefield's isn't an
+        /// option: a 153px Lugia has to come down to fit an 80px card whatever else happens. The
+        /// scale is derived from the slot rather than the sprite, so it's the same for every
+        /// species in that slot, which is the property that matters. Absolute size still differs
+        /// between screens, because their boxes differ.</summary>
+        public static Vector2 RelativeSize(Sprite sprite, float slotHeight)
+        {
+            if (sprite == null)
+            {
+                return Vector2.zero;
+            }
+            return sprite.rect.size * (slotHeight / ReferenceHeight);
+        }
+
         /// <summary>Re-points a sprite's RectTransform so its bottom-centre — where a mon's feet
         /// are — stays exactly where the bottom-centre of its original slot rect was, and so
         /// resizing afterwards grows the sprite upward and out to the sides rather than away from

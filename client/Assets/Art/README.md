@@ -21,10 +21,11 @@ ScriptableObject, prefab or scene, and therefore only ship if something actually
   `Pokemon/` next door, because these are ~50x46 pixel art rather than smooth illustration.
 
   **Sizes are meaningful and must not be normalised.** The set is drawn at true relative scale —
-  Ralts is 23x39 and Lugia 153x94, because Lugia is about four times the size. The battlefield
-  multiplies each sprite's own pixels by one shared factor (`BattleSpriteScaler`) rather than
-  fitting each to a box, so resizing these files to a uniform canvas would destroy the proportions
-  the art already encodes.
+  Ralts is 23x39 and Lugia 153x94, because Lugia is about four times the size. Every screen sizes
+  sprites from their own pixels through `PokemonSpriteScaler` rather than fitting each to a box: the
+  battlefield by a whole-number factor, and the card-based screens (character select, Pokédex,
+  roster) by one factor shared across the species in that slot. Resizing these files to a uniform
+  canvas would destroy the proportions the art already encodes.
 
   **These are what the game draws now.** The front sprite is used everywhere a Pokémon appears;
   the back sprite only for the player's own Lead and Support on the battlefield. `Pokemon/` below

@@ -41,17 +41,55 @@ namespace Pets.UI
             return go;
         }
 
+        /// <summary>A card's portrait. <paramref name="height"/> is the space the portrait is given,
+        /// not the height every sprite is drawn at — see <see cref="SetSprite"/>, which sizes each
+        /// species in proportion to the others rather than stretching all of them to fill it.</summary>
         public static Image AddSprite(Transform card, Sprite sprite, int height)
         {
             var go = new GameObject("Sprite", typeof(RectTransform));
             go.transform.SetParent(card, false);
             var image = go.AddComponent<Image>();
-            image.sprite = sprite;
             image.preserveAspect = true;
             image.raycastTarget = false;
             var layoutElement = go.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = height;
+            // Reserved whether or not there's a sprite yet, so cards in a grid line up rather than
+            // each sitting at the height of whichever species landed in it.
+            layoutElement.minHeight = height;
+            SetSprite(image, sprite, height);
             return image;
+        }
+
+        /// <summary>Puts a sprite in a card portrait at a size proportional to every other species
+        /// in the same slot — a Ralts small, a Lugia nearly filling it — rather than scaling each
+        /// one until it fits.
+        ///
+        /// Split out from <see cref="AddSprite"/> because grids build their cards empty and bind
+        /// species to them later (SpeciesGridView), and the size can only be worked out once there's
+        /// a sprite to measure.
+        ///
+        /// Scales off height alone, since that's the dimension a card reserves. The widest species
+        /// are much wider than they are tall — Lugia is 153x94 — so on a narrow enough card the
+        /// layout will clamp the width and `preserveAspect` will shrink that one sprite to fit,
+        /// which would put it out of proportion with the rest. If that shows up on a screen, the fix
+        /// is to derive the scale from whichever of the card's own width and height binds first,
+        /// rather than assuming height does.</summary>
+        public static void SetSprite(Image image, Sprite sprite, int slotHeight)
+        {
+            if (image == null)
+            {
+                return;
+            }
+            image.sprite = sprite;
+            image.enabled = sprite != null;
+
+            var layoutElement = image.GetComponent<LayoutElement>();
+            if (layoutElement == null)
+            {
+                return;
+            }
+            var size = PokemonSpriteScaler.RelativeSize(sprite, slotHeight);
+            layoutElement.preferredWidth = sprite != null ? size.x : -1f;
+            layoutElement.preferredHeight = sprite != null ? size.y : slotHeight;
         }
 
         /// <summary>One text line. Bold by default at every call site so far — Handjet's Regular

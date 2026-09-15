@@ -99,6 +99,10 @@ namespace Pets.Gameplay
         private const float FallbackBallColumnWidth = 140f;
         private const float FallbackBallColumnGap = 10f;
 
+        /// <summary>How long a Lead's shove-and-return takes. Short — it sits in front of every
+        /// Step's drain, so time spent here is time added to every Step of every fight.</summary>
+        [SerializeField] private float attackLungeSeconds = 0.26f;
+
         [Header("Sprite scale")]
         /// <summary>Magnification for the player's own two mons. 3x against the foe's 2x reads as
         /// depth without either side being drawn at a fractional scale, which pixel art can't take
@@ -147,10 +151,14 @@ namespace Pets.Gameplay
             public BattleCombatant Bound;
 
             /// <summary>How much this slot magnifies its sprite's own pixels — see
-            /// BattleSpriteScaler. The player's side is drawn larger than the foe's, which is the
+            /// PokemonSpriteScaler. The player's side is drawn larger than the foe's, which is the
             /// depth cue the main-series games use: your mon is stood next to you and theirs is
             /// across the clearing. Both are whole numbers because these are pixel art.</summary>
             public float SpriteScale;
+
+            /// <summary>The attack animation, on the two Lead slots only — Supports don't strike in
+            /// this combat model. Null on a Support, so every use is guarded.</summary>
+            public AttackLungeView Lunge;
 
             /// <summary>True for the player's own two slots, which draw the back sprite — the
             /// over-the-shoulder view the main-series games use, where your mon faces away and the
@@ -255,8 +263,15 @@ namespace Pets.Gameplay
             // sizing a sprite to its own pixels grows it upward instead of out of position.
             foreach (var slot in new[] { playerLead, playerSupport, enemyLead, enemySupport })
             {
-                BattleSpriteScaler.AnchorToGround(slot.Sprite != null ? slot.Sprite.rectTransform : null);
+                PokemonSpriteScaler.AnchorToGround(slot.Sprite != null ? slot.Sprite.rectTransform : null);
             }
+
+            // Only the Leads strike, so only they get a lunge. Attached here rather than authored
+            // into Battle.unity so this needs no scene rebuild — same reasoning as the catch tray's
+            // drop target. The directions point each Lead at the other: the player's pair stand
+            // lower-left of the foe's, so one shoves up-and-right and the other down-and-left.
+            playerLead.Lunge = AttachLunge(playerLead, new Vector2(1f, 1f));
+            enemyLead.Lunge = AttachLunge(enemyLead, new Vector2(-1f, -1f));
 
             for (int i = 0; i < partySlots.Length; i++)
             {
@@ -369,6 +384,37 @@ namespace Pets.Gameplay
 
             throwButton.onClick.AddListener(OnThrowButtonClicked);
             RefreshCatchControls();
+        }
+
+        private static AttackLungeView AttachLunge(FieldSlot slot, Vector2 direction)
+        {
+            if (slot.Sprite == null)
+            {
+                return null;
+            }
+            var lunge = slot.Sprite.gameObject.AddComponent<AttackLungeView>();
+            lunge.Direction = direction;
+            return lunge;
+        }
+
+        /// <summary>Strikes both Leads, reporting whether anything actually moved so the caller only
+        /// waits when there's something to watch.
+        ///
+        /// Both or neither: the exchange only happens when both Leads are standing
+        /// (battle-sim-spec.md §3.1), so a Step where one side has already lost its Lead — the last
+        /// Step of a fight, typically — has no attack to animate and shouldn't pause for one.</summary>
+        private bool PlayLunges(BattleCombatant playerLeadMon, BattleCombatant enemyLeadMon)
+        {
+            bool exchanged = playerLeadMon != null && playerLeadMon.IsAlive
+                && enemyLeadMon != null && enemyLeadMon.IsAlive;
+            if (!exchanged)
+            {
+                return false;
+            }
+
+            playerLead.Lunge?.Play(attackLungeSeconds);
+            enemyLead.Lunge?.Play(attackLungeSeconds);
+            return playerLead.Lunge != null || enemyLead.Lunge != null;
         }
 
         private int OddsPercentFor(BallTier tier)
@@ -653,6 +699,10 @@ namespace Pets.Gameplay
             autoplayRoutine = null;
             IsAutoplaying = false;
             IsAnimating = false;
+            // A lunge drives itself from Update, so StopAllCoroutines doesn't reach it — left alone
+            // it would finish its arc over the skipped-to result. Put both back on their feet.
+            playerLead.Lunge?.Clear();
+            enemyLead.Lunge?.Clear();
 
             while (!runner.IsBattleOver)
             {
@@ -727,18 +777,26 @@ namespace Pets.Gameplay
             fightEvents.AddRange(events);
             RecordDamage(events);
 
-            // 1. The mons that fought this Step drain to where it left them.
+            // 1. The two Leads strike. Ahead of the drain so the hit reads as the cause of it, and
+            //    played to completion because the lunge and the faint both write the sprite's
+            //    position — sequencing them is what stops the two fighting over it.
+            if (PlayLunges(shownPlayerLead, shownEnemyLead))
+            {
+                yield return new WaitForSeconds(attackLungeSeconds);
+            }
+
+            // 2. The mons that fought this Step drain to where it left them.
             Render(shownPlayerLead, shownPlayerSupport, shownEnemyLead, shownEnemySupport, HealthMode.Animate, showFaint: false);
             yield return new WaitForSeconds(hpDrainSeconds);
 
             if (ChangedLineUp(events))
             {
-                // 2. Whoever hit 0 fades before anyone takes their place.
+                // 3. Whoever hit 0 fades before anyone takes their place.
                 Render(shownPlayerLead, shownPlayerSupport, shownEnemyLead, shownEnemySupport, HealthMode.Keep, showFaint: true);
                 yield return new WaitForSeconds(faintRevealSeconds);
             }
 
-            // 3. Promotions.
+            // 4. Promotions.
             damageThisStep.Clear();
             RenderCurrent(HealthMode.Keep);
             if (runner.IsBattleOver)
@@ -747,7 +805,7 @@ namespace Pets.Gameplay
             }
             IsAnimating = false;
 
-            // 4. The Step boundary a throw made mid-animation was waiting for (design doc §12.1).
+            // 5. The Step boundary a throw made mid-animation was waiting for (design doc §12.1).
             //    After IsAnimating clears, so ResolveThrow takes it back cleanly for its own beat.
             if (queuedThrow.HasValue)
             {
@@ -1021,11 +1079,12 @@ namespace Pets.Gameplay
                     ? PokemonSprites.LoadBack(species)
                     : PokemonSprites.LoadFront(species);
                 // Sized from the sprite's own pixels, not the slot, so a Ralts is drawn small and a
-                // Lugia large — see BattleSpriteScaler.
-                BattleSpriteScaler.ApplyScale(slot.Sprite, slot.SpriteScale);
-                // Whoever was here last may have fallen out of frame; the mon promoted into their
-                // place stands where they stood.
+                // Lugia large — see PokemonSpriteScaler.
+                PokemonSpriteScaler.ApplyScale(slot.Sprite, slot.SpriteScale);
+                // Whoever was here last may have fallen out of frame or been mid-strike; the mon
+                // promoted into their place stands where they stood.
                 slot.Faint?.Clear();
+                slot.Lunge?.Clear();
             }
             else
             {
