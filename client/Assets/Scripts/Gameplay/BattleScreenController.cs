@@ -87,6 +87,35 @@ namespace Pets.Gameplay
         [SerializeField] private float faintRevealSeconds = FaintDropSeconds;
         [SerializeField] private float pauseBetweenSteps = 0.4f;
 
+        /// <summary>The "will it break free" pause a throw holds the fight for (design doc §12.1)
+        /// before the result is drawn.</summary>
+        [SerializeField] private float catchAttemptSeconds = 0.8f;
+
+        /// <summary>How long "Caught!" / "broke free!" stays up before the fight carries on.</summary>
+        [SerializeField] private float catchResultSeconds = 0.9f;
+
+        // Only used when the scene predates the ball column (see BuildFallbackBallColumn); the
+        // baked-in one uses BattleSceneBuilder's own constants.
+        private const float FallbackBallColumnWidth = 140f;
+        private const float FallbackBallColumnGap = 10f;
+
+        [Header("Catching")]
+        /// <summary>The column of ball rows beside the Throw button. Built empty by
+        /// BattleSceneBuilder and filled by CatchTrayView at runtime, the same arrangement as the
+        /// result panel's catch row.</summary>
+        [SerializeField] private RectTransform ballColumn;
+
+        /// <summary>Where "Caught Pidgey!" / "Pidgey broke free!" appears, over the field. Left
+        /// inactive by the builder; only a throw ever shows it.</summary>
+        [SerializeField] private Text catchMessageText;
+
+        /// <summary>The framed panel behind <see cref="catchMessageText"/>, which is what actually
+        /// gets shown and hidden. Separate from the Text because a uGUI object can hold only one
+        /// Graphic, so the frame has to be the parent — and toggling the Text alone would leave an
+        /// empty frame on the battlefield. Falls back to the Text's own object if a scene supplies
+        /// a bare Text with no frame.</summary>
+        [SerializeField] private GameObject catchMessageRoot;
+
         /// <summary>How long the faint drop takes. Matched to faintRevealSeconds, so the Step's
         /// faint beat lasts exactly as long as the animation it's there to show.</summary>
         private const float FaintDropSeconds = 0.7f;
@@ -150,6 +179,26 @@ namespace Pets.Gameplay
         /// cap.</summary>
         private readonly List<StepEvent> fightEvents = new List<StepEvent>();
 
+        /// <summary>The ball tray, built at runtime (see CatchTrayView). Null in a fight where
+        /// catching isn't offered — Gym and dev battles — so every use is guarded.</summary>
+        private CatchTrayView catchTray;
+
+        /// <summary>A throw waiting for the current Step to finish drawing. Design doc §12.1 has a
+        /// throw resolve "at the next Step boundary", so one made mid-animation is held here rather
+        /// than applied into a half-drawn board; a throw made while paused resolves immediately,
+        /// because a paused fight is already sitting on a boundary.</summary>
+        private BallTier? queuedThrow;
+
+        /// <summary>Wild mons already caught this fight, by instance id. Consulted when the fight
+        /// ends so the "pick 1 from defeated" stub can't also offer a mon that was caught — it
+        /// reads Faint events, and a caught mon's Support may well faint later in the same fight.</summary>
+        private readonly HashSet<string> caughtInstanceIds = new HashSet<string>();
+
+        /// <summary>Catching is a wild-encounter mechanic: PvE map nodes only. Gym and PvP are
+        /// trainer battles (design doc §12.1), and the dev random battle is a throwaway with no run
+        /// consequences, so neither offers it.</summary>
+        private bool CatchingOffered => context == BattleContext.MapPvE && nodeEnemyLineUp != null;
+
         /// <summary>The fight in progress; null when the screen redirected instead of starting one.</summary>
         public BattleState State => runner?.State;
 
@@ -189,7 +238,7 @@ namespace Pets.Gameplay
                 }
             }
 
-            throwButton.interactable = false;
+            SetUpCatching();
             // A node fight is committed the moment the player walks onto the node, so there's no
             // leaving it half-fought — the result panel is the way out. The dev battle keeps its
             // Back button, since it costs the run nothing either way.
@@ -240,6 +289,308 @@ namespace Pets.Gameplay
             runner = new OnDemandStepRunner(battle.PlayerLineUp, battle.EnemyLineUp, battle.Seed);
             enemyTeamSize = battle.EnemyLineUp.Count;
             return battle.PlayerLineUp;
+        }
+
+        /// <summary>Stands the catching interaction up for a PvE fight: a tray of balls, and the
+        /// enemy Lead's sprite made into a drop target (design doc §12.1). Both are attached at
+        /// runtime rather than wired into the Battle scene — see CatchTrayView for why.
+        ///
+        /// The column and the callout normally come from BattleSceneBuilder. If the scene predates
+        /// them — which it does until Pets &gt; Build Battle Scene is re-run — those serialized
+        /// fields are null, and stand-ins are built here instead. Carrying on with a null container
+        /// silently parented the rows to nothing: no balls, no callout, no error, and a Throw button
+        /// that looked broken. A feature that only works if someone remembers an editor menu item
+        /// isn't finished.
+        ///
+        /// In a fight where catching isn't offered the Throw button stays hidden exactly as it was
+        /// before, and no column or target is built at all.</summary>
+        private void SetUpCatching()
+        {
+            if (!CatchingOffered)
+            {
+                throwButton.interactable = false;
+                throwButton.gameObject.SetActive(false);
+                if (ballColumn != null)
+                {
+                    ballColumn.gameObject.SetActive(false);
+                }
+                return;
+            }
+
+            // A run started before catching existed has an empty inventory and would silently offer
+            // a dead column and a dead button. Topping it up here rather than only in
+            // RunBootstrapper means an in-flight save isn't stranded without balls.
+            if (ActiveRun.State.Balls.Total() == 0)
+            {
+                ActiveRun.State.Balls.GrantStartingStock();
+            }
+
+            var canvas = board.GetComponentInParent<Canvas>();
+            var dragLayer = canvas != null ? (RectTransform)canvas.transform : (RectTransform)board.transform;
+
+            var column = ballColumn != null ? ballColumn : BuildFallbackBallColumn();
+            if (catchMessageText == null)
+            {
+                catchMessageText = BuildFallbackCatchMessage();
+            }
+
+            catchTray = gameObject.AddComponent<CatchTrayView>();
+            catchTray.Build(column, dragLayer, ActiveRun.State.Balls, OddsPercentFor);
+
+            // Only the Lead slot gets a drop target, per the design doc: Support and further-back
+            // enemies aren't catchable until they're promoted into the Lead slot themselves. The
+            // sprite has to take the raycast for a drop to find it — it doesn't by default, since
+            // nothing else on the field is interactive.
+            if (enemyLead?.Sprite != null)
+            {
+                enemyLead.Sprite.raycastTarget = true;
+                var target = enemyLead.Sprite.gameObject.AddComponent<CatchTargetView>();
+                target.BallDropped += tier => OnThrowAttempted(tier);
+            }
+
+            throwButton.onClick.AddListener(OnThrowButtonClicked);
+            RefreshCatchControls();
+        }
+
+        private int OddsPercentFor(BallTier tier)
+        {
+            var target = runner?.State?.LeadB;
+            return target == null ? 0 : CatchOdds.PercentFor(tier, target);
+        }
+
+        /// <summary>The ball column, for a Battle scene built before it existed. Positioned off the
+        /// Throw button so it lands beside it wherever it is. An un-rebuilt strip was laid out with
+        /// no column in mind, so the space to the right may not exist — putting it there would hang
+        /// it off the screen edge, which looks exactly like not being drawn. So it measures, and
+        /// drops to the left of the button when the right doesn't fit.</summary>
+        private RectTransform BuildFallbackBallColumn()
+        {
+            Debug.LogWarning("BattleScreenController: no ballColumn wired — building one at runtime. " +
+                "Run Pets > Build Battle Scene to bake it into Battle.unity properly.");
+
+            var throwRect = (RectTransform)throwButton.transform;
+            var column = new GameObject("BallColumn", typeof(RectTransform)).GetComponent<RectTransform>();
+            column.SetParent(throwRect.parent, false);
+            column.anchorMin = throwRect.anchorMin;
+            column.anchorMax = throwRect.anchorMax;
+            column.pivot = throwRect.pivot;
+            column.sizeDelta = new Vector2(FallbackBallColumnWidth, throwRect.sizeDelta.y);
+
+            float rightEdge = throwRect.anchoredPosition.x + throwRect.sizeDelta.x
+                + FallbackBallColumnGap + FallbackBallColumnWidth;
+            float available = (throwRect.parent as RectTransform)?.rect.width ?? rightEdge;
+            column.anchoredPosition = rightEdge <= available
+                ? throwRect.anchoredPosition + new Vector2(throwRect.sizeDelta.x + FallbackBallColumnGap, 0f)
+                : throwRect.anchoredPosition - new Vector2(FallbackBallColumnWidth + FallbackBallColumnGap, 0f);
+            return column;
+        }
+
+        /// <summary>The "Caught!" / "broke free!" callout, for a scene built before it existed: a
+        /// framed panel with the text inside, matching what BattleSceneBuilder bakes in. Also sets
+        /// catchMessageRoot, since the panel is what gets shown and hidden.</summary>
+        private Text BuildFallbackCatchMessage()
+        {
+            var panelGo = new GameObject("CatchMessage", typeof(RectTransform), typeof(Image));
+            var panel = panelGo.GetComponent<RectTransform>();
+            panel.SetParent(board.transform, false);
+            panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
+            panel.pivot = new Vector2(0.5f, 0.5f);
+            panel.sizeDelta = new Vector2(440f, 68f);
+            panel.anchoredPosition = new Vector2(0f, 30f);
+
+            var frame = panelGo.GetComponent<Image>();
+            frame.sprite = Theme.SlotDarkSprite;
+            frame.type = Image.Type.Sliced;
+            frame.raycastTarget = false;
+
+            var textGo = new GameObject("Label", typeof(RectTransform), typeof(Text));
+            var textRect = textGo.GetComponent<RectTransform>();
+            textRect.SetParent(panel, false);
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(12f, 0f);
+            textRect.offsetMax = new Vector2(-12f, 0f);
+
+            var text = textGo.GetComponent<Text>();
+            text.font = Theme.GameFont;
+            text.fontSize = 30;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Theme.TextLight;
+            text.raycastTarget = false;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+
+            var outline = textGo.AddComponent<Outline>();
+            outline.effectColor = Theme.ChromeBg;
+            outline.effectDistance = new Vector2(2f, -2f);
+
+            catchMessageRoot = panelGo;
+            panelGo.SetActive(false);
+            return text;
+        }
+
+        /// <summary>Whether a ball can be thrown this instant: a live wild Lead, a fight still
+        /// running, and nothing mid-animation. A throw during a Step's draw is queued instead of
+        /// refused (see queuedThrow), so this gates the controls' appearance rather than the
+        /// gesture.</summary>
+        private bool CanThrowNow() =>
+            CatchingOffered && runner != null && !runner.IsBattleOver && runner.State.LeadB != null;
+
+        private void RefreshCatchControls()
+        {
+            if (!CatchingOffered)
+            {
+                return;
+            }
+            bool canThrow = CanThrowNow() && ActiveRun.State.Balls.HasAny();
+            throwButton.interactable = canThrow;
+            catchTray?.SetThrowsAllowed(canThrow);
+        }
+
+        /// <summary>The Throw button — the main trigger. Sends whichever tier is selected in the
+        /// column, which defaults to the weakest the run still has, so it can't quietly spend an
+        /// Ultra Ball the player was saving.</summary>
+        private void OnThrowButtonClicked()
+        {
+            var tier = catchTray?.Selected;
+            if (tier.HasValue)
+            {
+                OnThrowAttempted(tier.Value);
+            }
+        }
+
+        private void OnThrowAttempted(BallTier tier)
+        {
+            if (!CanThrowNow() || !ActiveRun.State.Balls.Has(tier))
+            {
+                return;
+            }
+            // Mid-Step, the board on screen doesn't match the state a catch would mutate, so the
+            // throw waits for the boundary the Step is about to reach (design doc §12.1).
+            if (IsAnimating)
+            {
+                queuedThrow = tier;
+                return;
+            }
+            StartCoroutine(ResolveThrow(tier));
+        }
+
+        /// <summary>Resolves one throw and draws it. Autoplay is suspended for the attempt and
+        /// resumed afterwards, which is the design doc's "the fight pauses there for the catch
+        /// attempt, then automatically resumes into the next Step whether it succeeded or
+        /// failed".</summary>
+        private IEnumerator ResolveThrow(BallTier tier)
+        {
+            IsAnimating = true;
+            bool wasAutoplaying = IsAutoplaying;
+            IsAutoplaying = false;
+            RefreshCatchControls();
+
+            string caughtName = NameOfWildLead();
+            var result = CatchResolver.TryCatch(
+                ActiveRun.State, runner.State, Side.B, tier, runner.Rng, library);
+
+            if (result.SpentBall)
+            {
+                // The suspense beat — the ball is in the air and the outcome isn't shown yet.
+                // Without it a catch is a mon simply vanishing mid-fight.
+                ShowCatchMessage("...", Theme.TextLight);
+                yield return new WaitForSeconds(catchAttemptSeconds);
+            }
+
+            if (result.Landed)
+            {
+                fightEvents.AddRange(result.Events);
+                foreach (var evt in result.Events)
+                {
+                    if (evt.Kind == StepEventKind.Caught)
+                    {
+                        caughtInstanceIds.Add(evt.SourceInstanceId);
+                    }
+                }
+                ShowCatchMessage($"Caught {caughtName}!", Theme.Positive);
+                RenderCurrent(HealthMode.Keep);
+            }
+            else if (result.Outcome == CatchResolver.ThrowOutcome.BrokeFree)
+            {
+                ShowCatchMessage($"{caughtName} broke free!", Theme.Danger);
+            }
+
+            if (result.SpentBall)
+            {
+                yield return new WaitForSeconds(catchResultSeconds);
+            }
+            HideCatchMessage();
+
+            catchTray?.Refresh();
+            RefreshCatchControls();
+            IsAnimating = false;
+
+            // Catching the wild side's last mon ends the fight then and there, exactly as a faint
+            // would have (design doc §12.1).
+            if (runner.IsBattleOver)
+            {
+                ShowResult();
+                yield break;
+            }
+            // Otherwise the fight carries straight on into the next Step, hit or miss.
+            if (wasAutoplaying)
+            {
+                SetAutoplay(true);
+            }
+        }
+
+        /// <summary>The wild Lead's species name, read *before* the throw resolves — a successful
+        /// catch removes it from the line-up, so afterwards there's nothing left to name.</summary>
+        private string NameOfWildLead()
+        {
+            var lead = runner?.State?.LeadB;
+            return lead != null ? DisplayName(lead) : "It";
+        }
+
+        /// <summary>The object shown and hidden for the callout: the frame when there is one, the
+        /// bare Text when a scene supplies one without.</summary>
+        private GameObject CatchMessageObject =>
+            catchMessageRoot != null ? catchMessageRoot : catchMessageText?.gameObject;
+
+        private void ShowCatchMessage(string message, Color color)
+        {
+            var root = CatchMessageObject;
+            if (catchMessageText == null || root == null)
+            {
+                return;
+            }
+            catchMessageText.text = message;
+            catchMessageText.color = color;
+            root.SetActive(true);
+            StartCoroutine(PopCatchMessage(root.transform));
+        }
+
+        /// <summary>A short scale-up as the callout appears, so it reads as something that just
+        /// happened rather than text that was always there. Deliberately quick: it runs inside the
+        /// beat the fight is already paused for and mustn't add to it.</summary>
+        private IEnumerator PopCatchMessage(Transform target)
+        {
+            const float PopSeconds = 0.12f;
+            const float StartScale = 0.8f;
+            for (float t = 0f; t < PopSeconds; t += Time.deltaTime)
+            {
+                float k = Mathf.SmoothStep(StartScale, 1f, t / PopSeconds);
+                target.localScale = new Vector3(k, k, 1f);
+                yield return null;
+            }
+            target.localScale = Vector3.one;
+        }
+
+        private void HideCatchMessage()
+        {
+            var root = CatchMessageObject;
+            if (root != null)
+            {
+                root.transform.localScale = Vector3.one;
+                root.SetActive(false);
+            }
         }
 
         public void OnStepClicked()
@@ -327,6 +678,7 @@ namespace Pets.Gameplay
             playButton.interactable = !over && !IsAutoplaying;
             stepButton.interactable = !over;
             skipButton.interactable = !over;
+            RefreshCatchControls();
         }
 
         private IEnumerator AutoplayLoop()
@@ -375,6 +727,19 @@ namespace Pets.Gameplay
                 ShowResult();
             }
             IsAnimating = false;
+
+            // 4. The Step boundary a throw made mid-animation was waiting for (design doc §12.1).
+            //    After IsAnimating clears, so ResolveThrow takes it back cleanly for its own beat.
+            if (queuedThrow.HasValue)
+            {
+                var tier = queuedThrow.Value;
+                queuedThrow = null;
+                if (CanThrowNow() && ActiveRun.State.Balls.Has(tier))
+                {
+                    yield return ResolveThrow(tier);
+                }
+            }
+            RefreshCatchControls();
         }
 
         private void ShowResult()
@@ -494,6 +859,14 @@ namespace Pets.Gameplay
         {
             foreach (var defeated in CatchResolver.GetDefeated(nodeEnemyLineUp, fightEvents, Side.B))
             {
+                // Belt and braces: a mon caught mid-fight leaves the line-up alive and so never
+                // raises the Faint event GetDefeated reads, meaning it shouldn't reach here at
+                // all. The guard is here because both paths add to the Box, and if that ever
+                // stopped being true the symptom would be a duplicated mon rather than an error.
+                if (caughtInstanceIds.Contains(defeated.InstanceId))
+                {
+                    continue;
+                }
                 CreateCatchButton(defeated);
             }
         }

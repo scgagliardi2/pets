@@ -377,8 +377,9 @@ Nincada) deliberately have none, so they can't evolve until a branch picker exis
 
 **What the loop still doesn't do** (deliberate, see ADR 0003): a lost non-Gym fight costs Morale and
 nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; Event
-and PvP nodes show an honest "not built yet" modal and pay nothing; catching is still the "pick 1 from defeated"
-stub; and money is never awarded, since there's no Shop to spend it in.
+and PvP nodes show an honest "not built yet" modal and pay nothing; and money is never awarded,
+since there's no Shop to spend it in — which is also why Pokeballs are handed out as a fixed
+starting stock (`BallInventory.GrantStartingStock`) rather than bought.
 
 **Known naming debt** (noted rather than fixed, so nobody assumes the names are meaningful):
 - ~~`RegionMap*` is really the Location node-map~~ — renamed to `LocationMap*` (`Meta/LocationMap.cs`,
@@ -395,7 +396,7 @@ stub; and money is never awarded, since there's no Shop to spend it in.
   well be the better shape for the game — but it's a live deviation from the design doc, not an
   implementation of it. See ADR 0002.
 
-**Also not built:** the real drag-and-drop catching system, the Trailblazer minigame
+**Also not built:** the Trailblazer minigame
 (no `Scripts/Minigame` folder — it was never started), Pokémon Center adoption and healing, a real
 Shop economy, type synergy bonuses, the badge-as-relic reward behind the Gym win, Event and PvP node
 behavior, paging the Box past six slots, and **any save/load
@@ -431,9 +432,18 @@ retired hub scene (ADR 0002, ADR 0003).*
 - ✅ The eight-badge run: the Region Hub between Locations, all nine Location types, and enemies and
   encounter pools scaled to it (ADR 0007), now on tiers and a flat EXP count (ADR 0008, retuned in
   ADR 0009).
-- Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), the full
-  drag-and-drop catching system (Step-boundary throws, HP%/status-based odds) in place of the "pick
-  1 from defeated" stub, Pokémon Center adoption and healing, type synergy bonuses, the
+- ✅ The full drag-and-drop catching system (design doc §12.1): ball tiers and a run inventory
+  (`Meta/BallTier`, `Meta/BallInventory`), the HP%/status odds formula (`Meta/CatchOdds`),
+  Step-boundary throw resolution (`Meta/CatchResolver.TryCatch`,
+  `Simulation/BattleSimulator.RemoveCaught`) and the battle-screen tray and drop target
+  (`Gameplay/CatchTrayView`, `BallDragHandle`, `BallRowSelector`, `CatchTargetView`): a column of
+  three ball rows beside the Throw button showing live odds per tier, throwable by pressing Throw
+  with a tier selected or by dragging a ball onto the enemy Lead, with a "Caught!"/"broke free!"
+  callout either way. The column and the callout are built by `BattleSceneBuilder`, so **re-run
+  Pets > Build Battle Scene after pulling this**. The "pick 1 from defeated" stub
+  is still there on the result panel and still works — it covers mons that fainted rather than
+  being caught, so the two are complementary, not duplicates.
+- Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center adoption and healing, type synergy bonuses, the
   badge-as-relic reward, the Line-Up menu before a Gym, real Event and PvP nodes in
   place of their modals, and the real Trailblazer minigame (lane obstacle-dodge, Speed/Type-driven
   per §6 of the design doc). Each is its own piece of work, not a finishing touch on the above.
@@ -607,9 +617,11 @@ there's finally a run worth persisting, and a finished run with nothing to recor
 4. **Save/load.** Listed under Phase 2 below, but it's what "Continue Run", History, and any
    meta-progression all actually wait on — worth pulling forward now that a run can be played to a
    finish and nothing records that it happened.
-5. **The real drag-and-drop catching system** (Step-boundary ball throws, HP%/status-based odds,
-   design doc §12.1) in place of the "pick 1 from defeated" stub now offered on the result panel.
-   The Throw button is already drawn and disabled on `Battle.unity`, waiting for it.
+5. ~~**The real drag-and-drop catching system**~~ Built (design doc §12.1) — the Throw button on
+   `Battle.unity` is live, and the ball tray and the enemy Lead's drop target are attached at
+   runtime rather than wired into the scene, so the scene asset didn't need editing. What it waits
+   on next is the **Shop**: balls are currently a fixed starting stock, because there's nowhere to
+   buy them.
 6. ~~**Rename `RegionMap*` → `LocationMap*`**~~ Done, as its own commit, ahead of the Region Hub.
 7. The Trailblazer minigame, Pokémon Center adoption,
    and a real Shop economy.

@@ -12,7 +12,7 @@ namespace Pets.EditorTools
     /// <summary>Builds the Battle screen after the battle mockup: a full-screen battlefield backdrop;
     /// the foe's Lead and Support on the far clearing with their stat boxes top-left; the player's pair
     /// in the foreground with their boxes on the right; a pause / step / play / skip pill at the top;
-    /// and the party strip with the (disabled) Throw button along the bottom. A result panel appears
+    /// and the party strip with the Throw button and its ball column along the bottom. A result panel appears
     /// over it all when the fight ends — two buttons whose labels and destinations the controller
     /// sets from the kind of fight it was, plus a row above it where a won PvE node's catch offers
     /// are added at runtime.
@@ -57,6 +57,17 @@ namespace Pets.EditorTools
         private const float SlotGap = 12f;
         private const float ThrowGap = 24f;
         private static readonly Vector2 ThrowSize = new Vector2(150f, 150f);
+
+        // The ball column sits immediately right of the Throw button, the same height as it, so the
+        // three tiers and the button that throws them read as one control (design doc §12.1). Left
+        // empty here — CatchTrayView fills it at runtime, as the result panel's catch row is.
+        //
+        // 140 wide, not the 170 it started at: the strip is six 146px slots plus gaps plus the
+        // 150px Throw button, which is already 1110 of the reference canvas's 1280. At 170 the row
+        // came to 1292 and overflowed, so the column hung off the right edge and looked like it
+        // hadn't been drawn at all. 140 with a 10px gap brings the row to 1260, leaving 10 a side.
+        private const float BallColumnGap = 10f;
+        private static readonly Vector2 BallColumnSize = new Vector2(140f, 150f);
 
         // Tall and wide enough for the rewards list under the headline: a six-mon party is six
         // "Charmander  3/4/1 -> 3/5/1  (+1 Health)" lines, plus the EXP line and a badge or an
@@ -126,7 +137,8 @@ namespace Pets.EditorTools
             strip.offsetMax = new Vector2(0f, StripHeight);
 
             var slotSize = BattlePartySlotView.Size;
-            float rowWidth = PartySlotCount * slotSize.x + (PartySlotCount - 1) * SlotGap + ThrowGap + ThrowSize.x;
+            float rowWidth = PartySlotCount * slotSize.x + (PartySlotCount - 1) * SlotGap
+                + ThrowGap + ThrowSize.x + BallColumnGap + BallColumnSize.x;
             float rowLeft = (ReferenceResolution.x - rowWidth) / 2f;
             float rowTop = (StripHeight - slotSize.y) / 2f;
             var partySlots = new BattlePartySlotView[PartySlotCount];
@@ -136,8 +148,13 @@ namespace Pets.EditorTools
                 PlaceTop((RectTransform)partySlots[i].transform,
                     new Rect(rowLeft + i * (slotSize.x + SlotGap), rowTop, slotSize.x, slotSize.y));
             }
-            var throwButton = CreateThrowButton(strip,
-                new Rect(rowLeft + PartySlotCount * (slotSize.x + SlotGap) - SlotGap + ThrowGap, rowTop, ThrowSize.x, ThrowSize.y));
+            float throwLeft = rowLeft + PartySlotCount * (slotSize.x + SlotGap) - SlotGap + ThrowGap;
+            var throwButton = CreateThrowButton(strip, new Rect(throwLeft, rowTop, ThrowSize.x, ThrowSize.y));
+
+            var ballColumn = CreateBallColumn(strip,
+                new Rect(throwLeft + ThrowSize.x + BallColumnGap, rowTop, BallColumnSize.x, BallColumnSize.y));
+
+            var (catchMessageRoot, catchMessageLabel) = CreateCatchMessage(board);
 
             var (resultPanel, resultText, rewardText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
 
@@ -169,6 +186,9 @@ namespace Pets.EditorTools
             SetField(controller, "playButton", playButton);
             SetField(controller, "skipButton", skipButton);
             SetField(controller, "throwButton", throwButton);
+            SetField(controller, "ballColumn", ballColumn);
+            SetField(controller, "catchMessageText", catchMessageLabel);
+            SetField(controller, "catchMessageRoot", catchMessageRoot.gameObject);
             SetField(controller, "backButton", backButton);
             SetField(controller, "resultPanel", resultPanel.gameObject);
             SetField(controller, "resultText", resultText);
@@ -364,14 +384,56 @@ namespace Pets.EditorTools
             return button;
         }
 
-        /// <summary>The ball and label from the mockup. Disabled: catching (design doc §12.1) isn't
-        /// built, so it's here to hold the place, not to be pressed.</summary>
+        /// <summary>The empty container for the three ball rows, immediately right of the Throw
+        /// button. CatchTrayView builds the rows into it at runtime — the tiers, their counts and
+        /// their live odds all come from the run and the fight in progress, none of which the
+        /// builder can know.</summary>
+        private static RectTransform CreateBallColumn(RectTransform strip, Rect r)
+        {
+            var column = new GameObject("BallColumn", typeof(RectTransform)).GetComponent<RectTransform>();
+            column.SetParent(strip, false);
+            PlaceTop(column, r);
+            return column;
+        }
+
+        /// <summary>"Caught Pidgey!" / "Pidgey broke free!" — a framed callout over the middle of
+        /// the field, inactive until a throw resolves (BattleScreenController.ShowCatchMessage).
+        ///
+        /// A frame with the text inside rather than bare text, so it reads as something that popped
+        /// up rather than a label that was always there. The frame is the parent because a uGUI
+        /// object can hold only one Graphic, and it's the frame the controller shows and hides —
+        /// hence both are handed back.
+        ///
+        /// Sits in the gap between the foe's feet (which end at y 322) and the player's Lead (which
+        /// starts at y 330), so it covers neither.</summary>
+        private static (RectTransform root, Text label) CreateCatchMessage(RectTransform board)
+        {
+            var panel = CreateFrame(board, "CatchMessage", Theme.SlotDarkSprite);
+            PlaceTop(panel, new Rect((ReferenceResolution.x - 440f) / 2f, 296f, 440f, 68f));
+            panel.GetComponent<Image>().raycastTarget = false;
+
+            // 30pt rather than Theme.FontSizeHeading (20): a callout the player is meant to catch
+            // mid-fight, not a label.
+            var label = CreateOverlayText(panel, "Label", string.Empty, 30, TextAnchor.MiddleCenter);
+            label.rectTransform.anchorMin = Vector2.zero;
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.offsetMin = new Vector2(12f, 0f);
+            label.rectTransform.offsetMax = new Vector2(-12f, 0f);
+
+            panel.gameObject.SetActive(false);
+            return (panel, label);
+        }
+
+        /// <summary>The ball and label from the mockup — the main catch trigger (design doc §12.1).
+        /// Starts disabled; BattleScreenController enables it for a PvE fight and throws whichever
+        /// tier is selected in the column beside it.</summary>
         private static Button CreateThrowButton(RectTransform strip, Rect r)
         {
             var frame = CreateFrame(strip, "ThrowButton", Theme.SlotDarkSprite);
             PlaceTop(frame, r);
             var button = frame.gameObject.AddComponent<Button>();
             button.targetGraphic = frame.GetComponent<Image>();
+            // Enabled by BattleScreenController when the fight is one catching is offered in.
             button.interactable = false;
 
             var ballGo = new GameObject("Ball", typeof(RectTransform));

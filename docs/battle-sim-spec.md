@@ -20,10 +20,17 @@ The battle simulator resolves a fight between two ordered line-ups, one Step at 
 seed. It has no knowledge of the meta-layer (Region/Location/node-map), the Trailblazer minigame,
 the Shop, or Pokémon Center adoption — those are `Meta`/`Gameplay`-layer concerns that produce the
 line-ups the simulator consumes. **Catching** (dragging a Pokéball onto the enemy Lead — design
-doc §12.1) is also out of scope of the simulator itself: it's a separate interaction layer that
-calls into the on-demand runner (§7 below) at Step boundaries and can remove a mon from the enemy
-line-up between Steps, but the catch-chance formula and drag-and-drop handling live in
-`Gameplay`, not here.
+doc §12.1) is almost entirely out of scope of the simulator too: the ball inventory, the
+catch-chance formula and the drag-and-drop handling live in `Meta`/`Gameplay`, and the interaction
+layer drives the fight through the on-demand runner (§7 below) at Step boundaries.
+
+The one exception, settled by ADR 0012: **taking the caught mon out of the line-up is the
+simulator's job**, via `BattleSimulator.RemoveCaught`. Removal and the promotions that follow from
+it are the simulator's rules (§2), and a second place that edits a line-up is how two copies of
+those rules drift apart. The simulator still has no concept of a ball or a catch roll — it is told
+a combatant is leaving and applies the same consequences a faint would, differing only in raising a
+`Caught` event rather than a `Faint` one. That distinction matters downstream: `Meta/CatchResolver`'s
+post-fight "pick 1 from defeated" path reads `Faint` events, and a caught mon is already in the Box.
 
 ## 2. Formation model
 
@@ -154,11 +161,12 @@ logic:
   function, called server-side in the TypeScript port once Phase 3 exists.
 - **On-demand runner** (PvE): call `AdvanceStep` once per UI advance (a manual step-through click,
   or one tick of autoplay). At any Step boundary — after `AdvanceStep` returns and before the next
-  call — the catching interaction layer (`Gameplay`, out of scope here) may mutate the enemy
-  line-up (remove the caught mon) before the next `AdvanceStep` call. The simulator itself needs
-  no special "catch" concept; it just operates on whatever `BattleState` it's given next. Removing
-  a combatant from that line-up is safe precisely because it isn't the run's roster; each
-  combatant's `Source` is how the caller gets back to the mon to add to the Box.
+  call — the catching interaction layer (`Meta`/`Gameplay`) may remove the caught mon from the
+  enemy line-up, through `BattleSimulator.RemoveCaught` (see §1), before the next `AdvanceStep`
+  call. The simulator needs no concept of a ball or a catch roll; it just operates on whatever
+  `BattleState` it's given next. Removing a combatant from that line-up is safe precisely because
+  it isn't the run's roster; each combatant's `Source` is how the caller gets back to the mon to
+  add to the Box.
 
 Because a battle runs on copies, its **result has to be reported rather than read off the
 line-ups** the caller passed in. The precomputed runner's `StepLog` therefore carries
@@ -222,8 +230,10 @@ pass, not inside `AdvanceStep`.
 
 ## 11. Out of scope (battle simulator)
 
-- Catching mechanics and the drag-and-drop interaction (design doc §12.1) — lives in `Gameplay`,
-  calls into the on-demand runner (§7) at Step boundaries.
+- Catching mechanics and the drag-and-drop interaction (design doc §12.1) — ball tiers, inventory
+  and the odds formula live in `Meta` (`BallTier`, `BallInventory`, `CatchOdds`, `CatchResolver`),
+  the tray and drop target in `Gameplay`; only `RemoveCaught` is here (§1). That layer drives the
+  fight through the on-demand runner (§7) at Step boundaries.
 - The Trailblazer minigame, node-map traversal, Shop, Camp, and Pokémon Center — all `Meta`/
   `Gameplay` concerns that produce or consume line-ups but don't participate in Step resolution.
 - Exact passive numbers per species — those are content (`docs/content-schema.md`), not sim
