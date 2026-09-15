@@ -10,8 +10,8 @@ namespace Pets.Gameplay
     /// nothing at all happen.
     ///
     /// Both the title and the body are set by the host (NodeResolutionController) per node type, so
-    /// one prefab covers both; <see cref="OnContinue"/> is assigned at runtime for the same reason
-    /// CampPanelController's is. Replace this with the real Event branch (Phase 2) and the real PvP
+    /// one prefab covers both; <see cref="OnContinue"/> is assigned at runtime, since the host is a
+    /// scene-only object this prefab shouldn't know about. Replace this with the real Event branch (Phase 2) and the real PvP
     /// node (Phase 3) rather than growing it into a general dialogue system.</summary>
     public sealed class NodeEventOverlayController : MonoBehaviour
     {

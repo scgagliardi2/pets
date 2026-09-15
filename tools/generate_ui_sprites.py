@@ -169,6 +169,24 @@ ICONS = {
         {"o": (28, 32, 44), "r": (226, 58, 52), "R": (252, 150, 140), "w": (240, 240, 244),
          "g": (170, 176, 190), "c": (255, 255, 255)},
     ),
+    # Held items (Assets/Content/Items). The Muscle Band: a red wristband seen at an angle.
+    "ItemMuscleBand": (
+        [
+            "............",
+            "............",
+            "...oooooo...",
+            "..oRRRRRRo..",
+            ".oRrrrrrrro.",
+            ".orro..orro.",
+            ".orro..orro.",
+            ".orrrrrrrro.",
+            ".oddrrrrddo.",
+            "..oddddddo..",
+            "...oooooo...",
+            "............",
+        ],
+        {"o": (28, 32, 44), "r": (220, 60, 48), "R": (252, 150, 120), "d": (150, 28, 30)},
+    ),
 }
 
 # The solid buttons carry two white specular pixels in each top corner, like the original

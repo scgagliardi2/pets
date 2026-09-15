@@ -319,32 +319,38 @@ namespace Pets.Tests
 
         /// <summary>The Pokémon Center only ever lands mid-run (LocationMapGenerator keeps it to one
         /// fixed layer or the one before the Gym), so this walks to it, fighting whatever is in the
-        /// way — which is also the closest thing here to playing a stretch of a real run.</summary>
+        /// way — which is also the closest thing here to playing a stretch of a real run. Arriving
+        /// opens the shop scene with the node's shelf already rolled, and Leave walks back onto the
+        /// same node (ADR 0013).</summary>
         [UnityTest]
-        public IEnumerator ArrivingAtThePokemonCenter_RestsTheTeam()
+        public IEnumerator ArrivingAtThePokemonCenter_OpensTheShop_AndLeaveReturnsToTheMap()
         {
             var (mapSeed, center) = SeedWithNode(NodeType.Camp);
             yield return ReloadWithSeededRun(mapSeed);
             var run = ActiveRun.State;
 
-            // Everything before the Center is resolved and dismissed on the way; the last step is
-            // walked without resolving it, so its overlay is still up to assert on.
             var path = PathTo(controller.Traversal.Map, center.Id);
             for (int i = 0; i < path.Count - 1; i++)
             {
                 yield return WalkOnto(path[i]);
             }
+            int expBefore = run.LineUp[0].Exp;
             ButtonFor(center.Id).onClick.Invoke();
             yield return WaitForMoveToFinish();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.PokemonCenter);
 
-            Assert.AreEqual(center.Id, controller.Traversal.CurrentNodeId, Seed());
-            Assert.IsNotNull(GameObject.Find("CampOverlay"), $"the Pokémon Center overlay should be showing. {Seed()}");
-            Assert.Greater(run.NextBattleAttackBonusPercent, 0f, "resting should buff the next fight");
-            Assert.Greater(run.LineUp[0].Exp, 0, "resting should grant EXP");
+            Assert.IsNotNull(Object.FindFirstObjectByType<PokemonCenterController>(), Seed());
+            Assert.IsNotNull(run.CenterStock, "the node rolls the Center's shelf on arrival");
+            Assert.AreEqual(center.Id, run.CenterStock.NodeId);
+            Assert.AreEqual(expBefore, run.LineUp[0].Exp, "the Center is a shop — it grants no EXP");
 
-            OverlayContinueButton().onClick.Invoke();
+            FindActiveButton("LeaveButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
             yield return null;
-            Assert.IsFalse(Resolution().IsResolvingInPlace);
+            ResolveHandles();
+
+            Assert.AreEqual(center.Id, controller.Traversal.CurrentNodeId, "Leave puts the player back on the Center's node");
+            Assert.IsFalse(Resolution().IsResolvingInPlace, "coming back doesn't resolve the node again");
         }
 
         [UnityTest]
@@ -433,7 +439,8 @@ namespace Pets.Tests
         }
 
         /// <summary>Walks one step and resolves whatever the node turns out to be: dismissing an
-        /// overlay, or fighting the battle it left the scene for and coming back.</summary>
+        /// overlay, leaving the Pokémon Center, or fighting the battle it left the scene for and
+        /// coming back.</summary>
         private IEnumerator WalkOnto(string nodeId)
         {
             ButtonFor(nodeId).onClick.Invoke();
@@ -446,7 +453,21 @@ namespace Pets.Tests
                 yield break;
             }
 
-            yield return SceneTransitionWait.UntilActiveScene(SceneNames.Battle);
+            yield return SceneTransitionWait.Until(
+                () => SceneManager.GetActiveScene().name == SceneNames.Battle
+                    || SceneManager.GetActiveScene().name == SceneNames.PokemonCenter,
+                $"walking onto {nodeId} should have resolved it");
+
+            if (SceneManager.GetActiveScene().name == SceneNames.PokemonCenter)
+            {
+                yield return null;
+                FindActiveButton("LeaveButton").onClick.Invoke();
+                yield return SceneTransitionWait.UntilActiveScene(SceneNames.Map);
+                yield return null;
+                ResolveHandles();
+                yield break;
+            }
+
             yield return FinishFightAndReturnToMap();
         }
 

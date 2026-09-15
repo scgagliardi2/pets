@@ -12,8 +12,8 @@ namespace Pets.EditorTools
     /// .prefab: a full-screen dimmed backdrop with the evolving mon large and centred, a white
     /// flash plate over it, and a caption underneath.
     ///
-    /// A prefab rather than inline scene objects for the same reason the two node overlays are
-    /// (CampOverlayPrefabBuilder): the controller's serialized fields and the skip button's
+    /// A prefab rather than inline scene objects for the same reason the node overlay is
+    /// (NodeEventOverlayPrefabBuilder): the controller's serialized fields and the skip button's
     /// persistent listener all live inside it, so the whole thing is one wired asset and the Battle
     /// scene only has to instantiate it. <see cref="EvolutionOverlayController.OnComplete"/> is the
     /// one thing the host sets afterwards, since it's a runtime callback onto a scene-only object.

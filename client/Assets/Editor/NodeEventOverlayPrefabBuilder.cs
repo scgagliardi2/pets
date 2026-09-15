@@ -7,8 +7,8 @@ using static Pets.EditorTools.SceneBuilderUtils;
 namespace Pets.EditorTools
 {
     /// <summary>Builds the overlay that stands in for the two node types with no mechanics yet —
-    /// Event and PvP (see NodeEventOverlayController). Same shape and the same contract as
-    /// CampOverlayPrefabBuilder: a modal dialog wired to its own controller on the asset, with only
+    /// Event and PvP (see NodeEventOverlayController): a modal dialog wired to its own controller on
+    /// the asset, with only
     /// the runtime OnContinue callback left for the host scene to set.
     ///
     /// Its title is written at runtime rather than baked, because one prefab covers both node types

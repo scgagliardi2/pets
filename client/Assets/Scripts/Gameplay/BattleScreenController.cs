@@ -15,9 +15,9 @@ namespace Pets.Gameplay
     /// It runs two kinds of fight, told apart by whether a map node left an encounter in
     /// PendingBattle:
     /// - A **node fight** (PendingBattle set, by NodeResolutionController): the real thing. Both
-    ///   sides keep their passives, the Camp buff is spent on the player's line-up, and the result
-    ///   is written back to the run — Morale on a defeat, EXP to the survivors, the stubbed catch
-    ///   offered on a PvE win, and the Location completed by beating the Gym.
+    ///   sides keep their passives, and the result is written back to the run — Morale on a defeat,
+    ///   EXP and money on a win, the stubbed catch offered on a PvE win, and the
+    ///   Location completed by beating the Gym.
     /// - A **dev random battle** (nothing pending): Team's "Dev: Random Battle" button. A throwaway
     ///   fight against a rolled team with passives stripped on both sides (Meta/RandomBattle) that
     ///   costs the run nothing. This is what the screen did before node resolution existed.
@@ -248,11 +248,10 @@ namespace Pets.Gameplay
             SetAutoplay(GameSettings.AutoplayBattles);
         }
 
-        /// <summary>The real thing: the encounter a map node handed over. Combatants are built here
-        /// rather than by the runner because the Camp buff has to be applied at line-up assembly
-        /// (battle-sim-spec.md §8) and must land on the battle's copies — multiplying the roster's
-        /// own CurrentStats would buff those mons permanently, every fight, compounding. Passives
-        /// are left exactly as the content resolved them on both sides.</summary>
+        /// <summary>The real thing: the encounter a map node handed over. Combatants are copied from
+        /// the run's mons (held items are already in their stats — Meta/HeldItems), so nothing that
+        /// happens in the fight can reach the roster. Passives are left exactly as the content
+        /// resolved them on both sides.</summary>
         private List<BattleCombatant> StartNodeFight()
         {
             var state = ActiveRun.State;
@@ -263,15 +262,6 @@ namespace Pets.Gameplay
             PendingBattle.Clear();
 
             var playerLineUp = BattleCombatant.FromLineUp(state.LineUp);
-            if (state.NextBattleAttackBonusPercent > 0f)
-            {
-                foreach (var mon in playerLineUp)
-                {
-                    mon.CurrentStats.Attack = Mathf.RoundToInt(mon.CurrentStats.Attack * (1f + state.NextBattleAttackBonusPercent));
-                }
-                state.NextBattleAttackBonusPercent = 0f;
-            }
-
             var enemyLineUp = BattleCombatant.FromLineUp(nodeEnemyLineUp);
             enemyTeamSize = enemyLineUp.Count;
             // The node's own seed, the one its encounter was rolled from (see PendingBattle.Seed).
@@ -835,6 +825,7 @@ namespace Pets.Gameplay
             resultLines.Add($"Your party gains {growth.ExpGranted} EXP.");
             resultLines.AddRange(growth.GainLines());
             pendingEvolutions.AddRange(growth.Evolutions);
+            resultLines.Add($"You earn ${BattleRewardResolver.GrantWinMoney(state, isGym)}.");
 
             if (isGym)
             {

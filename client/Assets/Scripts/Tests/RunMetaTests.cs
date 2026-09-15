@@ -715,30 +715,6 @@ namespace Pets.Tests
             Assert.AreEqual(floor, boxedStraggler.Exp);
         }
 
-        // ---- Camp -----------------------------------------------------------------------------
-
-        [Test]
-        public void CampResolver_GrantsExpToTheWholeLineUp_AndSetsANextBattleBuff()
-        {
-            var species = MakeSpecies(1, "Camper", PokemonType.Normal);
-            var library = MakeLibrary(species);
-            var state = new RunState
-            {
-                LineUp = new List<PokemonInstance>
-                {
-                    PokemonInstanceFactory.Create(species, "lead"),
-                    PokemonInstanceFactory.Create(species, "support")
-                }
-            };
-            int expected = CampResolver.ExpFor(state);
-
-            var report = CampResolver.Resolve(state, library);
-
-            Assert.AreEqual(expected, report.ExpGranted);
-            Assert.IsTrue(state.LineUp.All(m => m.Exp == expected));
-            Assert.Greater(state.NextBattleAttackBonusPercent, 0f);
-        }
-
         // ---- battle boundary ------------------------------------------------------------------
 
         /// <summary>The roster-to-battle boundary: a combatant starts from the run's stats and HP

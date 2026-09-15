@@ -38,7 +38,7 @@ namespace Pets.Meta
     /// keep meaning something.
     ///
     /// **The Box is not caught up, because a mon that didn't fight doesn't grow.** EXP is only ever
-    /// earned by the mons the player fielded (BattleRewardResolver, CampResolver), and catch-up used
+    /// earned by the mons the player fielded (BattleRewardResolver, CombineResolver), and catch-up used
     /// to quietly hand the same growth to everything in storage — which made benching a mon free and
     /// the party choice mean nothing. A Box mon keeps the EXP it had; the moment it is moved into the
     /// line-up, the next grant's catch-up brings it back within <see cref="CatchUpExpGap"/>, so
@@ -152,8 +152,18 @@ namespace Pets.Meta
             var baseForm = BaseFormOf(library?.GetById(mon.SpeciesId), library);
             return baseForm == null
                 ? mon.CurrentStats
-                : StatGrowth.AtExp(baseForm, mon.InstanceId, exp, evolutions);
+                : WithHeldItem(StatGrowth.AtExp(baseForm, mon.InstanceId, exp, evolutions), mon);
         }
+
+        /// <summary>Growth plus whatever the mon is holding (PokemonInstance.HeldItemStats). The item
+        /// is the one input to a mon's stats that isn't species and EXP, and it has to be added here,
+        /// in the derivation, or the next grant would recompute it away.</summary>
+        private static Stats WithHeldItem(Stats grown, PokemonInstance mon) => new Stats
+        {
+            Attack = grown.Attack + mon.HeldItemStats.Attack,
+            Health = grown.Health + mon.HeldItemStats.Health,
+            Speed = grown.Speed + mon.HeldItemStats.Speed,
+        };
 
         /// <summary>Grants EXP and applies the growth and evolutions it earns, in place.</summary>
         public static GrowthReport GrantExp(PokemonInstance mon, int amount, PokemonSpeciesLibrary library)
@@ -277,12 +287,12 @@ namespace Pets.Meta
             return report;
         }
 
-        /// <summary>Rebuilds CurrentStats (and tops HP back up) from the mon's species and the EXP it
-        /// has earned on it.
+        /// <summary>Rebuilds CurrentStats (and tops HP back up) from the mon's species, the EXP it
+        /// has earned on it, and the item it's holding (HeldItems).
         ///
-        /// Anything written onto CurrentStats that doesn't follow from species + EXP is transient
-        /// — the next grant overwrites it. A permanent modifier (an item) has to become an input to
-        /// StatGrowth rather than a one-off addition here.
+        /// Anything written onto CurrentStats that doesn't follow from those is transient — the next
+        /// grant overwrites it. A permanent modifier has to become an input here, the way a held
+        /// item's is, rather than a one-off addition to the field.
         ///
         /// HP goes back to full because nothing carries damage between fights (ADR 0003) — when
         /// that changes, this needs to preserve the damage taken rather than the HP value, or
@@ -295,7 +305,8 @@ namespace Pets.Meta
                 return;
             }
 
-            mon.CurrentStats = StatGrowth.AtExp(BaseFormOf(species, library), mon.InstanceId, mon.Exp, mon.TimesEvolved);
+            mon.CurrentStats = WithHeldItem(
+                StatGrowth.AtExp(BaseFormOf(species, library), mon.InstanceId, mon.Exp, mon.TimesEvolved), mon);
             mon.CurrentHP = mon.CurrentStats.Health;
         }
 

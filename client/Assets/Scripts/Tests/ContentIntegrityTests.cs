@@ -45,6 +45,41 @@ namespace Pets.Tests
                 "Species assets exist on disk but aren't in PokemonSpeciesLibrary, so they're invisible at runtime");
         }
 
+        /// <summary>Every item the Pokémon Center could sell (it stocks the whole ItemLibrary) has to be
+        /// registered, uniquely identified, priced, and drawable.</summary>
+        [Test]
+        public void EveryItemAssetOnDisk_IsRegistered_Priced_AndHasAnIcon()
+        {
+            var library = LoadSingle<ItemLibrary>();
+            var onDisk = LoadFolder<ItemDefinitionAsset>("Assets/Content/Items");
+
+            Assert.IsNotEmpty(onDisk, "No item assets found under Assets/Content/Items.");
+            CollectionAssert.IsEmpty(onDisk.Where(i => !library.AllItems.Contains(i)).Select(i => i.name).ToArray(),
+                "Item assets exist on disk but aren't in ItemLibrary, so the Pokémon Center never sells them");
+            CollectionAssert.DoesNotContain(library.AllItems, null, "ItemLibrary has an empty slot");
+            CollectionAssert.AllItemsAreUnique(library.AllItems.Select(i => i.Id).ToArray(), "duplicate item Ids");
+            foreach (var item in library.AllItems)
+            {
+                Assert.IsFalse(string.IsNullOrEmpty(item.Id), $"{item.name} has no Id");
+                Assert.Greater(item.Price, 0, $"{item.name} is free");
+                // Unity's own null check, not NUnit's: a broken sprite reference deserializes to a
+                // placeholder object that IsNotNull happily accepts.
+                Assert.IsTrue(item.Icon != null, $"{item.name} has no icon, so it draws as an empty chip");
+            }
+        }
+
+        /// <summary>The one item there is, and exactly what it was asked to do.</summary>
+        [Test]
+        public void MuscleBand_GivesPlusThreeAttack_AndNothingElse()
+        {
+            var band = LoadSingle<ItemLibrary>().GetById("muscle-band");
+
+            Assert.IsNotNull(band);
+            Assert.AreEqual(3, band.StatModifiers.Attack);
+            Assert.AreEqual(0, band.StatModifiers.Health);
+            Assert.AreEqual(0, band.StatModifiers.Speed);
+        }
+
         [Test]
         public void SpeciesLibrary_HasNoNullOrDuplicateEntries()
         {

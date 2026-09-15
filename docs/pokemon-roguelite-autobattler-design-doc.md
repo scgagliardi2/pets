@@ -28,7 +28,7 @@ flowchart TD
     F -->|PvE| G[Clash Screen -> Step-Through or Autoplay -> Optional Ball Throws -> Catches]
     F -->|Event| H[Narrative Screen -> Choose Outcome]
     F -->|PvP| I[Line-Up Menu -> Clash Screen -> Step-Through or Autoplay]
-    F -->|Camp| J[Grant EXP + Temp Buffs]
+    F -->|Pokémon Center| J[Shop: Poké Balls, Items, Adopt Pokémon]
     G --> E
     H --> E
     I --> E
@@ -90,7 +90,7 @@ Every Location's node-map branches through PvE/Event/PvP/Camp nodes but always f
 | **PvE** | Clash screen (no line-up screen — uses your current lead/support order as-is) | Step-through or autoplay; player may drag Pokéballs onto the enemy Lead between Steps to attempt catches (§12.1) | Any successful catches join your Box | Morale -1 (TBD) |
 | **Event** | Narrative screen | Choose an outcome (branching text choice) | EXP / mon / item, per choice | Possible negative outcome, per choice |
 | **PvP** | Line-up menu (see opponent's saved team) | Step-through or autoplay; no catching — it's a trainer battle | Bonus EXP + money | Morale -1 (TBD) |
-| **Camp** | Special team management screen | N/A | Grants EXP to current mons + a temporary buff for the next fight (e.g., bonus typing, stat boost) | — |
+| **Pokémon Center** (the `Camp` node type) | Shop screen | N/A | Spend money on Poké Balls, held items, and Pokémon up for adoption (§12.2, §13). **As built** (ADR 0013) it grants no EXP and no next-fight buff — that was Camp's effect, and it's gone | — |
 | **Gym** (mandatory finale of every Location) | Line-up menu (see Gym Leader's team, reorder your line-up) | Step-through or autoplay; no catching — it's a trainer battle | Badge (permanent run-wide passive, like a Slay the Spire relic) + money; unlocks next Location choice | Morale -1 (TBD) |
 
 **Design intent:** PvE nodes are the "trash mobs" — fast, low prep, but now with a real skill layer (when to throw a ball). Gym and PvP nodes are the higher-stakes fights, so you get to scout the enemy and rearrange your line-up first, and there's nothing to catch.
@@ -133,7 +133,7 @@ It ties directly into stats you already track (Speed, Type), reuses your existin
 - **Active Line-Up:** an ordered subset of your Box you bring into a fight. Front of the line = **Lead** (currently exchanging attacks). Next = **Support** (queued directly behind it). When the Lead faints, the Support becomes the new Lead, and the next mon in line becomes the new Support — a "train" of mons, generalizing the Lead/Support relationship past just 2.
 - **Only the Lead and Support are ever mechanically active.** Both have their own stats and their own independently-charging passive (§10.3) — everyone further back in the line-up is fully dormant (no stats, no charge, no passive) until promoted up to Support.
 - For PvE, this line-up is whatever order you last set in Team Management (no extra prompt). For Gym/PvP, you explicitly confirm/reorder it in the Line-Up menu after seeing the opponent.
-- **Only the line-up earns EXP.** A won fight and a Pokémon Center rest pay every mon in the line-up — including the ones queued behind the Lead and Support, who never got a turn — and nothing sitting in the Box. A benched mon keeps the EXP it had; fielding it again catches it back up to within two points of your best (ADR 0010). This is what makes who you bring a decision rather than a formality.
+- **Only the line-up earns EXP.** A won fight pays every mon in the line-up — including the ones queued behind the Lead and Support, who never got a turn — and nothing sitting in the Box. A benched mon keeps the EXP it had; fielding it again catches it back up to within two points of your best (ADR 0010). This is what makes who you bring a decision rather than a formality.
 
 ---
 
@@ -302,6 +302,7 @@ Initial directional ideas for the rest of the types — these double as the pass
 - A small rotating selection (proposed: 3) of "rescued" Pokémon are shown looking to be adopted — a curated, no-battle, no-catch-roll acquisition path, refreshing whenever the player (re)visits that Location's hub.
 - Proposed: adoption costs money (roughly a mid-tier Pokéball's worth) rather than a Pokéball itself, and the rescued mons on offer lean toward that Location's biased types (§4 table). Exact pricing/refresh cadence is a tuning question — see Open Questions.
 - Gives players a second, luck-independent acquisition path alongside catching, available everywhere.
+- **As built** (ADR 0013): the Center is its own shop scene, reached by walking onto the map's Center node rather than a Location Hub tab. It offers **3 Pokémon for $10 each**, rolled once per visit and kept if the player steps out to the Team screen and back. They're matched to the party rather than to the Location's types: base forms (never Legendary) drawn from the tiers the line-up's mons started at, widened a tier at a time if too few species fit, carrying the line-up's average EXP. So an adoption is a sideways pick of typing and growth, not a way past the run's difficulty. An adopted mon goes to the Box, where a catch lands too.
 
 ### 12.3 Evolution
 
@@ -312,10 +313,10 @@ Initial directional ideas for the rest of the types — these double as the pass
 
 ## 13. Economy, Shop & Items
 
-- **Money** earned from Gym and PvP wins (and possibly Events).
-- **Shop** sells Pokéballs and items — mon purchases are now largely superseded by catching (§12.1) and Pokémon Center adoption (§12.2); decide whether the Shop still sells mons directly or drops that in favor of those two paths.
-- **Items** modify stats or grant/override a passive; equipped onto a specific mon (slot count TBD). Item effects fire on whatever condition they specify, independent of Lead/Support role (§10.3). "Locking" an item onto a mon protects it from being unequipped/sold accidentally.
-- **Camp** node: spend money/time to grant your current mons EXP and a temporary pre-battle buff (e.g., bonus typing, stat boost for the next fight only).
+- **Money** earned from Gym and PvP wins (and possibly Events). **As built** (ADR 0013): every won node fight pays — **$3 a wild win, $10 a Gym** — and a run starts with $5.
+- **Shop** sells Pokéballs and items — mon purchases are now largely superseded by catching (§12.1) and Pokémon Center adoption (§12.2); decide whether the Shop still sells mons directly or drops that in favor of those two paths. **As built** (ADR 0013) there is no separate Shop: the Pokémon Center is the shop, and it sells all three — balls of every tier (**Poké $2, Great $5, Ultra $9**, into the same `BallInventory` the battle screen's tray throws from, ADR 0012) and items at their own price, both unlimited, plus its adoptions. ADR 0012's fixed starting ball stock is still granted on top.
+- **Items** modify stats or grant/override a passive; equipped onto a specific mon (slot count TBD). Item effects fire on whatever condition they specify, independent of Lead/Support role (§10.3). "Locking" an item onto a mon protects it from being unequipped/sold accidentally. **As built** (ADR 0013): one item, the **Muscle Band** — held, +3 Attack, $8. A mon holds **one** item. Items are put on from the Team screen by dragging from its Bag row onto a card, moved by dragging the card's item badge to another mon, and taken off by dragging it back to the Bag. A released or combined-away mon's item returns to the Bag. Only flat stat modifiers exist; passive overrides and locking don't.
+- ~~**Camp** node: spend money/time to grant your current mons EXP and a temporary pre-battle buff.~~ Removed (ADR 0013): the node is the Pokémon Center, and the Center is a shop.
 
 ---
 
@@ -358,7 +359,7 @@ Modeled on Super Auto Pets:
 - Line-Up menu → Clash screen (Gym, PvP)
 - Battle screen — step-through or autoplay (Super Auto Pets style); PvE mode supports dragging Pokéballs onto the enemy Lead between Steps
 - Narrative/Event screen
-- Camp screen
+- Pokémon Center shop screen (as built — replaces the Camp screen, ADR 0013)
 - Win screen / Lose screen
 - Achievements / meta-progression screen
 - Pokédex — the whole roster, browsable from the main menu with a Type filter and stat sorts. Not in
@@ -416,13 +417,14 @@ Modeled on Super Auto Pets:
 - Exact passive magnitudes for the curated roster — the mechanism (charge meter fills → ability fires, type-flavored) is now fixed, but values are yours to tune.
 - Exact type-synergy bonus values and whether synergy counts the full roster or just the active line-up.
 - Does *any* lost battle cost Morale, or only certain node types? (As built: every lost fight costs one Morale, and that is the *only* consequence — see the two questions below.)
-- **Does damage carry between fights?** As built it does not: every fight starts the line-up at full HP, because nothing heals yet (the Pokémon Center rests but doesn't heal, §5.2) and there's no rule for a fainted mon between nodes. If HP should persist, healing and fainting need designing together with it.
+- **Does damage carry between fights?** As built it does not: every fight starts the line-up at full HP, because nothing heals yet (the Pokémon Center is a shop and doesn't heal, §12.2) and there's no rule for a fainted mon between nodes. If HP should persist, healing and fainting need designing together with it.
 - **What does losing a node's fight actually cost, beyond Morale?** On the branching map (§5) the player has already stepped onto a node by the time its fight happens, and forward edges are the only way out, so as built a loss costs Morale and the run walks on — there is no "retry this node until you win it". The Gym is the exception: it has no forward edges, so losing it offers the fight again. Worth confirming that a lost fight shouldn't also cost something else (money, a mon, a forced detour).
 - Resolution order when multiple mons' meters fill within the same Step — proposed default is attacking Leads before waiting Supports, ties broken by Speed; confirm or change.
 - Does a promoted Support (now the new Lead) keep its partially-filled charge meter, or reset to 0?
 - Can multiple balls be thrown at the same target across one fight (retry after a failed catch), or is it one attempt per encounter?
-- Pokémon Center exact economy: adoption cost and refresh cadence per Location visit.
-- Does the Shop still sell mons directly, now that catching and Pokémon Center adoption both exist as acquisition paths?
+- Pokémon Center exact economy: adoption cost and refresh cadence per Location visit. (As built, ADR 0013: $2 a Poké Ball, $8 the Muscle Band, $10 a Pokémon; $3 a wild win, $10 a Gym; one shelf per Center visit. Untuned.)
+- ~~Does the Shop still sell mons directly?~~ As built there's no separate Shop — the Pokémon Center sells balls, items and mons (ADR 0013). Open instead: is a Center stop worth the fight's EXP it costs? The Center pays no EXP now, so a player who shops instead of fighting is about half a point a Location behind the opposition's pace, in exchange for what they bought.
+- How many items can a mon hold? (As built: one.)
 - What does the starting badge actually do, if anything, before you've earned real ones? (And what does an *earned* badge do — as built they are counted but inert, §14.)
 - Item equip slot count per mon, and whether items are consumable, permanent, or removable-but-lockable.
 - PvP fairness: rating bands, snapshot refresh cadence, daily challenge caps.

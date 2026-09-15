@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -68,6 +69,14 @@ namespace Pets.Gameplay
         [SerializeField] private Text boxHeaderText;
         [SerializeField] private GameObject typeIconPrefab;
 
+        [Header("Items")]
+        /// <summary>The bag: one ItemChip per kind of item the run owns and no mon is holding.
+        /// Carries an ItemBagDropZone, so a held item dropped here is taken off.</summary>
+        [SerializeField] private RectTransform bagRow;
+        [SerializeField] private Text bagHeaderText;
+        [SerializeField] private GameObject itemChipPrefab;
+        [SerializeField] private ItemLibrary itemLibrary;
+
         /// <summary>Where a card being dragged is parked while it follows the pointer: a
         /// full-screen, non-raycasting rect above the rest of the screen. It has to be outside the
         /// slot rows for two reasons — the card must draw over its neighbours, and the slot
@@ -97,6 +106,14 @@ namespace Pets.Gameplay
         private RectTransform draggedCard;
         private Vector2 draggedCardSize;
 
+        /// <summary>The icon following the pointer while an item is dragged. A stand-in rather than
+        /// the chip or badge itself, so the bag row and the card underneath don't reflow mid-drag.</summary>
+        private RectTransform draggedItem;
+
+        private const float HeldBadgeSize = 38f;
+        private const float HeldBadgeIconInset = 7f;
+        private const float DraggedItemSize = 44f;
+
         public void Refresh(RunState state, PokemonSpeciesLibrary library)
         {
             this.state = state;
@@ -109,6 +126,7 @@ namespace Pets.Gameplay
             // Anything still parked on the drag layer belongs to the rows about to be thrown away.
             Clear(dragLayer);
             draggedCard = null;
+            draggedItem = null;
 
             partyHeaderText.text = $"Party  {state.LineUp.Count} / {SlotsPerRow}";
             boxHeaderText.text = state.Box.Count > SlotsPerRow
@@ -117,6 +135,27 @@ namespace Pets.Gameplay
 
             BuildRow(partySlots, "PartySlot", state.LineUp, RosterGroup.Party);
             BuildRow(boxSlots, "BoxSlot", state.Box, RosterGroup.Box);
+            BuildBag();
+        }
+
+        /// <summary>One chip per kind of item in the bag, in the order they were first bought, with a
+        /// count when there's more than one.</summary>
+        private void BuildBag()
+        {
+            Clear(bagRow);
+            bagHeaderText.text = state.Items.Count == 0
+                ? "Bag  empty - buy items at a Pokémon Center"
+                : "Bag  drag an item onto a Pokémon to hold it; drag it back here to take it off";
+
+            foreach (var group in state.Items.GroupBy(id => id))
+            {
+                var item = itemLibrary != null ? itemLibrary.GetById(group.Key) : null;
+                var chip = Instantiate(itemChipPrefab, bagRow);
+                chip.name = $"BagItem_{group.Key}";
+                string name = item != null ? item.DisplayName : group.Key;
+                chip.GetComponent<ItemChipView>().Show(item?.Icon, group.Count() > 1 ? $"{name} x{group.Count()}" : name);
+                chip.AddComponent<ItemDragSource>().InitializeInBag(this, group.Key, item?.Icon);
+            }
         }
 
         private void BuildRow(RectTransform row, string slotNamePrefix, List<PokemonInstance> mons, RosterGroup group)
@@ -131,7 +170,7 @@ namespace Pets.Gameplay
                 var card = mon == null
                     ? BuildEmptySlot(slot.transform, isParty ? RoleLabel(i) : "Empty")
                     : BuildFilledSlot(slot.transform, mon, library, isParty ? RoleLabel(i) : "Box",
-                        dormant: isParty && i >= 2);
+                        dormant: isParty && i >= 2, group, i);
                 slot.AddComponent<TeamSlotView>()
                     .Initialize(this, group, i, mon != null, card.GetComponent<RectTransform>());
             }
@@ -221,6 +260,89 @@ namespace Pets.Gameplay
             return from[source.Index] != to[target.Index] && from[source.Index].SpeciesId == to[target.Index].SpeciesId;
         }
 
+        internal void BeginItemDrag(ItemDragSource source, PointerEventData eventData)
+        {
+            var go = new GameObject("DraggedItem", typeof(RectTransform));
+            go.transform.SetParent(dragLayer, false);
+            var image = go.AddComponent<Image>();
+            image.sprite = source.Icon;
+            image.preserveAspect = true;
+            // The slot or bag under the pointer has to be what receives the drop.
+            image.raycastTarget = false;
+            draggedItem = go.GetComponent<RectTransform>();
+            draggedItem.anchorMin = draggedItem.anchorMax = draggedItem.pivot = new Vector2(0.5f, 0.5f);
+            draggedItem.sizeDelta = new Vector2(DraggedItemSize, DraggedItemSize);
+            DragItem(eventData);
+        }
+
+        internal void DragItem(PointerEventData eventData)
+        {
+            if (draggedItem != null && RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    dragLayer, eventData.position, eventData.pressEventCamera, out var local))
+            {
+                draggedItem.anchoredPosition = local;
+            }
+        }
+
+        /// <summary>End of an item drag. A drop has already rebuilt everything; this only has to
+        /// clear the stand-in when the item was let go somewhere that wasn't a mon or the bag.</summary>
+        internal void EndItemDrag()
+        {
+            if (draggedItem != null)
+            {
+                Destroy(draggedItem.gameObject);
+                draggedItem = null;
+            }
+        }
+
+        /// <summary>An item dropped on a slot: from the bag it's equipped, from another mon it's
+        /// handed over (a trade, if this mon was holding something). An empty slot does nothing.</summary>
+        internal void DropItemOnSlot(ItemDragSource source, TeamSlotView target)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            var mon = MonAt(target.Group, target.Index);
+            bool changed = false;
+            if (mon != null)
+            {
+                changed = source.FromBag
+                    ? HeldItems.Equip(state, mon, itemLibrary != null ? itemLibrary.GetById(source.ItemId) : null, library)
+                    : HeldItems.Move(MonAt(source.Group, source.Index), mon, library);
+            }
+
+            Rebuild();
+            if (changed)
+            {
+                Changed?.Invoke();
+            }
+        }
+
+        /// <summary>A held item dropped back on the bag: taken off its mon. A bag chip dropped on the
+        /// bag is a no-op.</summary>
+        internal void DropItemInBag(ItemDragSource source)
+        {
+            if (state == null || source.FromBag)
+            {
+                return;
+            }
+
+            bool changed = HeldItems.Unequip(state, MonAt(source.Group, source.Index), library);
+            Rebuild();
+            if (changed)
+            {
+                Changed?.Invoke();
+            }
+        }
+
+        private PokemonInstance MonAt(RosterGroup group, int index)
+        {
+            var collection = state.CollectionFor(group);
+            return index >= 0 && index < collection.Count ? collection[index] : null;
+        }
+
         /// <summary>A card dropped on the release zone. The rows are rebuilt right away — the
         /// card goes back to its slot while the question is asked — and the actual release waits
         /// on the screen's confirmation.</summary>
@@ -267,7 +389,7 @@ namespace Pets.Gameplay
         }
 
         private GameObject BuildFilledSlot(Transform slot, PokemonInstance mon, PokemonSpeciesLibrary library,
-            string roleLabel, bool dormant)
+            string roleLabel, bool dormant, RosterGroup group, int index)
         {
             var species = library.GetById(mon.SpeciesId);
             var card = PokemonCardBuilder.CreateCard(slot, "Card");
@@ -297,11 +419,49 @@ namespace Pets.Gameplay
                 $"ATK {mon.CurrentStats.Attack}  HP {mon.CurrentStats.Health}  SPD {mon.CurrentStats.Speed}",
                 CardLineFontSize, FontStyle.Bold, Theme.TextDark).name = "StatsText";
 
+            if (!string.IsNullOrEmpty(mon.HeldItemId))
+            {
+                AddHeldItemBadge(card.transform, mon.HeldItemId, group, index);
+            }
+
             if (dormant)
             {
                 Fade(card, ReserveAlpha);
             }
             return card;
+        }
+
+        /// <summary>The held item, as a gold-framed icon pinned to the card's top-right corner — out of
+        /// the card's layout, so the card's height budget doesn't change for a mon holding something.
+        /// It's the item's drag handle: drag it to another mon to hand it over, or to the bag.</summary>
+        private void AddHeldItemBadge(Transform card, string itemId, RosterGroup group, int index)
+        {
+            var item = itemLibrary != null ? itemLibrary.GetById(itemId) : null;
+
+            var badge = new GameObject("HeldItem", typeof(RectTransform));
+            badge.transform.SetParent(card, false);
+            badge.AddComponent<LayoutElement>().ignoreLayout = true;
+            var frame = badge.AddComponent<Image>();
+            frame.sprite = Theme.SlotGoldSprite;
+            frame.type = Image.Type.Sliced;
+            var rect = badge.GetComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = rect.pivot = Vector2.one;
+            rect.sizeDelta = new Vector2(HeldBadgeSize, HeldBadgeSize);
+            rect.anchoredPosition = new Vector2(-4f, -4f);
+
+            var iconGo = new GameObject("Icon", typeof(RectTransform));
+            iconGo.transform.SetParent(badge.transform, false);
+            var icon = iconGo.AddComponent<Image>();
+            icon.sprite = item?.Icon;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconRect = icon.rectTransform;
+            iconRect.anchorMin = Vector2.zero;
+            iconRect.anchorMax = Vector2.one;
+            iconRect.offsetMin = new Vector2(HeldBadgeIconInset, HeldBadgeIconInset);
+            iconRect.offsetMax = new Vector2(-HeldBadgeIconInset, -HeldBadgeIconInset);
+
+            badge.AddComponent<ItemDragSource>().InitializeOnMon(this, itemId, item?.Icon, group, index);
         }
 
         /// <summary>An unfilled slot: the same card frame, faded further, holding only what the

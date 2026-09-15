@@ -52,7 +52,7 @@ namespace Pets.Tests
             run.TravelTo(LocationType.Cave);
             run.LocationMap = LocationMapGenerator.Generate(seed: 2);
             run.Morale = 1;
-            run.NextBattleAttackBonusPercent = 0.2f;
+            run.CenterStock = new PokemonCenterStock { NodeId = "center" };
 
             run.EarnBadge();
 
@@ -61,7 +61,7 @@ namespace Pets.Tests
             Assert.IsNull(run.CurrentLocation);
             Assert.IsNull(run.LocationMap);
             Assert.AreEqual(RunState.StartingMorale, run.Morale, "a badge refills Morale");
-            Assert.AreEqual(0f, run.NextBattleAttackBonusPercent, "a Pokémon Center buff doesn't carry into the next Location");
+            Assert.IsNull(run.CenterStock, "a Location's Pokémon Center shelf doesn't carry into the next Location");
             Assert.IsTrue(run.NeedsLocationChoice);
         }
 
@@ -217,9 +217,9 @@ namespace Pets.Tests
                 $"evolution {evolutionNumber} needs {expNeeded} EXP, which a typical path reaches in Location {location}");
         }
 
-        /// <summary>What a typical path through one Location pays: a few wild wins, sometimes a
-        /// Pokémon Center, and the Gym. Everything pays one point (BattleRewardResolver), so this is
-        /// just how many of those a Location holds.</summary>
+        /// <summary>What a typical path through one Location pays: a few wild wins and the Gym. Every
+        /// win pays one point (BattleRewardResolver), so this is just how many of those a Location
+        /// holds.</summary>
         private const int TypicalExpPerLocation = RunProgression.ExpPerBadge;
 
         /// <summary>The opposition and the player have to climb at the same rate, or the run turns
@@ -230,11 +230,12 @@ namespace Pets.Tests
         [Test]
         public void ExpectedRewards_KeepPaceWithTheOpposition_AtEveryBadge()
         {
-            const double ExpectedWildWins = 2.5;
-            const double ExpectedCenterVisits = 0.5;
+            // A fight on every layer a player walks. The Pokémon Center pays no EXP (ADR 0013), so a
+            // player who stops there gives that point up for whatever their money buys — an item or a
+            // Pokémon, which is the Center's side of the trade and not something this test can count.
+            const double ExpectedWildWins = 3.0;
 
             double perLocation = ExpectedWildWins * BattleRewardResolver.ExpPerWin
-                + ExpectedCenterVisits * CampResolver.ExpFor(RunWithBadges(0))
                 + BattleRewardResolver.ExpPerWin;
 
             Assert.That(perLocation, Is.InRange(RunProgression.ExpPerBadge - 2, RunProgression.ExpPerBadge + 2),

@@ -47,9 +47,12 @@ namespace Pets.EditorTools
         private const float CombineDialogButtonWidth = 160f;
         private const float DialogButtonHeight = 64f;
 
-        /// <summary>Both sections stacked: header, row, gap, header, row.</summary>
+        /// <summary>The bag's row of item chips (Prefabs/UI/ItemChip.prefab, 48 tall) plus a little room.</summary>
+        private const float BagRowHeight = 54f;
+
+        /// <summary>All three sections stacked: header, row, gap, header, row, gap, header, bag.</summary>
         private static float SectionsHeight =>
-            2f * (SectionHeaderHeight + SlotHeight) + SectionGap;
+            2f * (SectionHeaderHeight + SlotHeight) + SectionGap + SectionGap + SectionHeaderHeight + BagRowHeight;
 
         /// <summary>Slot width that divides the content area into exactly
         /// TeamPanelController.SlotsPerRow columns, derived rather than hand-typed for the same
@@ -97,6 +100,24 @@ namespace Pets.EditorTools
             var boxHeader = CreateSectionHeader(sections, "BoxHeaderText", "Box", boxTop);
             var boxSlots = CreateSlotRow(sections, "BoxSlots", boxTop + SectionHeaderHeight);
 
+            // The bag: items the run owns that no mon is holding. A live layout row (chips are added
+            // at runtime) with a faint backing Image, which is what makes the whole row a drop target
+            // for taking an item off.
+            float bagTop = boxTop + SectionHeaderHeight + SlotHeight + SectionGap;
+            var bagHeader = CreateSectionHeader(sections, "BagHeaderText", "Bag", bagTop);
+            var bagRow = CreatePanel(sections, "BagRow", new Color(0f, 0f, 0f, 0.07f), new Vector2(0f, 1f), new Vector2(1f, 1f));
+            bagRow.pivot = new Vector2(0.5f, 1f);
+            bagRow.offsetMin = new Vector2(0f, -(bagTop + SectionHeaderHeight + BagRowHeight));
+            bagRow.offsetMax = new Vector2(0f, -(bagTop + SectionHeaderHeight));
+            var bagLayout = bagRow.gameObject.AddComponent<HorizontalLayoutGroup>();
+            bagLayout.padding = new RectOffset(3, 3, 3, 3);
+            bagLayout.spacing = 10f;
+            bagLayout.childAlignment = TextAnchor.MiddleLeft;
+            bagLayout.childControlWidth = false;
+            bagLayout.childControlHeight = false;
+            bagLayout.childForceExpandWidth = false;
+            bagLayout.childForceExpandHeight = false;
+
             var teamPanelGO = new GameObject("TeamPanel", typeof(RectTransform));
             teamPanelGO.transform.SetParent(content, false);
             var teamPanelRect = teamPanelGO.GetComponent<RectTransform>();
@@ -115,6 +136,13 @@ namespace Pets.EditorTools
             SetField(teamPanel, "boxHeaderText", boxHeader);
             SetField(teamPanel, "typeIconPrefab",
                 AssetDatabase.LoadAssetAtPath<GameObject>(TypeIconPrefabBuilder.PrefabPath));
+            SetField(teamPanel, "bagRow", bagRow);
+            SetField(teamPanel, "bagHeaderText", bagHeader);
+            SetField(teamPanel, "itemChipPrefab",
+                AssetDatabase.LoadAssetAtPath<GameObject>(ShopPrefabBuilder.ItemChipPrefabPath));
+            SetField(teamPanel, "itemLibrary",
+                AssetDatabase.LoadAssetAtPath<Pets.Data.ItemLibrary>(PokemonCenterSceneBuilder.ItemLibraryPath));
+            SetField(bagRow.gameObject.AddComponent<ItemBagDropZone>(), "panel", teamPanel);
 
             var emptyStateText = CreatePlainText(content, "EmptyStateText",
                 "No run in progress.\nStart a New Game from the Home screen.",
@@ -178,7 +206,7 @@ namespace Pets.EditorTools
             // Both slot rows stay live: TeamPanelController fills them with slot cards at runtime
             // from whatever the run's party and Box hold, so their GridLayoutGroups have to be
             // around to arrange children that don't exist yet at build time.
-            ForceLayoutRebuild(canvasRect, partySlots, boxSlots);
+            ForceLayoutRebuild(canvasRect, partySlots, boxSlots, bagRow);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);

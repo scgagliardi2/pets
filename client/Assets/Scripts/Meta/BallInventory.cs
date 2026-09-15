@@ -6,11 +6,10 @@ namespace Pets.Meta
     /// <summary>How many balls of each tier the run is carrying (design doc §12.1). Plain C#, held
     /// by <see cref="RunState"/>, so it serializes with the run and unit-tests without a scene.
     ///
-    /// Design doc §12.1 has balls bought at the Shop, and there is no Shop yet — so a run currently
-    /// starts with <see cref="GrantStartingStock"/> and that's all it will ever get. That's a
-    /// deliberate stand-in to make catching playable now, not a decision that balls should be free:
-    /// when the Shop lands, it buys into this same inventory and the starting stock shrinks or goes
-    /// away.</summary>
+    /// Design doc §12.1 has balls bought at the Shop; as built that's the Pokémon Center
+    /// (PokemonCenterShop.BuyBall, ADR 0013), which buys into this inventory. A run also still starts
+    /// with <see cref="GrantStartingStock"/> — the stand-in from before there was anywhere to buy
+    /// them, due to shrink or go away now that there is.</summary>
     [Serializable]
     public sealed class BallInventory
     {

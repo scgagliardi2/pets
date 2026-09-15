@@ -198,15 +198,16 @@ doesn't map cleanly onto phase boundaries. The honest summary:
 `CharacterSelect` (pick Starter + Secondary, from the 54 tier-1 species) →
 `RegionHub` (pick one of three Locations) → `LocationMap` (walk a branching node map to the Gym) —
 and **arriving at a node resolves it**: a Battle node fights a seeded wild encounter on `Battle`
-with passives on, the Pokémon Center rests the team, the Gym fights the Location's Gym Leader, and
-Event/PvP show an honest "not built yet" modal. A won fight pays EXP and offers the stubbed catch;
+with passives on, the Pokémon Center opens a shop (`PokemonCenter`: Poké Balls, a held item, and
+Pokémon to adopt — ADR 0013), the Gym fights the Location's Gym Leader, and Event/PvP show an honest
+"not built yet" modal. A won fight pays EXP and money and offers the stubbed catch;
 a lost one costs Morale, and at 0 Morale the run ends at Home. **Beating a Gym earns a badge and
 returns to the Region Hub** for the next Location; the eighth badge wins the run (ADR 0007).
-`IngameMenu` → `Team` (drag to rearrange/release) /
+`IngameMenu` → `Team` (drag to rearrange/release, and to put items on mons) /
 `DevRoster` (stuff mons into the run) still hang off the map, plus `History` and `Credits` off Home,
 and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run nothing.
 
-*Verified green as of this writing:* 198 EditMode and 101 PlayMode tests pass (see CLAUDE.md for
+*Verified green as of this writing (2026-09-14, after catching and the Pokémon Center shop — ADR 0012, ADR 0013):* 240 EditMode and 111 PlayMode tests pass (see CLAUDE.md for
 the CLI commands).
 
 **Built and covered by tests:**
@@ -234,8 +235,10 @@ the CLI commands).
   pitched by badge count, the EXP/evolution model with catch-up (`ExperienceResolver`, with
   stats from `Data/StatGrowth` and species tiers from `Data/SpeciesTier` — ADR 0008/0009), a flat one
   point per win **paid to the line-up only, Box excluded** (`BattleRewardResolver`, ADR 0010),
-  duplicate combining (`CombineResolver`), Camp's EXP+buff grant, the
-  stubbed "pick 1 from defeated" catch, and a branching map generator + traversal model
+  duplicate combining (`CombineResolver`), money per win, the Pokémon Center's shop
+  (`PokemonCenterShop` — balls per tier into `BallInventory`, a shelf of Pokémon matched to the party's tiers and EXP, and the purchases)
+  and held items (`HeldItems`, with the bonus an input to `ExperienceResolver.Recompute` — ADR 0013),
+  the stubbed "pick 1 from defeated" catch, and a branching map generator + traversal model
   (`LocationMapGenerator`, `LocationMapTraversal`) that produces no dead ends, no unreachable nodes
   and no crossing edges. Covered by `RunMetaTests.cs`, `RunProgressionTests.cs`,
   `LocationMapGeneratorTests.cs`, `LocationMapTraversalTests.cs`. The
@@ -273,9 +276,17 @@ the CLI commands).
     plus Menu and **Team** buttons in the title bar — Team goes straight to `Team.unity` and its Back
     button comes straight back here (`SceneNavigator.GoToTeam`/`ReturnFromTeam`). Walking onto a node resolves it
     (`Gameplay/NodeResolutionController`): Battle/Gym hand an encounter to `Battle.unity` through
-    `PendingBattle` and leave; the Pokémon Center (`CampOverlay.prefab`) and the Event/PvP stub
-    (`NodeEventOverlay.prefab`) resolve in place as modals over the map. Resolution is skipped
-    when the scene is opened with no run behind it, so the map is still walkable on its own.
+    `PendingBattle` and leave; the Pokémon Center rolls its shelf onto the run and leaves for
+    `PokemonCenter.unity`; the Event/PvP stub (`NodeEventOverlay.prefab`) resolves in place as a
+    modal over the map. Resolution is skipped when the scene is opened with no run behind it, so the
+    map is still walkable on its own.
+  - `PokemonCenter.unity` — the Pokémon Center as a shop (ADR 0013), via
+    `Gameplay/PokemonCenterController`: a striped awning over two shelves of prefab cards — three
+    Pokémon for adoption (`Prefabs/UI/ShopPokemonCard.prefab`, which nests `BattleStatsBox.prefab`)
+    and the Poké Mart's supplies, one card per ball tier plus one per item in `ItemLibrary`
+    (`ShopItemCard.prefab`, a 2×2 grid) — with gold price tags, a clerk's line in the footer answering each
+    purchase, and Money/Balls/Items in the title bar. Team (and back here) and Leave (back to the map's node)
+    in the footer. Opened with no run, it says it's closed.
   - `IngameMenu.unity` — Back to Map / Team / Dev: Add Pokemon / Quit to Home. (This scene is the
     old Forest hub `Game.unity`, converted rather than kept alongside.)
   - `Team.unity` — party and Box as six slots each, real mon cards via `UI/PokemonCardBuilder.cs`,
@@ -284,15 +295,16 @@ the CLI commands).
     another slot to trade or append; drag onto the bottom bar's release zone to release it for good
     (asks first, irreversible, party can never be emptied); drag one onto **another of the same
     species** and it asks whether that meant Combine (design doc §12.3 — the duplicate is consumed,
-    the survivor gains a point of EXP) or Swap.
+    the survivor gains a point of EXP) or Swap. A **Bag** row under the Box holds the run's
+    unequipped items (`Prefabs/UI/ItemChip.prefab`): drag one onto a card to hold it, drag the gold
+    item badge on a card to another mon to hand it over, or back to the Bag to take it off (ADR 0013).
   - `History.unity` / `Credits.unity` — Credits carries the Pokémon/PokeAPI/font attribution and
     the non-commercial scope note; History is a real screen with an honest empty state, because
     nothing records a finished run yet.
   - `Battle.unity` — the battle screen (design doc §10, §17), via `Gameplay/BattleScreenController`
     on the on-demand runner. It runs **node fights** (an encounter handed over by a map node through
-    `PendingBattle`: passives on both sides, the Camp buff spent at line-up assembly, and the result
-    written back to the run — Morale on a defeat, EXP to the whole line-up, the stubbed catch offered on
-    a PvE win, a badge for beating the Gym) and, when nothing is pending, the original
+    `PendingBattle`: passives on both sides, and the result written back to the run — Morale on a
+    defeat, EXP to the whole line-up and money to the run on a win, the stubbed catch offered on a PvE win, a badge for beating the Gym) and, when nothing is pending, the original
     **dev random battle** off Team's button (a same-size team rolled by `Meta/RandomBattle` from the
     whole curated roster at the party's top EXP, passives stripped, costing the run nothing).
     Stat boxes name each mon with its tier. Laid out after
@@ -341,7 +353,8 @@ rest of this file was written against their absence:
 1. **Node resolution exists.** `LocationMapController` raises `NodeArrived` when the token settles and
    `Gameplay/NodeResolutionController` turns it into a fight, a rest or an Event. Of the orphaned
    controllers, `CampPanelController` (+ `CampOverlay.prefab`) and `ResourceBarController` were
-   re-landed on the map scene; `LocationFlowController`, `PvEClashController`, `MapPanelController`
+   re-landed on the map scene (the Camp overlay has since been replaced by `PokemonCenter.unity`,
+   ADR 0013); `LocationFlowController`, `PvEClashController`, `MapPanelController`
    and `LocationHubController` were **deleted** — all four were shaped around the retired tabbed hub,
    and `Battle.unity` supersedes the text-log PvE screen outright. Nothing in `Scripts/Gameplay` is
    attached to no scene any more.
@@ -361,7 +374,7 @@ the importer, never authored.
 **EXP is a count of wins, and a point is +1 Attack *or* +1 Health, never both** (`Data/StatGrowth`) —
 which one is a deterministic draw against the species' growth value, keyed to the mon's instance id,
 so two of the same species grow apart while each stays rebuildable from its EXP alone. Everything
-pays exactly one point: a wild win, a Gym, a Pokémon Center rest, a combine. **Twelve points is an
+pays exactly one point: a wild win, a Gym, a combine (the Pokémon Center pays none — ADR 0013). **Twelve points is an
 evolution**, worth a flat +3 Attack and +3 Health — and **the species evolved into contributes
 nothing**: a mon grows off its base form's tier line for life, so an evolved species' own line is
 only a Pokédex entry. Speed never changes at all (a gap ADR 0009 records: gaining Speed is meant to
@@ -377,9 +390,10 @@ Nincada) deliberately have none, so they can't evolve until a branch picker exis
 
 **What the loop still doesn't do** (deliberate, see ADR 0003): a lost non-Gym fight costs Morale and
 nothing else — there's no retrying a node you've walked past; HP doesn't carry between fights; Event
-and PvP nodes show an honest "not built yet" modal and pay nothing; and money is never awarded,
-since there's no Shop to spend it in — which is also why Pokeballs are handed out as a fixed
-starting stock (`BallInventory.GrantStartingStock`) rather than bought.
+and PvP nodes show an honest "not built yet" modal and pay nothing; and the money a win pays and the
+Pokémon Center's prices are first guesses, untuned (ADR 0013). Balls are bought there per tier, but a
+run is still also handed ADR 0012's fixed starting stock (`BallInventory.GrantStartingStock`) — and
+handed it again when a wild fight starts with none — which undercuts buying them until that shrinks.
 
 **Known naming debt** (noted rather than fixed, so nobody assumes the names are meaningful):
 - ~~`RegionMap*` is really the Location node-map~~ — renamed to `LocationMap*` (`Meta/LocationMap.cs`,
@@ -388,17 +402,17 @@ starting stock (`BallInventory.GrantStartingStock`) rather than bought.
   before the Region Hub was built, so "Region" is free to mean the tier above it (design doc §4,
   §5.2).
 - ~~`NodeType.Camp` labelled "Pokémon Center"~~ — settled with node resolution (ADR 0003): the node
-  *is* the Pokémon Center (its map art and caption always were), and design doc §5.1's Camp effect
-  (EXP + a next-fight Attack buff) is what resting there currently does. §5.2's adoption, and
-  healing, land there when they're built. The `NodeType.Camp` enum name is the leftover.
+  *is* the Pokémon Center (its map art and caption always were). Design doc §5.1's Camp effect (EXP + a
+  next-fight Attack buff) was removed when the Center became a shop (ADR 0013); healing still lands
+  there when HP persists. The `NodeType.Camp` enum name is the leftover.
 - Design doc §5.2's **Location Hub** (a tabbed Team/Map/Shop/Center screen) is not what got built:
   Team is a standalone scene reached from the Ingame Menu, and the map is its own scene. This may
   well be the better shape for the game — but it's a live deviation from the design doc, not an
   implementation of it. See ADR 0002.
 
 **Also not built:** the Trailblazer minigame
-(no `Scripts/Minigame` folder — it was never started), Pokémon Center adoption and healing, a real
-Shop economy, type synergy bonuses, the badge-as-relic reward behind the Gym win, Event and PvP node
+(no `Scripts/Minigame` folder — it was never started), Pokémon Center healing, items
+beyond the one flat-stat Muscle Band (passive overrides, locking, more than one slot), type synergy bonuses, the badge-as-relic reward behind the Gym win, Event and PvP node
 behavior, paging the Box past six slots, and **any save/load
 layer** — which is why "Continue Run" only resumes a run still in memory this session, and why
 History has nothing to list even now that a run can be won. Save/load is Phase 2 in the list
@@ -415,7 +429,8 @@ retired hub scene (ADR 0002, ADR 0003).*
 - ✅ One hand-authored Location (a Forest), PvE + Pokémon Center nodes, Step-based battles watchable
   step-through or on autoplay. Built first against the Forest hub scene, which was retired in favor
   of the shell (ADR 0002), then re-landed on the branching Location map and `Battle.unity`
-  (ADR 0003). A Shop node was never built and isn't one of the generated node types.
+  (ADR 0003). A Shop node was never built and isn't one of the generated node types — the Pokémon
+  Center became the shop instead (ADR 0013).
 - ✅ Catching stubbed as an end-of-fight "pick 1 from defeated" (`CatchResolver`); Trailblazer
   stubbed as skipped entirely (there's still only one Location, so there's nothing to travel
   between).
@@ -443,7 +458,7 @@ retired hub scene (ADR 0002, ADR 0003).*
   Pets > Build Battle Scene after pulling this**. The "pick 1 from defeated" stub
   is still there on the result panel and still works — it covers mons that fainted rather than
   being caught, so the two are complementary, not duplicates.
-- Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center adoption and healing, type synergy bonuses, the
+- Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center healing, type synergy bonuses, the
   badge-as-relic reward, the Line-Up menu before a Gym, real Event and PvP nodes in
   place of their modals, and the real Trailblazer minigame (lane obstacle-dodge, Speed/Type-driven
   per §6 of the design doc). Each is its own piece of work, not a finishing touch on the above.
@@ -619,12 +634,11 @@ there's finally a run worth persisting, and a finished run with nothing to recor
    finish and nothing records that it happened.
 5. ~~**The real drag-and-drop catching system**~~ Built (design doc §12.1) — the Throw button on
    `Battle.unity` is live, and the ball tray and the enemy Lead's drop target are attached at
-   runtime rather than wired into the scene, so the scene asset didn't need editing. What it waits
-   on next is the **Shop**: balls are currently a fixed starting stock, because there's nowhere to
-   buy them.
+   runtime rather than wired into the scene, so the scene asset didn't need editing. Balls are now
+   bought at the Pokémon Center (ADR 0013); the fixed starting stock is still granted on top.
 6. ~~**Rename `RegionMap*` → `LocationMap*`**~~ Done, as its own commit, ahead of the Region Hub.
-7. The Trailblazer minigame, Pokémon Center adoption,
-   and a real Shop economy.
+7. The Trailblazer minigame. (Pokémon Center adoption and a first money/shop economy landed in
+   ADR 0013; what's left there is tuning the prices, more items, and ball tiers.)
 8. Narrow Character Select toward design doc §3's actual flow (fixed/chosen starter + a 3-option
    secondary pick + cosmetics) if that distinction ends up mattering in play.
 9. ~~**Expand curated content past 28 species.**~~ Done — all 183 are imported (ADR 0004). What the

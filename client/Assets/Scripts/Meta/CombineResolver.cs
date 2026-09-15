@@ -98,10 +98,12 @@ namespace Pets.Meta
                 return new GrowthReport();
             }
 
-            TryResolve(state, fromGroup, fromIndex, toGroup, toIndex, out _, out var survivor);
+            TryResolve(state, fromGroup, fromIndex, toGroup, toIndex, out var consumed, out var survivor);
 
             // Removed before the EXP is granted, so the run is never momentarily holding both the
-            // consumed mon and a grown survivor — the Team screen redraws off this state.
+            // consumed mon and a grown survivor — the Team screen redraws off this state. Its held
+            // item isn't consumed with it: it goes back in the bag.
+            HeldItems.ReturnToBag(state, consumed);
             state.CollectionFor(fromGroup).RemoveAt(fromIndex);
             var report = ExperienceResolver.GrantExp(survivor, ExpFor(survivor), library);
             ExperienceResolver.ApplyCatchUp(state, library);
