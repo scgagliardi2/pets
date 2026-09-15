@@ -401,12 +401,20 @@ namespace Pets.Gameplay
         /// waits when there's something to watch.
         ///
         /// Both or neither: the exchange only happens when both Leads are standing
-        /// (battle-sim-spec.md §3.1), so a Step where one side has already lost its Lead — the last
-        /// Step of a fight, typically — has no attack to animate and shouldn't pause for one.</summary>
+        /// (battle-sim-spec.md §3.1), so a Step where one side had already lost its Lead — the last
+        /// Step of a fight, typically — has no attack to animate and shouldn't pause for one.
+        ///
+        /// The arguments are the Leads as they stood at the *start* of the Step, captured before
+        /// runner.NextStep() applied it, and presence is all this asks about. It deliberately does
+        /// not ask whether they're alive: by the time this runs the Step's damage is already in, so
+        /// an `IsAlive` check here reads post-Step health and reports "no exchange" for any Step
+        /// that killed a Lead — which silently skipped the animation on exactly the most dramatic
+        /// hits, one-shot kills included. A mon standing as Lead at the start of a Step was alive
+        /// then, because the simulator removes a Lead the moment it faints; that it died during the
+        /// Step is the very thing the lunge is there to show.</summary>
         private bool PlayLunges(BattleCombatant playerLeadMon, BattleCombatant enemyLeadMon)
         {
-            bool exchanged = playerLeadMon != null && playerLeadMon.IsAlive
-                && enemyLeadMon != null && enemyLeadMon.IsAlive;
+            bool exchanged = playerLeadMon != null && enemyLeadMon != null;
             if (!exchanged)
             {
                 return false;

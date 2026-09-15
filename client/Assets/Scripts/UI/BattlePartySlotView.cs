@@ -51,9 +51,47 @@ namespace Pets.UI
         {
             portrait.enabled = true;
             portrait.sprite = portraitSprite;
+            SizePortrait();
             nameText.text = displayName;
             track.SetActive(true);
         }
+
+        /// <summary>Sizes the portrait from the sprite's own pixels so the party strip shows species
+        /// in proportion to each other, the way the battlefield and the card screens now do, rather
+        /// than blowing every mon up to fill the same 86-unit row.
+        ///
+        /// The row is authored pinned to the *top* of the slot (UiPrefabBuilder.PinRow), which is
+        /// the wrong way round once heights vary: a small mon would hang from the top of its frame
+        /// with a gap beneath it. Re-pinned here to the row's bottom edge, so shorter sprites sit
+        /// down on a shared baseline and the strip reads as a line-up rather than a set of dangling
+        /// portraits. Done once, guarded by <see cref="portraitBaselined"/>, because it reads the
+        /// authored rect to find that baseline and must not then read back its own result.</summary>
+        private void SizePortrait()
+        {
+            if (portrait == null)
+            {
+                return;
+            }
+
+            var rect = portrait.rectTransform;
+            if (!portraitBaselined)
+            {
+                float rowHeight = rect.rect.height;
+                // offsetMin.y is the row's bottom edge measured down from the slot's top, which is
+                // the baseline to stand the mons on.
+                float bottom = rect.offsetMin.y;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+                rect.pivot = new Vector2(0.5f, 0f);
+                rect.anchoredPosition = new Vector2(0f, bottom);
+                portraitRowHeight = rowHeight;
+                portraitBaselined = true;
+            }
+
+            rect.sizeDelta = PokemonSpriteScaler.RelativeSize(portrait.sprite, portraitRowHeight);
+        }
+
+        private bool portraitBaselined;
+        private float portraitRowHeight;
 
         public void SetRole(PartySlotRole role)
         {

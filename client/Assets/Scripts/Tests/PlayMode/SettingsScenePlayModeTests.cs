@@ -55,12 +55,15 @@ namespace Pets.Tests
             yield return null;
         }
 
+        /// <summary>A fight opens paused for a player who has never touched the setting, so the
+        /// opening exchange isn't over before they've looked at the board. Anyone who *has* toggled
+        /// it has a stored value, which still wins — that's what the two toggle tests below cover.</summary>
         [Test]
-        public void AutoplayBattles_DefaultsToOn()
+        public void AutoplayBattles_DefaultsToOff()
         {
             PlayerPrefs.DeleteKey(GameSettings.AutoplayBattlesKey);
 
-            Assert.IsTrue(GameSettings.AutoplayBattles);
+            Assert.IsFalse(GameSettings.AutoplayBattles);
         }
 
         [UnityTest]

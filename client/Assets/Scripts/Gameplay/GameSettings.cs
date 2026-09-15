@@ -9,11 +9,21 @@ namespace Pets.Gameplay
     {
         public const string AutoplayBattlesKey = "settings.autoplayBattles";
 
-        /// <summary>Whether a battle starts playing on its own (design doc §10.4). On by default;
-        /// the battle screen's pause is always available either way.</summary>
+        /// <summary>Whether a battle starts playing on its own (design doc §10.4).
+        ///
+        /// **Off by default.** A fight opens paused on its first Step, and the player presses Play
+        /// or steps through it. Autoplay was the original default, but now that a Step is something
+        /// to watch — the Leads strike, bars drain, passives fire — starting mid-flow means the
+        /// opening exchange is already over before you've looked at the board. Turning it on is one
+        /// press on the battle screen, and the choice sticks via the Settings screen.
+        ///
+        /// Note this only decides how a battle *opens*. Pause and Play are always available.
+        ///
+        /// Changing the fallback here changes it only for players who have never touched the
+        /// setting: anyone who has toggled it has a stored value, which continues to win.</summary>
         public static bool AutoplayBattles
         {
-            get => PlayerPrefs.GetInt(AutoplayBattlesKey, 1) != 0;
+            get => PlayerPrefs.GetInt(AutoplayBattlesKey, 0) != 0;
             set
             {
                 PlayerPrefs.SetInt(AutoplayBattlesKey, value ? 1 : 0);
