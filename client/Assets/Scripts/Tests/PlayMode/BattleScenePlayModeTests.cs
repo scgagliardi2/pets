@@ -132,7 +132,11 @@ namespace Pets.Tests
             StringAssert.StartsWith("Beta", Stats("PlayerSupportStats").NameText.text);
             Assert.IsTrue(MonNames.Any(n => Stats("EnemyLeadStats").NameText.text.StartsWith(n)), "the foe is rolled from the library");
             Assert.IsTrue(MonNames.Any(n => Stats("EnemySupportStats").NameText.text.StartsWith(n)));
-            Assert.AreEqual($"{TestMaxHealth}/{TestMaxHealth}", Stats("PlayerLeadStats").HealthBar.ValueLabel.text);
+            // At full health, but not at the species' health: every test mon is Normal, so Steady
+            // Growth has already been applied by the time the board is drawn (ADR 0015).
+            var leadBar = Stats("PlayerLeadStats").HealthBar;
+            Assert.AreEqual($"{leadBar.Max}/{leadBar.Max}", leadBar.ValueLabel.text);
+            Assert.AreEqual(TestMaxHealth + 3, leadBar.Max, "+1 Health per Normal mon, and the party is three");
             Assert.AreEqual(TestAttack.ToString(), Stats("PlayerLeadStats").AttackText.text);
 
             foreach (var sprite in new[] { "PlayerLeadSprite", "PlayerSupportSprite", "EnemyLeadSprite", "EnemySupportSprite" })
@@ -621,10 +625,10 @@ namespace Pets.Tests
             Assert.IsNull(GameObject.Find("PlayerSynergyChipsLabel"), "and no label left stranded beside them");
         }
 
-        /// <summary>What a synergy did to a particular mon shows over that mon: the foe is
-        /// Poison/Steel, so it opens by poisoning the player's Lead (a bad badge, drawn in the danger
-        /// colour) while its own Lead blocks a point of damage a hit (a good one). Neither is
-        /// something the stat boxes could show.</summary>
+        /// <summary>What a synergy did to a particular mon shows over that mon, from the moment the
+        /// board is drawn: the foe is Poison/Steel, so it opens by poisoning the player's Lead (a bad
+        /// badge, drawn in the danger colour) while its own Lead blocks a point of damage a hit (a
+        /// good one). Neither is something the stat boxes could show.</summary>
         [UnityTest]
         public IEnumerator EffectBadges_ShowWhatIsOnEachMon_OnceTheFightOpens()
         {
@@ -632,7 +636,8 @@ namespace Pets.Tests
 
             yield return LoadScene(BattleScenePath);
 
-            Assert.IsEmpty(Badges("PlayerLeadSprite"), "nothing is applied until the first Step is taken");
+            CollectionAssert.Contains(Badges("PlayerLeadSprite"), "Poisoned",
+                "the opening is already in when the board is first drawn — before any Step");
 
             var controller = Controller();
             FindButton("StepButton").onClick.Invoke();
@@ -647,33 +652,34 @@ namespace Pets.Tests
         }
 
         /// <summary>A shield is drawn as a bubble around the mon rather than as a badge beside it,
-        /// with what it will absorb written on the bubble (Pets.UI.ShieldBubbleView). The party mon
-        /// is Water here, so its own Shell Guard synergy shields it as the fight opens; the foe
-        /// can't hit back, so the pool is still full when the Step finishes drawing.</summary>
+        /// with what it will absorb written on the bubble (Pets.UI.ShieldBubbleView) — up from the
+        /// moment the board is drawn, and gone when the pool is spent. The party mon is Water, so its
+        /// own Shell Guard synergy shields it with a single point, and the foe hits for more than
+        /// that: exactly the case that was invisible while the opening was applied inside Step 1.</summary>
         [UnityTest]
-        public IEnumerator ShieldBubble_WrapsTheMonHoldingOne_ShowingWhatItBlocks()
+        public IEnumerator ShieldBubble_IsUpBeforeTheFirstStep_AndGoesWhenItPops()
         {
-            BeginNodeFight(foeAttack: 0, StrongFoeHealth);
+            BeginNodeFight(WeakFoeAttack, StrongFoeHealth);
             // The library is what the battle reads types from (Meta/BattleLineUp.Assemble), so this
             // is where a test changes what the player's side counts as.
             ActiveRun.Library.AllSpecies[0].Type1 = PokemonType.Water;
 
             yield return LoadScene(BattleScenePath);
 
-            Assert.IsFalse(Bubble("PlayerLeadSprite").IsShowing, "nothing is applied until the first Step is taken");
+            var bubble = Bubble("PlayerLeadSprite");
+            Assert.IsTrue(bubble.IsShowing, "the shield is up before a Step is taken, not once one lands");
+            Assert.AreEqual(1, bubble.Shown, "and the bubble says how much it will block");
+            Assert.AreEqual("1", bubble.GetComponentInChildren<Text>(includeInactive: true).text);
+            CollectionAssert.DoesNotContain(Badges("PlayerLeadSprite"), "Shield",
+                "the bubble replaced the badge — showing both would say it twice");
+            Assert.IsFalse(Bubble("EnemyLeadSprite").IsShowing, "the wild mon is Normal, so it has no shield");
 
             var controller = Controller();
             FindButton("StepButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
                 "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
 
-            var bubble = Bubble("PlayerLeadSprite");
-            Assert.IsTrue(bubble.IsShowing, "one Water mon shields the front of its own line-up");
-            Assert.AreEqual(1, bubble.Shown, "and the bubble says how much it will block");
-            Assert.AreEqual("1", bubble.GetComponentInChildren<Text>(includeInactive: true).text);
-            CollectionAssert.DoesNotContain(Badges("PlayerLeadSprite"), "Shield",
-                "the bubble replaced the badge — showing both would say it twice");
-            Assert.IsFalse(Bubble("EnemyLeadSprite").IsShowing, "the wild mon is Normal, so it has no shield");
+            Assert.IsFalse(Bubble("PlayerLeadSprite").IsShowing, "the foe's hit spent the point, so the bubble pops");
         }
 
         /// <summary>The bubble around one mon, whether or not it is currently up.</summary>

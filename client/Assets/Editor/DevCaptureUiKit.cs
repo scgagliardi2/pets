@@ -121,12 +121,12 @@ namespace Pets.EditorTools
             CapturePlaying(BattleSceneBuilder.ScenePath, OpenSynergyPanel);
         }
 
-        /// <summary>A shielded mon during the opening beat: one Water mon in a three-mon party, so
-        /// Shell Guard raises the smallest shield there is — a single point — around the Lead, and a
-        /// foe that hits for more than that. This is the ordinary case, and the one that was
-        /// invisible before the opening got a beat of its own (BattleScreenController.PlayOpening):
-        /// applied and spent inside one call to NextStep, there was no board state to draw it in.
-        /// The shot lands inside the hold, before Step 1's exchange takes the point back.</summary>
+        /// <summary>A shielded mon on the resting board, before a Step is taken: one Water mon in a
+        /// three-mon party, so Shell Guard raises the smallest shield there is — a single point —
+        /// around the Lead, and a foe that hits for more than that. This is the ordinary case, and
+        /// the one that was invisible while the opening was applied inside Step 1: raised and spent
+        /// in a single call, there was no board state to draw it in. No gesture, because the point
+        /// is that the bubble is up from the moment the teams are on the field.</summary>
         [MenuItem("Pets/Dev/Capture Battle Shield Bubble (Playing)")]
         public static void CaptureBattleShieldBubblePlaying()
         {
@@ -155,9 +155,7 @@ namespace Pets.EditorTools
                 new System.Collections.Generic.List<Pets.Simulation.PokemonInstance> { foe },
                 "capture-node", isGym: false, seed: 21);
 
-            CapturePlaying(BattleSceneBuilder.ScenePath,
-                () => Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>().OnStepClicked(),
-                captureAfterSeconds: DelayArg(0.5f));
+            CapturePlaying(BattleSceneBuilder.ScenePath);
         }
 
         private static void OpenSynergyPanel()

@@ -152,10 +152,11 @@ namespace Pets.Gameplay
         /// faint beat lasts exactly as long as the animation it's there to show.</summary>
         private const float FaintDropSeconds = 0.7f;
 
-        /// <summary>How long the board is held after the opening is drawn, before Step 1 is taken —
+        /// <summary>How long an autoplaying fight holds the opening board before taking Step 1 —
         /// long enough to read a shield bubble and the chips that explain it, short enough not to
-        /// put a wait in front of every fight. A const rather than a serialized field so an
-        /// un-rebuilt Battle.unity still gets the beat (see PlayOpening).</summary>
+        /// put a wait in front of every fight. A hand-stepped fight holds it until the player says
+        /// otherwise. A const rather than a serialized field so an un-rebuilt Battle.unity still
+        /// gets the beat.</summary>
         private const float OpeningHoldSeconds = 0.9f;
 
         /// <summary>How a redraw treats HP: drain to the new value (a Step just landed), leave a drain
@@ -331,7 +332,21 @@ namespace Pets.Gameplay
             // Back button, since it costs the run nothing either way.
             backButton.gameObject.SetActive(context == BattleContext.DevRandom);
             resultPanel.SetActive(false);
+
+            // The teams arrive with their team type synergies already applied (ADR 0015) — shields,
+            // charge, lifesteal, and the opening blows — so the board the player is looking at
+            // before they press anything is the board the fight starts from. Applied here rather
+            // than on the first Step because the defences are small and the first exchange spends
+            // them: a shield raised and popped between two frames is a shield nobody ever sees. It
+            // draws no RNG, so taking it earlier doesn't move the fight.
+            fightEvents.AddRange(runner.ApplyOpening());
             RenderCurrent(HealthMode.Snap);
+            // An opening can in principle empty a side (a Dark opening on a lone mon at 1 HP), which
+            // is a fight decided before a Step is taken.
+            if (runner.IsBattleOver)
+            {
+                ShowResult();
+            }
             SetAutoplay(GameSettings.AutoplayBattles);
         }
 
@@ -809,7 +824,10 @@ namespace Pets.Gameplay
         {
             while (IsAutoplaying && !runner.IsBattleOver)
             {
-                yield return new WaitForSeconds(pauseBetweenSteps);
+                // Longer before the first Step than between later ones: the board is showing what
+                // the synergies did as the teams arrived, and an autoplaying fight shouldn't wipe a
+                // shield off it before anyone has read it.
+                yield return new WaitForSeconds(runner.State.StepNumber == 0 ? OpeningHoldSeconds : pauseBetweenSteps);
                 if (IsAutoplaying && !IsAnimating && !runner.IsBattleOver)
                 {
                     yield return PlayStep();
@@ -818,73 +836,9 @@ namespace Pets.Gameplay
             autoplayRoutine = null;
         }
 
-        /// <summary>Draws what the team type synergies did as the fight opened (ADR 0015), as a beat
-        /// of its own before Step 1's exchange.
-        ///
-        /// Not cosmetic sequencing: the simulator applies the opening and Step 1 in one call, and the
-        /// opening's defences are small — one Water mon raises a 1-point shield, which the very
-        /// exchange that follows spends. Drawn only after that call returns, the board never shows it,
-        /// so the shield bubble, an opening poisoning and the opening damage were all invisible in
-        /// every fight where they mattered least — which is most fights. Applying the opening by
-        /// itself gives the screen a board state to draw it in.
-        ///
-        /// Shaped like a Step without the lunge: drain, then any faint it caused, then a held beat to
-        /// read what is now standing on the field. An opening that empties a side ends the fight here,
-        /// which is why the caller re-checks IsBattleOver.</summary>
-        private IEnumerator PlayOpening()
-        {
-            var state = runner.State;
-            var pLead = state.LeadA;
-            var pSupport = state.SupportA;
-            var eLead = state.LeadB;
-            var eSupport = state.SupportB;
-
-            var events = runner.ApplyOpening();
-            fightEvents.AddRange(events);
-            RecordDamage(events);
-
-            // Most openings do no damage at all — they hand out shields, charge and lifesteal — so
-            // the bars only drain when there is something to drain. The tween runs the usual drain
-            // time and carries on under the beats that follow; Step 1's own drain retargets it from
-            // wherever it has got to (HealthBarView.AnimateHealth), so the hold below is a beat to
-            // read the board by, not the length of an animation.
-            bool damaged = damageThisStep.Count > 0;
-            Render(pLead, pSupport, eLead, eSupport, damaged ? HealthMode.Animate : HealthMode.Snap, showFaint: false);
-            yield return new WaitForSeconds(OpeningHoldSeconds);
-
-            // An opening KO (a Fire or Dark opening on a mon already at death's door) drops the
-            // loser before Step 1, exactly as the Step's own faint beat would.
-            if (ChangedLineUp(events))
-            {
-                Render(pLead, pSupport, eLead, eSupport, HealthMode.Keep, showFaint: true);
-                yield return new WaitForSeconds(faintRevealSeconds);
-            }
-
-            damageThisStep.Clear();
-            RenderCurrent(HealthMode.Keep);
-
-            if (runner.IsBattleOver)
-            {
-                ShowResult();
-            }
-        }
-
         private IEnumerator PlayStep()
         {
             IsAnimating = true;
-
-            // The opening first, on its own, the first time anyone advances the fight — see
-            // PlayOpening. Run inside PlayStep rather than beside it so every path that advances the
-            // fight (the Step button, autoplay, a Step taken to resolve a throw) gets it once.
-            if (!runner.OpeningApplied)
-            {
-                yield return PlayOpening();
-                if (runner.IsBattleOver)
-                {
-                    IsAnimating = false;
-                    yield break;
-                }
-            }
 
             var state = runner.State;
             var shownPlayerLead = state.LeadA;

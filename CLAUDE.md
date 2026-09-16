@@ -38,7 +38,10 @@ gives the Event node four encounters (a Legendary fight, the Game Corner, a trad
 ambush), adds three held items, and splits the Center into Pokémon / Poké Balls / three rolled items
 rows; and
 [`0015-team-type-synergies.md`](docs/architecture-decisions/0015-team-type-synergies.md)
-adds a small per-type team bonus scaled by type count, applied to both sides as a battle opens. Between them they
+adds a small per-type team bonus scaled by type count, applied to both sides as a battle opens; and
+[`0016-the-opening-is-on-the-board-before-step-one.md`](docs/architecture-decisions/0016-the-opening-is-on-the-board-before-step-one.md)
+moves that opening to where the player can see it — applied as the battle screen opens rather than
+inside the first Step, with a shield drawn as a bubble around the mon. Between them they
 list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
@@ -252,7 +255,7 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   123 PlayMode (122 pass)**. The Nidoran failures
   are fixed, and three `HealthBarViewTests` that failed on sprite identity passed again once the
   sprite atlas was rebuilt — if they fail, run `Pets > Build Sprite Atlases` before believing them.
-  After the shield bubble and the opening beat: **299 EditMode and 124 PlayMode, all passing** —
+  After the shield bubble and ADR 0016: **299 EditMode and 124 PlayMode, all passing** —
   the long-standing HP-drain failure is fixed, since it was asserting one frame after the Step (the
   lunge, and now the opening, are drawn first) against pre-synergy HP numbers. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
