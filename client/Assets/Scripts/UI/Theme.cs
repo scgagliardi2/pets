@@ -148,6 +148,11 @@ namespace Pets.UI
         public static Sprite FastForwardIconSprite => LoadUiSprite("IconFastForward");
         public static Sprite PokeballSprite => LoadUiSprite("Pokeball");
 
+        /// <summary>The shield bubble drawn around a mon carrying a Shield (Pets.UI.ShieldBubbleView).
+        /// Not 9-sliced and not 12x12 like the icons — a 32x32 circle, drawn as Image.Type.Simple and
+        /// sized to the mon it wraps, so it is scaled rather than stretched from a border.</summary>
+        public static Sprite ShieldBubbleSprite => LoadUiSprite("ShieldBubble");
+
         /// <summary>Health-bar fill bands, as in the mainline games: green above half, yellow down
         /// to a fifth, red below that.</summary>
         public const float HealthYellowBelow = 0.5f;

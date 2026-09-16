@@ -121,6 +121,44 @@ namespace Pets.EditorTools
             CapturePlaying(BattleSceneBuilder.ScenePath, OpenSynergyPanel);
         }
 
+        /// <summary>A shielded mon, one Step in: a party of Water types, whose Shell Guard synergy
+        /// puts a bubble around the front of the line-up with what it will absorb written on it
+        /// (Pets.UI.ShieldBubbleView). The foe hits for one, so the first Step takes a point off the
+        /// pool rather than popping it — which is the state worth looking at, a bubble part-spent.
+        /// Stepped rather than skipped, since a finished fight has no shield left to draw.</summary>
+        [MenuItem("Pets/Dev/Capture Battle Shield Bubble (Playing)")]
+        public static void CaptureBattleShieldBubblePlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var water = library.AllSpecies
+                .Where(s => s != null && s.Type1 == Pets.Simulation.PokemonType.Water)
+                .Take(3)
+                .ToList();
+            if (water.Count == 0)
+            {
+                Debug.LogError("[Capture] No Water species in the library to shield.");
+                return;
+            }
+
+            var run = new Pets.Meta.RunState { RunSeed = 21 };
+            for (int i = 0; i < water.Count; i++)
+            {
+                run.LineUp.Add(Pets.Meta.ExperienceResolver.CreateAtExp(water[i], $"capture-{i}", 6, library));
+            }
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+
+            var foe = Pets.Meta.ExperienceResolver.CreateAtExp(library.AllSpecies[0], "capture-foe", 0, library);
+            foe.CurrentStats = new Pets.Simulation.Stats { Attack = 1, Health = 60, Speed = 1 };
+            foe.CurrentHP = 60;
+            Pets.Gameplay.PendingBattle.Set(
+                new System.Collections.Generic.List<Pets.Simulation.PokemonInstance> { foe },
+                "capture-node", isGym: false, seed: 21);
+
+            CapturePlaying(BattleSceneBuilder.ScenePath,
+                () => Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>().OnStepClicked(),
+                captureAfterSeconds: DelayArg(2.35f));
+        }
+
         private static void OpenSynergyPanel()
         {
             var controller = Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>();

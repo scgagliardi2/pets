@@ -187,10 +187,15 @@ namespace Pets.Gameplay
             /// the same species can be on either side of the same fight.</summary>
             public bool DrawsBackSprite;
 
-            /// <summary>The badges floating over this slot's mon — its shield, armour, lifesteal,
-            /// ward, status and charge debt (Pets.UI.EffectBadgeRowView). Attached at runtime like
-            /// the lunge, and refreshed on every redraw of the slot.</summary>
+            /// <summary>The badges floating over this slot's mon — its armour, lifesteal, ward,
+            /// status and charge debt (Pets.UI.EffectBadgeRowView). Attached at runtime like the
+            /// lunge, and refreshed on every redraw of the slot.</summary>
             public EffectBadgeRowView Badges;
+
+            /// <summary>The shield bubble around this slot's mon (Pets.UI.ShieldBubbleView), with
+            /// what it will absorb written on it. Its own view rather than a badge in the row above,
+            /// because a shield is the only one of these that wraps the mon.</summary>
+            public ShieldBubbleView Shield;
 
             /// <summary>The drop-and-fade on this slot's sprite. Looked up off the sprite rather
             /// than serialized separately — the two always live on the same object (see
@@ -293,6 +298,8 @@ namespace Pets.Gameplay
                 // Over the mon's head, so what a synergy or a passive put on it is visible on the
                 // field rather than only in its stat box's numbers.
                 slot.Badges = EffectBadgeRowView.Attach(slot.Sprite, typeIconPrefab);
+                // And around it, for the one effect that isn't a number anywhere else on screen.
+                slot.Shield = ShieldBubbleView.Attach(slot.Sprite);
             }
 
             // Only the Leads strike, so only they get a lunge. Attached here rather than authored
@@ -1111,6 +1118,7 @@ namespace Pets.Gameplay
                 slot.Faint?.Clear();
                 slot.Damage.text = string.Empty;
                 slot.Badges?.Show(null);
+                slot.Shield?.Show(null);
                 return;
             }
 
@@ -1164,8 +1172,10 @@ namespace Pets.Gameplay
                 : string.Empty;
             // Read off the combatant every redraw rather than tracked: a shield is spent, a status
             // is cleared and a charge debt is paid off as the fight goes, and the badges are just a
-            // view of whatever is true now.
+            // view of whatever is true now. The bubble is the same, one effect wider: it resizes to
+            // whoever is standing here, so a promotion redraws it around the new mon.
             slot.Badges?.Show(mon);
+            slot.Shield?.Show(mon);
         }
 
         /// <summary>Draws both sides' team type synergies (ADR 0015): a chip row each over the field,

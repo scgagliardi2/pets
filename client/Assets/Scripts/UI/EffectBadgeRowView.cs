@@ -6,8 +6,9 @@ using Pets.Simulation;
 namespace Pets.UI
 {
     /// <summary>The badges floating over one active mon on the battlefield: what is currently on it
-    /// that its stat box doesn't already show — a shield, blocked damage, lifesteal, a status ward,
-    /// the status it is suffering, and charge it starts the fight owing.
+    /// that its stat box doesn't already show — blocked damage, lifesteal, a status ward, the status
+    /// it is suffering, and charge it starts the fight owing. A shield is the exception: it gets a
+    /// bubble around the mon instead (Pets.UI.ShieldBubbleView), so it is shown here by its absence.
     ///
     /// Most of these arrive from a team type synergy as the fight opens (Simulation/TeamSynergy,
     /// ADR 0015), which is otherwise invisible: Attack, Health and Speed bonuses show up in the stat
@@ -15,8 +16,8 @@ namespace Pets.UI
     /// change nothing the box draws. A passive that shields or poisons puts the same badges up, since
     /// the badge is read off the combatant's state rather than from where that state came.
     ///
-    /// Each badge borrows the type badge of the type whose synergy grants it — Water for a shield,
-    /// Steel for damage reduction, Grass for lifesteal, Fairy for a ward, Ice for charge owed — so
+    /// Each badge borrows the type badge of the type whose synergy grants it — Steel for damage
+    /// reduction, Grass for lifesteal, Fairy for a ward, Ice for charge owed — so
     /// the icon over a mon matches the chip in the synergy row that caused it. A status uses the type
     /// that inflicts it (Poison, Fire, Electric, Psychic) and is drawn in the danger colour, which is
     /// what tells a bad badge from a good one at a glance.
@@ -80,10 +81,6 @@ namespace Pets.UI
             shown.Clear();
             if (mon != null)
             {
-                if (mon.Shield > 0)
-                {
-                    Add(PokemonType.Water, mon.Shield.ToString(), positive: true, key: "Shield");
-                }
                 if (mon.DamageReductionFlat > 0)
                 {
                     Add(PokemonType.Steel, mon.DamageReductionFlat.ToString(), positive: true, key: "Armour");

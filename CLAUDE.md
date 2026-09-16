@@ -176,7 +176,8 @@ exists — the phase list under it describes intent, and the build has deviated 
 /shared    Golden battle-sim fixtures (JSON) used by both client and (later) server tests
 /tools     one-off content/asset scripts (generate_ui_sprites.py)
 /docs      pokemon-roguelite-autobattler-design-doc.md (full design), pokemon_stats_unique.xlsx
-           (roster), battle-sim-spec.md, content-schema.md, architecture-decisions/
+           (roster), battle-sim-spec.md, content-schema.md, type-passives.md (what each type is
+           worth, both kinds), architecture-decisions/
 ```
 
 There is no `Scripts/BattleRunner` or `Scripts/Minigame` — see PLAN.md §5 for why. Art splits two
@@ -288,6 +289,9 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   changes, not after.
 - `docs/content-schema.md` — the data shape for species/passives/items/locations, kept in sync
   with the actual ScriptableObject fields and JSON export format.
+- `docs/type-passives.md` — the table of what each type is worth: every team type synergy's value
+  and how it scales (from `Simulation/TeamSynergy`'s constants), and every species passive's effect
+  and amount (from its asset). Retune either and this table is the thing that goes stale.
 - `docs/pokemon_stats_unique.xlsx` — the roster source. If stats change during balancing, update
   the sheet, don't let hand-edited ScriptableObject values silently diverge from it.
 - `PLAN.md` §6 Status — **the one doc that goes stale fastest.** It's the account of what exists

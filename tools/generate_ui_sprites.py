@@ -247,6 +247,17 @@ ICONS = {
 # art. The text box is a flat parchment panel and deliberately has none.
 SPECULAR = {"ButtonBlue", "ButtonGreen", "ButtonRed", "ButtonGray"}
 
+# The shield bubble (Pets.UI.ShieldBubbleView): the sphere drawn around a mon that is carrying a
+# Shield, from the Water team synergy or a Shell Guard-style passive. Bigger than the 12x12 icons
+# because it is drawn around a whole Pokemon rather than beside a number — at 12px a ring is one
+# pixel thick and the circle reads as an octagon. Still hard-edged pixel art, since everything in
+# this folder is imported Point-filtered (UiSpriteImportProcessor).
+BUBBLE_SIZE = 32
+BUBBLE_RIM = (196, 240, 255, 235)      # the bright skin of the bubble
+BUBBLE_INNER = (150, 214, 252, 120)    # the fall-off just inside it
+BUBBLE_FILL = (118, 186, 244, 52)      # the water the mon is seen through
+BUBBLE_SHINE = (255, 255, 255, 240)    # a specular arc, upper right, like a soap bubble
+
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "client", "Assets", "Resources", "Sprites", "UI")
 
 
@@ -314,8 +325,53 @@ def build_icon(name):
     print(f"wrote {path} ({ICON_SIZE}x{ICON_SIZE} icon)")
 
 
+def build_bubble():
+    """Draws the shield bubble: a bright rim, a soft inside, and one specular arc.
+
+    Radii are in source pixels from the centre of a BUBBLE_SIZE square. Pixel coverage is taken at
+    the centre of each pixel, so the ring stays exactly as thick as the band that defines it and
+    there is no anti-aliased fringe for Point filtering to tear.
+    """
+    import math
+
+    img = Image.new("RGBA", (BUBBLE_SIZE, BUBBLE_SIZE), (0, 0, 0, 0))
+    px = img.load()
+    centre = (BUBBLE_SIZE - 1) / 2.0
+    outer = BUBBLE_SIZE / 2.0
+    rim = outer - 2.0        # the bright ring is the outer 2px
+    inner = outer - 4.0      # then 2px of fall-off, then flat fill
+
+    for y in range(BUBBLE_SIZE):
+        for x in range(BUBBLE_SIZE):
+            dx, dy = x - centre, y - centre
+            r = math.hypot(dx, dy)
+            if r > outer:
+                continue
+            if r >= rim:
+                px[x, y] = BUBBLE_RIM
+            elif r >= inner:
+                px[x, y] = BUBBLE_INNER
+            else:
+                px[x, y] = BUBBLE_FILL
+
+            # The shine: a short arc riding just inside the rim, up and to the right, plus the
+            # single highlight pixel a little further in that sells it as a curved surface. Kept off
+            # the upper left, which is where ShieldBubbleView writes the amount the bubble blocks —
+            # a white number on a white arc is the one place it can't be read.
+            angle = math.degrees(math.atan2(-dy, dx))
+            if inner - 0.5 <= r <= rim + 0.5 and 30 <= angle <= 72:
+                px[x, y] = BUBBLE_SHINE
+            if 6.0 <= r <= 7.5 and 42 <= angle <= 60:
+                px[x, y] = BUBBLE_SHINE
+
+    path = os.path.normpath(os.path.join(OUT_DIR, "ShieldBubble.png"))
+    img.save(path)
+    print(f"wrote {path} ({BUBBLE_SIZE}x{BUBBLE_SIZE} bubble)")
+
+
 if __name__ == "__main__":
     for n in PALETTES:
         build(n)
     for n in ICONS:
         build_icon(n)
+    build_bubble()

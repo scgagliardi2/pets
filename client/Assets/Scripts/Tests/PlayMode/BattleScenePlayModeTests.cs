@@ -635,6 +635,46 @@ namespace Pets.Tests
             Assert.IsEmpty(Badges("PlayerSupportSprite"), "nobody is in that slot in a one-mon party");
         }
 
+        /// <summary>A shield is drawn as a bubble around the mon rather than as a badge beside it,
+        /// with what it will absorb written on the bubble (Pets.UI.ShieldBubbleView). The party mon
+        /// is Water here, so its own Shell Guard synergy shields it as the fight opens; the foe
+        /// can't hit back, so the pool is still full when the Step finishes drawing.</summary>
+        [UnityTest]
+        public IEnumerator ShieldBubble_WrapsTheMonHoldingOne_ShowingWhatItBlocks()
+        {
+            BeginNodeFight(foeAttack: 0, StrongFoeHealth);
+            // The library is what the battle reads types from (Meta/BattleLineUp.Assemble), so this
+            // is where a test changes what the player's side counts as.
+            ActiveRun.Library.AllSpecies[0].Type1 = PokemonType.Water;
+
+            yield return LoadScene(BattleScenePath);
+
+            Assert.IsFalse(Bubble("PlayerLeadSprite").IsShowing, "nothing is applied until the first Step is taken");
+
+            var controller = Controller();
+            FindButton("StepButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
+                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+
+            var bubble = Bubble("PlayerLeadSprite");
+            Assert.IsTrue(bubble.IsShowing, "one Water mon shields the front of its own line-up");
+            Assert.AreEqual(1, bubble.Shown, "and the bubble says how much it will block");
+            Assert.AreEqual("1", bubble.GetComponentInChildren<Text>(includeInactive: true).text);
+            CollectionAssert.DoesNotContain(Badges("PlayerLeadSprite"), "Shield",
+                "the bubble replaced the badge — showing both would say it twice");
+            Assert.IsFalse(Bubble("EnemyLeadSprite").IsShowing, "the wild mon is Normal, so it has no shield");
+        }
+
+        /// <summary>The bubble around one mon, whether or not it is currently up.</summary>
+        private static ShieldBubbleView Bubble(string spriteName)
+        {
+            var sprite = GameObject.Find(spriteName);
+            Assert.IsNotNull(sprite, $"Expected a '{spriteName}' on the field");
+            var bubble = sprite.GetComponentInChildren<ShieldBubbleView>(includeInactive: true);
+            Assert.IsNotNull(bubble, $"{spriteName} should carry a shield bubble");
+            return bubble;
+        }
+
         /// <summary>The badges up over one mon, by name.</summary>
         private static List<string> Badges(string spriteName)
         {
