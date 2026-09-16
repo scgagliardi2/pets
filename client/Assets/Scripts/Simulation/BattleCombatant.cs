@@ -44,6 +44,16 @@ namespace Pets.Simulation
         /// simulator never resolves a passive id itself. Null means no passive.</summary>
         public PassiveDefinition ResolvedPassive;
 
+        /// <summary>The mon's species types, read by <see cref="TeamSynergy"/> when the battle opens
+        /// and by nothing else. Set by whoever assembles the line-up (Pets.Meta.BattleLineUp), since
+        /// PokemonInstance only knows a species id. Null means the combatant counts toward no synergy
+        /// — which is what a fixture or a dev battle built straight from instances gets.</summary>
+        public List<PokemonType> Types;
+
+        /// <summary>How many more status applications this combatant shrugs off (Fairy's synergy).
+        /// Each blocked application uses one up and raises StatusBlocked instead of StatusApplied.</summary>
+        public int StatusWards;
+
         /// <summary>Fills toward BattleConfig.ChargeThreshold at speed * stepDuration per Step
         /// (battle-sim-spec.md §3-§4).</summary>
         public int Charge;

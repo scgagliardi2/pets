@@ -265,6 +265,9 @@ namespace Pets.Tests
             AssertWired<BattleScreenController>("StepButton", nameof(BattleScreenController.OnStepClicked));
             AssertWired<BattleScreenController>("PlayButton", nameof(BattleScreenController.OnPlayClicked));
             AssertWired<BattleScreenController>("SkipButton", nameof(BattleScreenController.OnSkipClicked));
+            // Both the opener and the panel's own Close, since the handler toggles.
+            AssertWired<BattleScreenController>("SynergiesButton", nameof(BattleScreenController.OnSynergiesClicked));
+            AssertWired<BattleScreenController>("SynergyCloseButton", nameof(BattleScreenController.OnSynergiesClicked));
         }
 
         /// <summary>A fight a map node started, rather than the dev random battle: the encounter is
@@ -533,6 +536,134 @@ namespace Pets.Tests
             Assert.IsTrue(PendingBattle.IsGym);
         }
 
+        /// <summary>Both sides' team type synergies are named on the field the whole fight: a chip
+        /// per synergy, with the count behind it (ADR 0015). Every test species is Normal, so each
+        /// side shows Steady Growth at the size of its team.</summary>
+        [UnityTest]
+        public IEnumerator NodeFight_ShowsAChipRowOfSynergies_ForBothSides()
+        {
+            BeginNodeFight(WeakFoeAttack, StrongFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+
+            Assert.AreEqual("x1", ChipCount("PlayerSynergyChips", PokemonType.Normal), "the party is one Normal mon");
+            Assert.AreEqual("x1", ChipCount("EnemySynergyChips", PokemonType.Normal), "so is the wild mon");
+            Assert.IsNotNull(GameObject.Find("PlayerSynergyChipsLabel"), "the chip row is labelled");
+        }
+
+        /// <summary>The chips say which synergies are live; the panel behind the Synergies button is
+        /// where the exact bonus is written out.</summary>
+        [UnityTest]
+        public IEnumerator SynergiesButton_TogglesAPanel_SpellingOutBothSidesBonuses()
+        {
+            BeginNodeFight(WeakFoeAttack, StrongFoeHealth);
+
+            yield return LoadScene(BattleScenePath);
+            var controller = Controller();
+
+            Assert.IsFalse(controller.IsShowingSynergies, "the panel stays out of the way until asked for");
+
+            FindButton("SynergiesButton").onClick.Invoke();
+            Assert.IsTrue(controller.IsShowingSynergies);
+            Assert.AreEqual("Steady Growth x1", SynergyRowText("PlayerSynergyRows", PokemonType.Normal, "Title"));
+            Assert.AreEqual("+1 Health to every mon", SynergyRowText("PlayerSynergyRows", PokemonType.Normal, "Effect"),
+                "the resolved bonus, not the per-mon rule");
+            Assert.AreEqual("+1 Health to every mon", SynergyRowText("EnemySynergyRows", PokemonType.Normal, "Effect"));
+
+            FindButton("SynergyCloseButton").onClick.Invoke();
+            Assert.IsFalse(controller.IsShowingSynergies);
+        }
+
+        /// <summary>The dev random battle shows synergies too, though it still strips passives — the
+        /// two are separate switches, and this is the only fight reachable without walking a map, so
+        /// it is where the feature actually gets looked at.</summary>
+        [UnityTest]
+        public IEnumerator DevBattle_ShowsSynergies_EvenThoughItStripsPassives()
+        {
+            ActiveRun.Begin(MakeRun(2), MakeLibrary());
+
+            yield return LoadScene(BattleScenePath);
+
+            Assert.AreEqual("x2", ChipCount("PlayerSynergyChips", PokemonType.Normal), "both test mons are Normal");
+            Assert.IsTrue(FindButton("SynergiesButton").gameObject.activeInHierarchy);
+            Assert.IsTrue(Controller().State.LineUpA.All(c => c.ResolvedPassive == null), "passives are still off");
+        }
+
+        /// <summary>A line-up whose mons resolve to no species — and so to no types — has nothing to
+        /// name, and an empty row with a "You" label beside it reads as broken.</summary>
+        [UnityTest]
+        public IEnumerator AFightWithNoSynergies_HidesTheChipsAndTheButton()
+        {
+            var run = MakeRun(1);
+            // A species id nothing in the library answers to: the assembler finds no species, so the
+            // combatant carries no types (Meta/BattleLineUp.Assemble).
+            run.LineUp[0].SpeciesId = 9999;
+            ActiveRun.Begin(run, MakeLibrary());
+            PendingBattle.Set(
+                new List<PokemonInstance> { PokemonInstanceFactory.Create(MakeSpecies(9998, WildName), "wild-0") },
+                "L1-0", isGym: false, seed: 1);
+            ActiveRun.State.LineUp[0].SpeciesId = 9999;
+
+            yield return LoadScene(BattleScenePath);
+
+            Assert.IsNull(GameObject.Find("PlayerSynergyChips"), "no chips for a side with no synergies");
+            Assert.IsNull(GameObject.Find("PlayerSynergyChipsLabel"), "and no label left stranded beside them");
+        }
+
+        /// <summary>What a synergy did to a particular mon shows over that mon: the foe is
+        /// Poison/Steel, so it opens by poisoning the player's Lead (a bad badge, drawn in the danger
+        /// colour) while its own Lead blocks a point of damage a hit (a good one). Neither is
+        /// something the stat boxes could show.</summary>
+        [UnityTest]
+        public IEnumerator EffectBadges_ShowWhatIsOnEachMon_OnceTheFightOpens()
+        {
+            BeginNodeFight(WeakFoeAttack, StrongFoeHealth, foeType1: PokemonType.Poison, foeType2: PokemonType.Steel);
+
+            yield return LoadScene(BattleScenePath);
+
+            Assert.IsEmpty(Badges("PlayerLeadSprite"), "nothing is applied until the first Step is taken");
+
+            var controller = Controller();
+            FindButton("StepButton").onClick.Invoke();
+            // Waited out rather than checked a frame later: a Step is drawn in beats, and the badges
+            // are refreshed by the redraw that follows the Leads' lunge (BattleScreenController.PlayStep).
+            yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
+                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+
+            CollectionAssert.Contains(Badges("PlayerLeadSprite"), "Poisoned", "the foe's Poison synergy opened on our Lead");
+            CollectionAssert.Contains(Badges("EnemyLeadSprite"), "Armour", "the foe's Steel synergy is on its own Lead");
+            Assert.IsEmpty(Badges("PlayerSupportSprite"), "nobody is in that slot in a one-mon party");
+        }
+
+        /// <summary>The badges up over one mon, by name.</summary>
+        private static List<string> Badges(string spriteName)
+        {
+            var sprite = GameObject.Find(spriteName);
+            Assert.IsNotNull(sprite, $"Expected a '{spriteName}' on the field");
+            var row = sprite.GetComponentInChildren<EffectBadgeRowView>(includeInactive: true);
+            Assert.IsNotNull(row, $"{spriteName} should carry an effect badge row");
+            return row.Shown.ToList();
+        }
+
+        private static string ChipCount(string rowName, PokemonType type)
+        {
+            var row = GameObject.Find(rowName);
+            Assert.IsNotNull(row, $"Expected a '{rowName}' chip row");
+            var chip = row.transform.Find($"Chip_{type}");
+            Assert.IsNotNull(chip, $"{rowName} has no chip for {type}");
+            return chip.Find("Count").GetComponent<Text>().text;
+        }
+
+        private static string SynergyRowText(string columnName, PokemonType type, string lineName)
+        {
+            var column = Object.FindObjectsByType<RectTransform>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(t => t.name == columnName);
+            Assert.IsNotNull(column, $"Expected a '{columnName}' column in the synergy panel");
+            var row = column.Find($"Synergy_{type}");
+            Assert.IsNotNull(row, $"{columnName} has no row for {type}");
+            return row.Find(lineName).GetComponent<Text>().text;
+        }
+
         private static BattleScreenController Controller()
         {
             var controller = Object.FindFirstObjectByType<BattleScreenController>();
@@ -617,13 +748,25 @@ namespace Pets.Tests
         /// stats, with a passive on it (a node fight keeps passives — the dev battle strips them),
         /// and a library that can name it so the screen and the Box both recognise it. The wild
         /// species is only ever added for these tests, so a random dev battle can't roll it.</summary>
-        private static RunState BeginNodeFight(int foeAttack, int foeHealth, bool isGym = false)
+        private static RunState BeginNodeFight(int foeAttack, int foeHealth, bool isGym = false,
+            PokemonType? foeType1 = null, PokemonType? foeType2 = null)
         {
             var run = MakeRun(1);
             var wild = MakeSpecies(MonNames.Length + 1, WildName);
             wild.BaseAttack = foeAttack;
             wild.BaseHealth = foeHealth;
             wild.Passive = MakePassive();
+            // The foe's types decide the foe's synergies, which is how a test asks for a fight that
+            // opens with a shield, a poisoning or a mon that blocks damage (ADR 0015).
+            if (foeType1.HasValue)
+            {
+                wild.Type1 = foeType1.Value;
+            }
+            if (foeType2.HasValue)
+            {
+                wild.HasSecondType = true;
+                wild.Type2 = foeType2.Value;
+            }
 
             ActiveRun.Begin(run, MakeLibrary(wild));
             PendingBattle.Set(

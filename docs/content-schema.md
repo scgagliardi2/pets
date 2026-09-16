@@ -137,6 +137,16 @@ line-up assembly (`docs/battle-sim-spec.md` §8):
 | `countRequired` | `int` | E.g. 2, 4, 6. |
 | `effects` | `EffectDefinition[]` | Applied once, flat, to every mon in the active line-up at assembly time — reuses the same `EffectDefinition` shape as passives (§4), though `target` is implicitly "every active mon" here rather than one of the selectors in §5. |
 
+**As built** (ADR 0015) — **not** this shape. There is no `TeamSynergyDefinition` asset and no
+thresholds: every type scales linearly with its count from one mon up, and the eighteen rules are
+code in `Simulation/TeamSynergy`, their numbers named constants there. Most of them don't fit
+"flat effects on every active mon" (Water shields front to back, Fairy wards back to front, Ghost
+trades the Lead's HP for the rest, Fire/Dark/Poison hit the enemy), so expressing them as data would
+have meant a targeting DSL for eighteen one-off rules. Revisit if synergies get tiers, or if a
+second set of them (a relic, an item) wants to reuse the vocabulary. The per-battle input is
+`BattleCombatant.Types`, set by `Meta/BattleLineUp.Assemble` from each mon's species; the full rule
+table is `battle-sim-spec.md` §8.
+
 ## 7. `ItemDefinition` (ScriptableObject)
 
 Design doc §13 — modifies stats or grants/overrides a passive, equipped onto a specific

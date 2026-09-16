@@ -260,6 +260,14 @@ Because a battle is a fixed sequence of discrete Steps rather than a continuous 
 
 ## 11. Team Type Synergies (TFT-style)
 
+> **As built (ADR 0015):** not the threshold table below. Each type in your line-up gives a small
+> bonus that grows by one step per mon of that type (from one mon up), applied once as the battle
+> opens, to both sides. Scope is the line-up (party), not the Box. The eighteen rules — Steady
+> Growth, Ember Burst, Shell Guard and the rest — and their numbers are in `battle-sim-spec.md` §8.
+> Several diverge from the seeds below (Ground slows the enemy Lead's charge rather than adding HP;
+> Ghost sacrifices the Lead's HP; Fairy blocks statuses rather than healing). Thresholds and
+> set-piece bonuses at 6 remain an open question.
+
 Data-driven thresholds per type present in your active line-up (or full roster — TBD which scope). Example shape, numbers are placeholders to tune:
 
 | Type | 2 mons | 4 mons | 6 mons |

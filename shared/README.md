@@ -7,7 +7,8 @@ the two implementations can't literally share code.
 - `fixtures/` — golden battle-sim test cases for the Lead/Support/Step model described in
   `docs/battle-sim-spec.md`, run by `client/Assets/Scripts/Tests/GoldenFixtureTests.cs`. Two
   shapes, both JSON objects with `seed`, `lineUpA`, `lineUpB` (each a list of
-  `{ instanceId, attack, health, speed, passive? }`, `passive` optionally
+  `{ instanceId, attack, health, speed, passive?, types? }`, `types` an optional list of type
+  names that team synergies count (battle-sim-spec.md §8), `passive` optionally
   `{ id, effects: [{ type, target, amount, status? }] }`):
   - **Outcome fixtures** (no `steps`, or `steps: 0`): run to completion and assert `expected`
     (`{ outcome, faintOrder, survivors: [{ instanceId, currentHP }] }`) — for scenarios about how

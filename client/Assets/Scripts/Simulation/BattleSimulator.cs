@@ -294,7 +294,7 @@ namespace Pets.Simulation
             });
         }
 
-        private static void ResolveFaintsAndPromotions(BattleState state, Side side, List<StepEvent> events, int step)
+        internal static void ResolveFaintsAndPromotions(BattleState state, Side side, List<StepEvent> events, int step)
         {
             var lineUp = state.LineUp(side);
             var oldLead = lineUp.Count > 0 ? lineUp[0] : null;
@@ -420,7 +420,9 @@ namespace Pets.Simulation
             return instance != null && instance.CurrentHP > 0;
         }
 
-        private static void ApplyDamage(BattleCombatant target, Side targetSide, int rawAmount, BattleCombatant attacker, Side attackerSide, List<StepEvent> events, int step)
+        /// <summary>The mitigation half of an attack — DamageReduction, then Shield, then HP — with no
+        /// events and no Lifesteal. Shared with TeamSynergy's Fire opening so the two can't disagree.</summary>
+        internal static (int hpDamage, int shieldAbsorbed) TakeHit(BattleCombatant target, int rawAmount)
         {
             // Floored rather than allowed to reach zero: DamageReductionFlat accumulates for the
             // whole battle (battle-sim-spec.md §12), so without this a mon whose reduction has
@@ -433,6 +435,12 @@ namespace Pets.Simulation
             target.Shield -= shieldAbsorbed;
             int hpDamage = afterReduction - shieldAbsorbed;
             target.CurrentHP -= hpDamage;
+            return (hpDamage, shieldAbsorbed);
+        }
+
+        private static void ApplyDamage(BattleCombatant target, Side targetSide, int rawAmount, BattleCombatant attacker, Side attackerSide, List<StepEvent> events, int step)
+        {
+            var (hpDamage, shieldAbsorbed) = TakeHit(target, rawAmount);
 
             events.Add(new StepEvent { Step = step, Kind = StepEventKind.Damage, SourceSide = attackerSide, SourceInstanceId = attacker.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = hpDamage });
 
@@ -464,8 +472,17 @@ namespace Pets.Simulation
             events.Add(new StepEvent { Step = step, Kind = StepEventKind.Heal, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Amount = healAmount });
         }
 
-        private static void ApplyStatus(BattleCombatant target, Side targetSide, StatusType status, int amount, BattleCombatant source, Side sourceSide, List<StepEvent> events, int step)
+        internal static void ApplyStatus(BattleCombatant target, Side targetSide, StatusType status, int amount, BattleCombatant source, Side sourceSide, List<StepEvent> events, int step)
         {
+            // A Fairy synergy ward (TeamSynergy) spends itself on the application and leaves any
+            // status the mon already has exactly as it was.
+            if (target.StatusWards > 0)
+            {
+                target.StatusWards--;
+                events.Add(new StepEvent { Step = step, Kind = StepEventKind.StatusBlocked, SourceSide = sourceSide, SourceInstanceId = source.InstanceId, TargetSide = targetSide, TargetInstanceId = target.InstanceId, Status = status });
+                return;
+            }
+
             target.Status = status;
             target.StatusTickDamage = status == StatusType.Poisoned || status == StatusType.Burned ? amount : 0;
             target.PoisonStacks = status == StatusType.Poisoned ? 1 : 0;

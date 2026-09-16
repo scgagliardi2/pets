@@ -149,6 +149,28 @@ namespace Pets.Tests
             yield break;
         }
 
+        /// <summary>Under the type badges, what those types are worth to a team — the same wording
+        /// Simulation/TeamSynergy gives the battle screen, so a player can pick a starter knowing
+        /// what it contributes (ADR 0015). A dual-type mon shows both halves.</summary>
+        [UnityTest]
+        public IEnumerator EveryCard_ShowsTheTypeSynergyItContributes()
+        {
+            var buttons = GridContent().GetComponentsInChildren<Button>();
+            Assert.IsNotEmpty(buttons);
+            foreach (var button in buttons)
+            {
+                var line = button.transform.Find("SynergyLine")?.GetComponent<Text>();
+                Assert.IsNotNull(line, $"{button.gameObject.name} has no SynergyLine child");
+
+                var icons = button.transform.Find("TypesRow").GetComponentsInChildren<TypeIconView>();
+                string expected = icons.Length == 2
+                    ? $"{TeamSynergy.Summary(icons[0].Type)} · {TeamSynergy.Summary(icons[1].Type)}"
+                    : TeamSynergy.Summary(icons[0].Type);
+                Assert.AreEqual(expected, line.text, $"{button.gameObject.name}'s synergy line");
+            }
+            yield break;
+        }
+
         /// <summary>Companion to EveryCard_HasItsPokemonSpriteLoaded, for the type-badge icons
         /// (Assets/Resources/Sprites/Types via Pets.UI.TypeIconView) that replaced the old plain
         /// "Fire" / "Fire/Flying" text line.</summary>

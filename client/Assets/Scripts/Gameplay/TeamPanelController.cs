@@ -37,11 +37,15 @@ namespace Pets.Gameplay
         /// of Box management.</summary>
         public const int SlotsPerRow = 6;
 
-        // Card budget for the 200-unit slot cell TeamSceneBuilder lays out. The body is Character
+        // Card budget for the 214-unit slot cell TeamSceneBuilder lays out. The body is Character
         // Select's stat card (PokemonCardBuilder.AddStatCardBody) with a smaller sprite, under a role
-        // line: 12 padding + 20 role + 72 sprite + 24 name + 30 types + 18 HP + 18 SPD + 5 one-unit
-        // gaps = 199. Grow TeamSceneBuilder.SlotHeight with any of these.
-        private const int CardSpriteHeight = 72;
+        // line: 12 padding + 20 role + 65 sprite + 24 name + 30 types + 19 type-synergy line + 18 HP
+        // + 18 SPD + 6 one-unit gaps = 212. Grow TeamSceneBuilder.SlotHeight with any of these.
+        //
+        // The sprite gave up 7 units to pay for the synergy line rather than the slot growing by the
+        // line's full height: the Team screen's three sections already fill its content area to
+        // within a few units (see TeamSceneBuilder.SectionsHeight), so the cell had nowhere to grow.
+        private const int CardSpriteHeight = 65;
         private const int CardLineFontSize = 15;
         private const int CardRoleFontSize = 14;
 

@@ -81,6 +81,31 @@ namespace Pets.EditorTools
         // evolution. Unity's Text truncates what doesn't fit its rect with no warning, which is
         // exactly how the old 460x220 panel showed a 48pt "Victory!" and silently swallowed every
         // reward line appended after it.
+        // The two synergy chip rows sit in the one band of the battlefield nothing else uses: below
+        // the foe's stat boxes and its team count (which end at y 274) and above where the player's
+        // Support stands (y 397). Both sides' rows live here together, each labelled, rather than one
+        // per side at opposite corners — the corners are taken by the mons themselves.
+        private const float SynergyChipsLeft = 56f;
+        private const float SynergyChipsTop = 280f;
+        private const float SynergyChipsRowHeight = 30f;
+        private const float SynergyChipsLabelWidth = 52f;
+        private const float SynergyChipsWidth = 470f;
+
+        // The panel behind the Synergies button: both sides in two columns, with the resolved
+        // numbers the chips have no room for.
+        // 900x500 rather than the 800x420 this started at: the rows carry a sentence each, and at the
+        // smaller size the effect text best-fit its way down to an unreadable 9pt. This fits eight
+        // rows a side at a readable size, which covers any line-up short of six dual-typed mons with
+        // no type in common.
+        private static readonly Vector2 SynergyPanelSize = new Vector2(900f, 500f);
+        private const float SynergyPanelPadding = 22f;
+        private const float SynergyPanelHeadingHeight = 44f;
+        private const float SynergyColumnHeaderHeight = 30f;
+        private const float SynergyColumnGap = 24f;
+        private static readonly Vector2 SynergyButtonSize = new Vector2(150f, 48f);
+        private const float SynergyButtonTop = 88f;
+        private static readonly Vector2 SynergyCloseSize = new Vector2(160f, 56f);
+
         private static readonly Vector2 ResultPanelSize = new Vector2(560f, 420f);
         private const float ResultHeadlineHeight = 88f;
         private const float ResultTextPadding = 20f;
@@ -161,6 +186,12 @@ namespace Pets.EditorTools
             var ballColumn = CreateBallColumn(strip,
                 new Rect(throwLeft + ThrowSize.x + BallColumnGap, rowTop, BallColumnSize.x, BallColumnSize.y));
 
+            var (playerSynergyChips, enemySynergyChips) = CreateSynergyChipRows(board);
+            var synergiesButton = CreateButton(board, "SynergiesButton", "Synergies", Theme.ButtonStyle.Secondary, useSprite: true);
+            PlaceTop((RectTransform)synergiesButton.transform,
+                new Rect(ReferenceResolution.x - 24f - SynergyButtonSize.x, SynergyButtonTop, SynergyButtonSize.x, SynergyButtonSize.y));
+            var (synergyPanel, playerSynergyRows, enemySynergyRows, synergyCloseButton) = CreateSynergyPanel(board);
+
             var (catchMessageRoot, catchMessageLabel) = CreateCatchMessage(board);
 
             var (resultPanel, resultText, rewardText, battleAgainButton, resultBackButton, resultActionButton, catchRow) = CreateResultPanel(board);
@@ -207,6 +238,14 @@ namespace Pets.EditorTools
             SetField(controller, "catchButtonsContainer", catchRow);
             SetField(controller, "catchButtonPrefab",
                 AssetDatabase.LoadAssetAtPath<GameObject>(UiPrefabBuilder.ButtonPrefabPath).GetComponent<UiButton>());
+            SetField(controller, "playerSynergyChips", playerSynergyChips);
+            SetField(controller, "enemySynergyChips", enemySynergyChips);
+            SetField(controller, "synergyPanel", synergyPanel.gameObject);
+            SetField(controller, "playerSynergyRows", playerSynergyRows);
+            SetField(controller, "enemySynergyRows", enemySynergyRows);
+            SetField(controller, "synergiesButton", synergiesButton);
+            SetField(controller, "typeIconPrefab",
+                AssetDatabase.LoadAssetAtPath<GameObject>(TypeIconPrefabBuilder.PrefabPath));
 
             UnityEventTools.AddVoidPersistentListener(backButton.onClick, navigator.GoToTeam);
             UnityEventTools.AddVoidPersistentListener(resultBackButton.onClick, navigator.GoToTeam);
@@ -214,6 +253,10 @@ namespace Pets.EditorTools
             // The node fight's one button is the only one whose destination isn't fixed: it depends
             // on how the fight ended and on the run's Morale, so it asks the controller.
             UnityEventTools.AddVoidPersistentListener(resultActionButton.onClick, controller.OnResultActionClicked);
+            // Both the button that opens the panel and the one on the panel that closes it: the
+            // handler toggles, so one method serves both.
+            UnityEventTools.AddVoidPersistentListener(synergiesButton.onClick, controller.OnSynergiesClicked);
+            UnityEventTools.AddVoidPersistentListener(synergyCloseButton.onClick, controller.OnSynergiesClicked);
             UnityEventTools.AddVoidPersistentListener(pauseButton.onClick, controller.OnPauseClicked);
             UnityEventTools.AddVoidPersistentListener(stepButton.onClick, controller.OnStepClicked);
             UnityEventTools.AddVoidPersistentListener(playButton.onClick, controller.OnPlayClicked);
@@ -403,6 +446,80 @@ namespace Pets.EditorTools
             var column = new GameObject("BallColumn", typeof(RectTransform)).GetComponent<RectTransform>();
             column.SetParent(strip, false);
             PlaceTop(column, r);
+            return column;
+        }
+
+        /// <summary>The two labelled chip rows — "You" and "Foe" — that carry each side's active team
+        /// type synergies for the whole fight (ADR 0015). Built empty; BattleScreenController fills
+        /// them once the line-ups are assembled, since only then is there a team to count.
+        ///
+        /// Both sides' rows sit together in the band under the foe's stat boxes rather than one in
+        /// each side's corner: the corners of this screen are where the mons stand.</summary>
+        private static (RectTransform player, RectTransform foe) CreateSynergyChipRows(RectTransform board)
+        {
+            return (CreateSynergyChipRow(board, "PlayerSynergyChips", "You", 0),
+                CreateSynergyChipRow(board, "EnemySynergyChips", "Foe", 1));
+        }
+
+        private static RectTransform CreateSynergyChipRow(RectTransform board, string name, string label, int index)
+        {
+            float top = SynergyChipsTop + index * SynergyChipsRowHeight;
+
+            // Named for the row it labels, which is how the controller finds it to hide the pair
+            // together when a side has no synergies at all.
+            var text = CreateOverlayText(board, $"{name}Label", label, Theme.FontSizeSmall, TextAnchor.MiddleLeft);
+            PlaceTop(text.rectTransform, new Rect(SynergyChipsLeft, top, SynergyChipsLabelWidth, SynergyChipsRowHeight));
+
+            var row = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            row.SetParent(board, false);
+            PlaceTop(row, new Rect(SynergyChipsLeft + SynergyChipsLabelWidth, top, SynergyChipsWidth, SynergyChipsRowHeight));
+            return row;
+        }
+
+        /// <summary>The Synergies panel: both sides in two columns, each row naming a synergy and
+        /// spelling out exactly what it is worth at that count. Inactive until the Synergies button
+        /// is pressed — the field has no room for this much text, and a player only wants it between
+        /// Steps.</summary>
+        private static (RectTransform panel, RectTransform playerRows, RectTransform enemyRows, Button close) CreateSynergyPanel(RectTransform board)
+        {
+            var panel = CreateFrame(board, "SynergyPanel", Theme.TextBoxSprite);
+            panel.anchorMin = panel.anchorMax = new Vector2(0.5f, 0.5f);
+            panel.sizeDelta = SynergyPanelSize;
+            panel.anchoredPosition = Vector2.zero;
+
+            var heading = CreatePlainText(panel, "SynergyHeading", "Type Synergies", Theme.FontSizeTitle, TextAnchor.MiddleCenter, Theme.TextDark);
+            heading.fontStyle = FontStyle.Bold;
+            PlaceTop(heading.rectTransform, new Rect(SynergyPanelPadding, SynergyPanelPadding,
+                SynergyPanelSize.x - 2f * SynergyPanelPadding, SynergyPanelHeadingHeight));
+
+            float columnWidth = (SynergyPanelSize.x - 2f * SynergyPanelPadding - SynergyColumnGap) / 2f;
+            var playerRows = CreateSynergyColumn(panel, "PlayerSynergyRows", "Your team", SynergyPanelPadding, columnWidth);
+            var enemyRows = CreateSynergyColumn(panel, "EnemySynergyRows", "Foe", SynergyPanelPadding + columnWidth + SynergyColumnGap, columnWidth);
+
+            var close = CreateButton(panel, "SynergyCloseButton", "Close", Theme.ButtonStyle.Primary, useSprite: true);
+            var closeRect = (RectTransform)close.transform;
+            closeRect.anchorMin = closeRect.anchorMax = closeRect.pivot = new Vector2(0.5f, 0f);
+            closeRect.sizeDelta = SynergyCloseSize;
+            closeRect.anchoredPosition = new Vector2(0f, SynergyPanelPadding);
+
+            panel.gameObject.SetActive(false);
+            return (panel, playerRows, enemyRows, close);
+        }
+
+        private static RectTransform CreateSynergyColumn(RectTransform panel, string name, string header, float left, float width)
+        {
+            float headerTop = SynergyPanelPadding + SynergyPanelHeadingHeight;
+            var headerText = CreatePlainText(panel, $"{name}Header", header, Theme.FontSizeHeading, TextAnchor.MiddleLeft, Theme.TextDark);
+            headerText.fontStyle = FontStyle.Bold;
+            PlaceTop(headerText.rectTransform, new Rect(left, headerTop, width, SynergyColumnHeaderHeight));
+
+            var column = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
+            column.SetParent(panel, false);
+            float rowsTop = headerTop + SynergyColumnHeaderHeight;
+            // Down to just above the Close button, which is what bounds how many synergies fit: at
+            // 42 a row that is seven of them, and a six-mon party can field at most six types twice.
+            PlaceTop(column, new Rect(left, rowsTop, width,
+                SynergyPanelSize.y - rowsTop - SynergyPanelPadding - SynergyCloseSize.y - 12f));
             return column;
         }
 

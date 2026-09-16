@@ -16,7 +16,10 @@ namespace Pets.Meta
     /// no passive, so a fight is purely the Lead-vs-Lead attack exchange, faints and promotion.
     /// That's done here, at line-up assembly on the battle's own copies (battle-sim-spec.md §2),
     /// not in the simulator, which still runs passives for anything that has one — delete the
-    /// stripping when the battle screen is ready to show them.</summary>
+    /// stripping when the battle screen is ready to show them.
+    ///
+    /// **Team type synergies are on**, though (ADR 0015): the combatants carry their species' types,
+    /// so both sides open with whatever their line-up's types are worth.</summary>
     public sealed class RandomBattle
     {
         /// <summary>Instance-id prefix for rolled enemies, so an event can never be mistaken for one
@@ -54,7 +57,7 @@ namespace Pets.Meta
             }
 
             var enemies = GenerateEnemyLineUp(library, playerLineUp.Count, seed, exp);
-            return new RandomBattle(WithoutPassives(playerLineUp), WithoutPassives(enemies), seed);
+            return new RandomBattle(WithoutPassives(playerLineUp, library), WithoutPassives(enemies, library), seed);
         }
 
         public static List<PokemonInstance> GenerateEnemyLineUp(PokemonSpeciesLibrary library, int count, int seed, int exp = 0)
@@ -74,9 +77,13 @@ namespace Pets.Meta
             return lineUp;
         }
 
-        private static List<BattleCombatant> WithoutPassives(IReadOnlyList<PokemonInstance> lineUp)
+        private static List<BattleCombatant> WithoutPassives(IReadOnlyList<PokemonInstance> lineUp, PokemonSpeciesLibrary library)
         {
-            var combatants = BattleCombatant.FromLineUp(lineUp);
+            // Assembled with types, so a dev battle still gets its team type synergies (ADR 0015):
+            // it's the quickest fight to reach, and a screen that only shows synergies down the map
+            // path is a screen nobody checks them on. Passives stay off — that's a separate switch,
+            // and the two were never the same thing.
+            var combatants = BattleLineUp.Assemble(lineUp, library);
             foreach (var combatant in combatants)
             {
                 combatant.ResolvedPassive = null;

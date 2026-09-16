@@ -34,10 +34,15 @@ namespace Pets.EditorTools
         private const float SideMargin = 76f;
 
         private const float SectionHeaderHeight = 26f;
-        private const float SectionGap = 10f;
+
+        /// <summary>Gap between the three sections. Eight rather than ten since the slots grew for
+        /// the type-synergy line (ADR 0015): <see cref="SectionsHeight"/> then comes to exactly the
+        /// 576 units the content area has, where at ten the bag row hung below it.</summary>
+        private const float SectionGap = 8f;
+
         /// <summary>Slot cell height — TeamPanelController's card budget is written against
-        /// exactly this number, so the two move together.</summary>
-        private const float SlotHeight = 200f;
+        /// exactly this number, so the two move together. 200 before the type-synergy line.</summary>
+        private const float SlotHeight = 214f;
         private const float SlotSpacing = 12f;
         private const float ReleaseZoneHeight = 64f;
         private static readonly Vector2 DialogSize = new Vector2(560f, 260f);

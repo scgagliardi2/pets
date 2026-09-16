@@ -36,7 +36,9 @@ party), with the money, ball and held-item rules that came with it; and
 [`0014-road-events-held-items-and-a-three-row-center.md`](docs/architecture-decisions/0014-road-events-held-items-and-a-three-row-center.md)
 gives the Event node four encounters (a Legendary fight, the Game Corner, a trader, a Team Rocket
 ambush), adds three held items, and splits the Center into Pokémon / Poké Balls / three rolled items
-rows. Between them they
+rows; and
+[`0015-team-type-synergies.md`](docs/architecture-decisions/0015-team-type-synergies.md)
+adds a small per-type team bonus scaled by type count, applied to both sides as a battle opens. Between them they
 list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
@@ -65,7 +67,7 @@ exists — the phase list under it describes intent, and the build has deviated 
   on the map, except the Legendary's Challenge choice, which is a real fight (ADR 0014); and PvP is still
   a stub modal. Team's dev button still opens the old throwaway random battle,
   which strips passives and costs the run nothing — don't mistake one for the other.
-- The systems hanging off that loop are **not** built: Pokémon Center healing, item passives, type synergy, the badge-as-relic reward, the Line-Up menu before
+- The systems hanging off that loop are **not** built: Pokémon Center healing, item passives, the badge-as-relic reward, the Line-Up menu before
   a Gym, a real PvP node, encounters as content data, and the Trailblazer minigame. See PLAN.md §6 for the deliberate simplifications
   that came with the loop (a lost fight costs only Morale; HP doesn't carry between fights).
 - **Growth runs on tiers and a small EXP count, and a run is eight badges** (ADR 0007 for the run,
@@ -244,7 +246,11 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   (262 pass) and 113 PlayMode (110 pass)**. The four failures predate ADR 0014 and are open: Nidoran-F/M
   have no front battle sprite (`ContentIntegrityTests`) and their long names overflow a Character Select
   and a Pokédex card; and `StepButton_DrainsBothLeadsHp_OverTwoSeconds` checks for the drain one frame
-  after Step, but the lead lunge added in `583f8bd` now plays first. The same binary runs any Editor entry
+  after Step, but the lead lunge added in `583f8bd` now plays first.
+  As of 2026-09-15 after team type synergies and their UI (ADR 0015): **297 EditMode (all pass) and
+  123 PlayMode (122 pass)**. The only failure left is the HP-drain test above. The Nidoran failures
+  are fixed, and three `HealthBarViewTests` that failed on sprite identity passed again once the
+  sprite atlas was rebuilt — if they fail, run `Pets > Build Sprite Atlases` before believing them. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

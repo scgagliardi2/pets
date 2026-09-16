@@ -102,6 +102,36 @@ namespace Pets.EditorTools
             CapturePlaying(BattleSceneBuilder.ScenePath);
         }
 
+        /// <summary>The Synergies panel, open, over a fight in progress — the one state of the Battle
+        /// screen that shows both sides' team type synergies with their resolved numbers (ADR 0015).
+        /// The chips over the field are in every battle capture; this is the only way to see the
+        /// panel behind them, since it stays shut until the player asks for it.</summary>
+        [MenuItem("Pets/Dev/Capture Battle Synergies (Playing)")]
+        public static void CaptureBattleSynergiesPlaying()
+        {
+            var library = AssetDatabase.LoadAssetAtPath<Pets.Data.PokemonSpeciesLibrary>("Assets/Content/PokemonSpeciesLibrary.asset");
+            var run = new Pets.Meta.RunState { RunSeed = 4242 };
+            // Four mons rather than the usual three, so the party musters more than one synergy and
+            // the panel has a list to show rather than a single line.
+            for (int i = 0; i < 4 && i < library.AllSpecies.Count; i++)
+            {
+                run.LineUp.Add(Pets.Data.PokemonInstanceFactory.Create(library.AllSpecies[i], $"capture-{i}"));
+            }
+            Pets.Gameplay.ActiveRun.Begin(run, library);
+            CapturePlaying(BattleSceneBuilder.ScenePath, OpenSynergyPanel);
+        }
+
+        private static void OpenSynergyPanel()
+        {
+            var controller = Object.FindFirstObjectByType<Pets.Gameplay.BattleScreenController>();
+            if (controller == null)
+            {
+                Debug.LogError("[Capture] Battle scene has no BattleScreenController.");
+                return;
+            }
+            controller.OnSynergiesClicked();
+        }
+
         /// <summary>The result panel of a *won node fight* — the one state of the Battle screen
         /// that reports what the run just earned, and the only way to look at the rewards list
         /// (BattleScreenController's rewardText) without walking a map by hand. A four-mon party
