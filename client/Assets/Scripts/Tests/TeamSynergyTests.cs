@@ -487,6 +487,70 @@ namespace Pets.Tests
             Assert.AreEqual(2, stepped.Count(e => e.Kind == StepEventKind.TypeSynergy && e.SourceSide == Side.A), "Normal and Fire, announced once");
         }
 
+        /// <summary>The opening can be taken by itself, which is the only board state a small shield
+        /// ever exists in: one Water mon raises a point of Shield and the very exchange that follows
+        /// spends it, so a screen that draws only after NextStep returns never sees one
+        /// (BattleScreenController.PlayOpening).</summary>
+        [Test]
+        public void TheOpeningCanBeTakenOnItsOwn_AndTheStepAfterDoesNotRepeatIt()
+        {
+            var a = new List<BattleCombatant> { Mon("water", 1, 20, 1, PokemonType.Water) };
+            var b = new List<BattleCombatant> { Mon("foe", 3, 20, 1) };
+            var runner = new OnDemandStepRunner(a, b, seed: 1);
+
+            var opening = runner.ApplyOpening();
+
+            Assert.IsTrue(runner.OpeningApplied);
+            Assert.AreEqual(1, a[0].Shield, "one Water mon shields the front of its own line-up");
+            Assert.AreEqual(0, runner.State.StepNumber, "the opening is not a Step");
+            Assert.IsTrue(opening.Any(e => e.Kind == StepEventKind.TypeSynergy), "and it says what it did");
+
+            CollectionAssert.IsEmpty(runner.ApplyOpening(), "applying it again does nothing");
+
+            runner.NextStep();
+
+            Assert.AreEqual(1, runner.State.StepNumber);
+            Assert.AreEqual(0, a[0].Shield, "the exchange spent the shield");
+            Assert.AreEqual(18, a[0].CurrentHP, "which is what a shield is for: 3 damage, 1 absorbed");
+        }
+
+        /// <summary>Taking the opening separately changes nothing about the fight — same events in
+        /// the same order, and the same result — so a screen can ask for it without the fight it
+        /// draws being a different fight from the one a test or the server would run.</summary>
+        [Test]
+        public void TakingTheOpeningSeparately_PlaysOutTheSameFight()
+        {
+            List<BattleCombatant> BuildA() => new List<BattleCombatant>
+            {
+                Mon("a1", 3, 12, 1, PokemonType.Water, PokemonType.Fire),
+                Mon("a2", 2, 14, 2, PokemonType.Water),
+            };
+            List<BattleCombatant> BuildB() => new List<BattleCombatant>
+            {
+                Mon("b1", 3, 12, 1, PokemonType.Steel),
+                Mon("b2", 2, 14, 1, PokemonType.Dark),
+            };
+
+            var straight = new OnDemandStepRunner(BuildA(), BuildB(), seed: 5);
+            var straightEvents = new List<StepEvent>();
+            while (!straight.IsBattleOver)
+            {
+                straightEvents.AddRange(straight.NextStep());
+            }
+
+            var split = new OnDemandStepRunner(BuildA(), BuildB(), seed: 5);
+            var splitEvents = new List<StepEvent>(split.ApplyOpening());
+            while (!split.IsBattleOver)
+            {
+                splitEvents.AddRange(split.NextStep());
+            }
+
+            CollectionAssert.AreEqual(
+                straightEvents.Select(e => e.ToString()).ToList(),
+                splitEvents.Select(e => e.ToString()).ToList());
+            Assert.AreEqual(straight.Outcome, split.Outcome);
+        }
+
         // --- How they read on screen ---------------------------------------------------------
 
         [Test]

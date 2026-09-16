@@ -152,6 +152,13 @@ namespace Pets.Gameplay
         /// faint beat lasts exactly as long as the animation it's there to show.</summary>
         private const float FaintDropSeconds = 0.7f;
 
+        /// <summary>How long an autoplaying fight holds the opening board before taking Step 1 —
+        /// long enough to read a shield bubble and the chips that explain it, short enough not to
+        /// put a wait in front of every fight. A hand-stepped fight holds it until the player says
+        /// otherwise. A const rather than a serialized field so an un-rebuilt Battle.unity still
+        /// gets the beat.</summary>
+        private const float OpeningHoldSeconds = 0.9f;
+
         /// <summary>How a redraw treats HP: drain to the new value (a Step just landed), leave a drain
         /// in progress alone, or jump (the first draw, or a skip to the end).</summary>
         private enum HealthMode { Animate, Keep, Snap }
@@ -187,10 +194,15 @@ namespace Pets.Gameplay
             /// the same species can be on either side of the same fight.</summary>
             public bool DrawsBackSprite;
 
-            /// <summary>The badges floating over this slot's mon — its shield, armour, lifesteal,
-            /// ward, status and charge debt (Pets.UI.EffectBadgeRowView). Attached at runtime like
-            /// the lunge, and refreshed on every redraw of the slot.</summary>
+            /// <summary>The badges floating over this slot's mon — its armour, lifesteal, ward,
+            /// status and charge debt (Pets.UI.EffectBadgeRowView). Attached at runtime like the
+            /// lunge, and refreshed on every redraw of the slot.</summary>
             public EffectBadgeRowView Badges;
+
+            /// <summary>The shield bubble around this slot's mon (Pets.UI.ShieldBubbleView), with
+            /// what it will absorb written on it. Its own view rather than a badge in the row above,
+            /// because a shield is the only one of these that wraps the mon.</summary>
+            public ShieldBubbleView Shield;
 
             /// <summary>The drop-and-fade on this slot's sprite. Looked up off the sprite rather
             /// than serialized separately — the two always live on the same object (see
@@ -293,6 +305,8 @@ namespace Pets.Gameplay
                 // Over the mon's head, so what a synergy or a passive put on it is visible on the
                 // field rather than only in its stat box's numbers.
                 slot.Badges = EffectBadgeRowView.Attach(slot.Sprite, typeIconPrefab);
+                // And around it, for the one effect that isn't a number anywhere else on screen.
+                slot.Shield = ShieldBubbleView.Attach(slot.Sprite);
             }
 
             // Only the Leads strike, so only they get a lunge. Attached here rather than authored
@@ -318,7 +332,21 @@ namespace Pets.Gameplay
             // Back button, since it costs the run nothing either way.
             backButton.gameObject.SetActive(context == BattleContext.DevRandom);
             resultPanel.SetActive(false);
+
+            // The teams arrive with their team type synergies already applied (ADR 0015) — shields,
+            // charge, lifesteal, and the opening blows — so the board the player is looking at
+            // before they press anything is the board the fight starts from. Applied here rather
+            // than on the first Step because the defences are small and the first exchange spends
+            // them: a shield raised and popped between two frames is a shield nobody ever sees. It
+            // draws no RNG, so taking it earlier doesn't move the fight.
+            fightEvents.AddRange(runner.ApplyOpening());
             RenderCurrent(HealthMode.Snap);
+            // An opening can in principle empty a side (a Dark opening on a lone mon at 1 HP), which
+            // is a fight decided before a Step is taken.
+            if (runner.IsBattleOver)
+            {
+                ShowResult();
+            }
             SetAutoplay(GameSettings.AutoplayBattles);
         }
 
@@ -796,7 +824,10 @@ namespace Pets.Gameplay
         {
             while (IsAutoplaying && !runner.IsBattleOver)
             {
-                yield return new WaitForSeconds(pauseBetweenSteps);
+                // Longer before the first Step than between later ones: the board is showing what
+                // the synergies did as the teams arrived, and an autoplaying fight shouldn't wipe a
+                // shield off it before anyone has read it.
+                yield return new WaitForSeconds(runner.State.StepNumber == 0 ? OpeningHoldSeconds : pauseBetweenSteps);
                 if (IsAutoplaying && !IsAnimating && !runner.IsBattleOver)
                 {
                     yield return PlayStep();
@@ -1111,6 +1142,7 @@ namespace Pets.Gameplay
                 slot.Faint?.Clear();
                 slot.Damage.text = string.Empty;
                 slot.Badges?.Show(null);
+                slot.Shield?.Show(null);
                 return;
             }
 
@@ -1164,8 +1196,10 @@ namespace Pets.Gameplay
                 : string.Empty;
             // Read off the combatant every redraw rather than tracked: a shield is spent, a status
             // is cleared and a charge debt is paid off as the fight goes, and the badges are just a
-            // view of whatever is true now.
+            // view of whatever is true now. The bubble is the same, one effect wider: it resizes to
+            // whoever is standing here, so a promotion redraws it around the new mon.
             slot.Badges?.Show(mon);
+            slot.Shield?.Show(mon);
         }
 
         /// <summary>Draws both sides' team type synergies (ADR 0015): a chip row each over the field,

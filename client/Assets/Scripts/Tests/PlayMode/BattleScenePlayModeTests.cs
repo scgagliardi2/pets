@@ -132,7 +132,11 @@ namespace Pets.Tests
             StringAssert.StartsWith("Beta", Stats("PlayerSupportStats").NameText.text);
             Assert.IsTrue(MonNames.Any(n => Stats("EnemyLeadStats").NameText.text.StartsWith(n)), "the foe is rolled from the library");
             Assert.IsTrue(MonNames.Any(n => Stats("EnemySupportStats").NameText.text.StartsWith(n)));
-            Assert.AreEqual($"{TestMaxHealth}/{TestMaxHealth}", Stats("PlayerLeadStats").HealthBar.ValueLabel.text);
+            // At full health, but not at the species' health: every test mon is Normal, so Steady
+            // Growth has already been applied by the time the board is drawn (ADR 0015).
+            var leadBar = Stats("PlayerLeadStats").HealthBar;
+            Assert.AreEqual($"{leadBar.Max}/{leadBar.Max}", leadBar.ValueLabel.text);
+            Assert.AreEqual(TestMaxHealth + 3, leadBar.Max, "+1 Health per Normal mon, and the party is three");
             Assert.AreEqual(TestAttack.ToString(), Stats("PlayerLeadStats").AttackText.text);
 
             foreach (var sprite in new[] { "PlayerLeadSprite", "PlayerSupportSprite", "EnemyLeadSprite", "EnemySupportSprite" })
@@ -197,26 +201,37 @@ namespace Pets.Tests
             var playerBar = Stats("PlayerLeadStats").HealthBar;
             var enemyBar = Stats("EnemyLeadStats").HealthBar;
 
-            float started = Time.realtimeSinceStartup;
             FindButton("StepButton").onClick.Invoke();
-            yield return null;
+            // Not one frame later: a Step is drawn in beats and the drain isn't the first of them —
+            // the opening plays once before Step 1 (BattleScreenController.PlayOpening) and the
+            // Leads lunge before the damage lands. Wait for the bar to start moving instead, which
+            // is the thing this test is actually about.
+            yield return SceneTransitionWait.UntilWithinSeconds(() => playerBar.IsAnimating,
+                "the player's HP should start draining", controller.HpDrainSeconds + 3f);
+            float started = Time.realtimeSinceStartup;
+
+            // Maximum HP is read off the bar rather than from TestHealth: both sides are Normal, so
+            // Steady Growth has already put a couple of points of Health on every mon by the time
+            // anything is drawn (ADR 0015). The drain, not the roster arithmetic, is the subject.
+            int playerMax = playerBar.Max;
+            int enemyMax = enemyBar.Max;
+            Assert.GreaterOrEqual(playerMax, TestMaxHealth, "the synergy adds Health, it never takes any");
 
             Assert.AreEqual(1, controller.State.StepNumber);
-            Assert.IsTrue(playerBar.IsAnimating, "the player's HP should be draining");
-            Assert.IsTrue(enemyBar.IsAnimating, "the foe's HP should be draining");
-            Assert.AreEqual(TestMaxHealth - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
-            Assert.Greater(playerBar.DisplayedHealth, TestMaxHealth - TestAttack, "but hasn't got there yet");
+            Assert.IsTrue(enemyBar.IsAnimating, "the foe's HP should be draining too");
+            Assert.AreEqual(playerMax - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
+            Assert.Greater(playerBar.DisplayedHealth, playerMax - TestAttack, "but hasn't got there yet");
             Assert.AreEqual($"-{TestAttack}", GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text);
             Assert.IsTrue(Slot(0).IsAnimating, "the party strip drains along with the box");
 
             yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
-                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+                "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
 
             Assert.GreaterOrEqual(Time.realtimeSinceStartup - started, controller.HpDrainSeconds - 0.1f,
                 "the drain should take the full drain time");
-            Assert.AreEqual($"{TestMaxHealth - TestAttack}/{TestMaxHealth}", playerBar.ValueLabel.text);
-            Assert.AreEqual(TestMaxHealth - TestAttack, enemyBar.DisplayedHealth);
-            Assert.AreEqual((TestMaxHealth - TestAttack) / (float)TestMaxHealth, Slot(0).HealthFraction, 0.001f);
+            Assert.AreEqual($"{playerMax - TestAttack}/{playerMax}", playerBar.ValueLabel.text);
+            Assert.AreEqual(enemyMax - TestAttack, enemyBar.DisplayedHealth);
+            Assert.AreEqual((playerMax - TestAttack) / (float)playerMax, Slot(0).HealthFraction, 0.001f);
             Assert.AreEqual(string.Empty, GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text,
                 "the damage number clears once the Step is drawn");
             Assert.AreEqual(TestMaxHealth, run.LineUp[0].CurrentHP, "the battle must not write damage back to the run");
@@ -610,10 +625,10 @@ namespace Pets.Tests
             Assert.IsNull(GameObject.Find("PlayerSynergyChipsLabel"), "and no label left stranded beside them");
         }
 
-        /// <summary>What a synergy did to a particular mon shows over that mon: the foe is
-        /// Poison/Steel, so it opens by poisoning the player's Lead (a bad badge, drawn in the danger
-        /// colour) while its own Lead blocks a point of damage a hit (a good one). Neither is
-        /// something the stat boxes could show.</summary>
+        /// <summary>What a synergy did to a particular mon shows over that mon, from the moment the
+        /// board is drawn: the foe is Poison/Steel, so it opens by poisoning the player's Lead (a bad
+        /// badge, drawn in the danger colour) while its own Lead blocks a point of damage a hit (a
+        /// good one). Neither is something the stat boxes could show.</summary>
         [UnityTest]
         public IEnumerator EffectBadges_ShowWhatIsOnEachMon_OnceTheFightOpens()
         {
@@ -621,18 +636,60 @@ namespace Pets.Tests
 
             yield return LoadScene(BattleScenePath);
 
-            Assert.IsEmpty(Badges("PlayerLeadSprite"), "nothing is applied until the first Step is taken");
+            CollectionAssert.Contains(Badges("PlayerLeadSprite"), "Poisoned",
+                "the opening is already in when the board is first drawn — before any Step");
 
             var controller = Controller();
             FindButton("StepButton").onClick.Invoke();
             // Waited out rather than checked a frame later: a Step is drawn in beats, and the badges
             // are refreshed by the redraw that follows the Leads' lunge (BattleScreenController.PlayStep).
             yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
-                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+                "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
 
             CollectionAssert.Contains(Badges("PlayerLeadSprite"), "Poisoned", "the foe's Poison synergy opened on our Lead");
             CollectionAssert.Contains(Badges("EnemyLeadSprite"), "Armour", "the foe's Steel synergy is on its own Lead");
             Assert.IsEmpty(Badges("PlayerSupportSprite"), "nobody is in that slot in a one-mon party");
+        }
+
+        /// <summary>A shield is drawn as a bubble around the mon rather than as a badge beside it,
+        /// with what it will absorb written on the bubble (Pets.UI.ShieldBubbleView) — up from the
+        /// moment the board is drawn, and gone when the pool is spent. The party mon is Water, so its
+        /// own Shell Guard synergy shields it with a single point, and the foe hits for more than
+        /// that: exactly the case that was invisible while the opening was applied inside Step 1.</summary>
+        [UnityTest]
+        public IEnumerator ShieldBubble_IsUpBeforeTheFirstStep_AndGoesWhenItPops()
+        {
+            BeginNodeFight(WeakFoeAttack, StrongFoeHealth);
+            // The library is what the battle reads types from (Meta/BattleLineUp.Assemble), so this
+            // is where a test changes what the player's side counts as.
+            ActiveRun.Library.AllSpecies[0].Type1 = PokemonType.Water;
+
+            yield return LoadScene(BattleScenePath);
+
+            var bubble = Bubble("PlayerLeadSprite");
+            Assert.IsTrue(bubble.IsShowing, "the shield is up before a Step is taken, not once one lands");
+            Assert.AreEqual(1, bubble.Shown, "and the bubble says how much it will block");
+            Assert.AreEqual("1", bubble.GetComponentInChildren<Text>(includeInactive: true).text);
+            CollectionAssert.DoesNotContain(Badges("PlayerLeadSprite"), "Shield",
+                "the bubble replaced the badge — showing both would say it twice");
+            Assert.IsFalse(Bubble("EnemyLeadSprite").IsShowing, "the wild mon is Normal, so it has no shield");
+
+            var controller = Controller();
+            FindButton("StepButton").onClick.Invoke();
+            yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
+                "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
+
+            Assert.IsFalse(Bubble("PlayerLeadSprite").IsShowing, "the foe's hit spent the point, so the bubble pops");
+        }
+
+        /// <summary>The bubble around one mon, whether or not it is currently up.</summary>
+        private static ShieldBubbleView Bubble(string spriteName)
+        {
+            var sprite = GameObject.Find(spriteName);
+            Assert.IsNotNull(sprite, $"Expected a '{spriteName}' on the field");
+            var bubble = sprite.GetComponentInChildren<ShieldBubbleView>(includeInactive: true);
+            Assert.IsNotNull(bubble, $"{spriteName} should carry a shield bubble");
+            return bubble;
         }
 
         /// <summary>The badges up over one mon, by name.</summary>

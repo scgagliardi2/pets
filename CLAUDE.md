@@ -38,7 +38,10 @@ gives the Event node four encounters (a Legendary fight, the Game Corner, a trad
 ambush), adds three held items, and splits the Center into Pokémon / Poké Balls / three rolled items
 rows; and
 [`0015-team-type-synergies.md`](docs/architecture-decisions/0015-team-type-synergies.md)
-adds a small per-type team bonus scaled by type count, applied to both sides as a battle opens. Between them they
+adds a small per-type team bonus scaled by type count, applied to both sides as a battle opens; and
+[`0016-the-opening-is-on-the-board-before-step-one.md`](docs/architecture-decisions/0016-the-opening-is-on-the-board-before-step-one.md)
+moves that opening to where the player can see it — applied as the battle screen opens rather than
+inside the first Step, with a shield drawn as a bubble around the mon. Between them they
 list the deviations from the design doc that are still open questions.
 
 ## Project snapshot
@@ -176,7 +179,8 @@ exists — the phase list under it describes intent, and the build has deviated 
 /shared    Golden battle-sim fixtures (JSON) used by both client and (later) server tests
 /tools     one-off content/asset scripts (generate_ui_sprites.py)
 /docs      pokemon-roguelite-autobattler-design-doc.md (full design), pokemon_stats_unique.xlsx
-           (roster), battle-sim-spec.md, content-schema.md, architecture-decisions/
+           (roster), battle-sim-spec.md, content-schema.md, type-passives.md (what each type is
+           worth, both kinds), architecture-decisions/
 ```
 
 There is no `Scripts/BattleRunner` or `Scripts/Minigame` — see PLAN.md §5 for why. Art splits two
@@ -248,9 +252,12 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   and a Pokédex card; and `StepButton_DrainsBothLeadsHp_OverTwoSeconds` checks for the drain one frame
   after Step, but the lead lunge added in `583f8bd` now plays first.
   As of 2026-09-15 after team type synergies and their UI (ADR 0015): **297 EditMode (all pass) and
-  123 PlayMode (122 pass)**. The only failure left is the HP-drain test above. The Nidoran failures
+  123 PlayMode (122 pass)**. The Nidoran failures
   are fixed, and three `HealthBarViewTests` that failed on sprite identity passed again once the
-  sprite atlas was rebuilt — if they fail, run `Pets > Build Sprite Atlases` before believing them. The same binary runs any Editor entry
+  sprite atlas was rebuilt — if they fail, run `Pets > Build Sprite Atlases` before believing them.
+  After the shield bubble and ADR 0016: **299 EditMode and 124 PlayMode, all passing** —
+  the long-standing HP-drain failure is fixed, since it was asserting one frame after the Step (the
+  lunge, and now the opening, are drawn first) against pre-synergy HP numbers. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.
@@ -288,6 +295,9 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   changes, not after.
 - `docs/content-schema.md` — the data shape for species/passives/items/locations, kept in sync
   with the actual ScriptableObject fields and JSON export format.
+- `docs/type-passives.md` — the table of what each type is worth: every team type synergy's value
+  and how it scales (from `Simulation/TeamSynergy`'s constants), and every species passive's effect
+  and amount (from its asset). Retune either and this table is the thing that goes stale.
 - `docs/pokemon_stats_unique.xlsx` — the roster source. If stats change during balancing, update
   the sheet, don't let hand-edited ScriptableObject values silently diverge from it.
 - `PLAN.md` §6 Status — **the one doc that goes stale fastest.** It's the account of what exists
