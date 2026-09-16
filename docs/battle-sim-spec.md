@@ -183,6 +183,14 @@ the precomputed runner before its loop, the on-demand runner at the start of its
 (so a screen drawing the line-ups before the fight shows them as they arrived). The events are
 stamped `Step = 0`, and the on-demand runner returns them at the front of Step 1's.
 
+A caller that wants to *draw* the opening can take it on its own first:
+`OnDemandStepRunner.ApplyOpening()` applies it if it hasn't been applied and returns its events
+(`OpeningApplied` says which), and `NextStep` then takes Step 1 without repeating it. The fight is
+identical either way — this only decides whether anything gets a board state to draw. The battle
+screen does exactly that, because most of the opening's defences are 1–3 points and are spent by the
+very exchange that follows: applied and drawn in one call, a Shell Guard shield never appears at
+all.
+
 - **What is counted.** For each side, the number of mons in the whole line-up (dormant included)
   carrying each type; a dual-type mon counts toward both. Types come from
   `BattleCombatant.Types`, which the assembler sets (`Meta/BattleLineUp.Assemble`); a combatant

@@ -91,23 +91,43 @@ namespace Pets.Simulation
                 return new List<StepEvent>();
             }
 
-            var events = new List<StepEvent>();
-            // Team synergies are applied as the first Step is taken rather than at construction, so
-            // a screen that draws the line-ups before the fight shows them as the teams arrived and
-            // the opening plays out with Step 1 — its events come back at the front of that Step's.
-            if (!synergyApplied)
+            var events = ApplyOpening();
+            if (IsBattleOver)
             {
-                synergyApplied = true;
-                events.AddRange(TeamSynergy.Apply(State));
-                if (IsBattleOver)
-                {
-                    return events;
-                }
+                return events;
             }
             events.AddRange(BattleSimulator.AdvanceStep(State, rng));
             return events;
         }
 
+        /// <summary>Applies both sides' team type synergies if they haven't been applied yet, and
+        /// returns what that did, stamped Step 0 (nothing, and an empty list, on every call after the
+        /// first). Idempotent, so a caller that wants the opening on its own can take it here and
+        /// then go on calling <see cref="NextStep"/> as normal — the Step won't re-apply it.
+        ///
+        /// Exposed for a screen that draws the opening as its own beat before Step 1's exchange:
+        /// the openings are mostly small numbers (battle-sim-spec.md §8) and the defences smallest of
+        /// all, so a 1-point Shell Guard shield raised and spent inside one call to NextStep is never
+        /// drawn at all — there is no board state in which it exists. The simulation is the same
+        /// either way; this only decides whether anything gets to look at it.</summary>
+        public List<StepEvent> ApplyOpening()
+        {
+            var events = new List<StepEvent>();
+            if (synergyApplied)
+            {
+                return events;
+            }
+            synergyApplied = true;
+            events.AddRange(TeamSynergy.Apply(State));
+            return events;
+        }
+
+        /// <summary>True once the opening has been applied — what a caller checks before giving it a
+        /// beat of its own.</summary>
+        public bool OpeningApplied => synergyApplied;
+
+        // Team synergies are applied as the first Step is taken rather than at construction, so a
+        // screen that draws the line-ups before the fight shows them as the teams arrived.
         private bool synergyApplied;
     }
 }

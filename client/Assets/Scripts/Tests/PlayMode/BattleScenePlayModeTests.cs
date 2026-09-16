@@ -197,26 +197,37 @@ namespace Pets.Tests
             var playerBar = Stats("PlayerLeadStats").HealthBar;
             var enemyBar = Stats("EnemyLeadStats").HealthBar;
 
-            float started = Time.realtimeSinceStartup;
             FindButton("StepButton").onClick.Invoke();
-            yield return null;
+            // Not one frame later: a Step is drawn in beats and the drain isn't the first of them —
+            // the opening plays once before Step 1 (BattleScreenController.PlayOpening) and the
+            // Leads lunge before the damage lands. Wait for the bar to start moving instead, which
+            // is the thing this test is actually about.
+            yield return SceneTransitionWait.UntilWithinSeconds(() => playerBar.IsAnimating,
+                "the player's HP should start draining", controller.HpDrainSeconds + 3f);
+            float started = Time.realtimeSinceStartup;
+
+            // Maximum HP is read off the bar rather than from TestHealth: both sides are Normal, so
+            // Steady Growth has already put a couple of points of Health on every mon by the time
+            // anything is drawn (ADR 0015). The drain, not the roster arithmetic, is the subject.
+            int playerMax = playerBar.Max;
+            int enemyMax = enemyBar.Max;
+            Assert.GreaterOrEqual(playerMax, TestMaxHealth, "the synergy adds Health, it never takes any");
 
             Assert.AreEqual(1, controller.State.StepNumber);
-            Assert.IsTrue(playerBar.IsAnimating, "the player's HP should be draining");
-            Assert.IsTrue(enemyBar.IsAnimating, "the foe's HP should be draining");
-            Assert.AreEqual(TestMaxHealth - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
-            Assert.Greater(playerBar.DisplayedHealth, TestMaxHealth - TestAttack, "but hasn't got there yet");
+            Assert.IsTrue(enemyBar.IsAnimating, "the foe's HP should be draining too");
+            Assert.AreEqual(playerMax - TestAttack, playerBar.Current, "the drain is heading for the Step's result");
+            Assert.Greater(playerBar.DisplayedHealth, playerMax - TestAttack, "but hasn't got there yet");
             Assert.AreEqual($"-{TestAttack}", GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text);
             Assert.IsTrue(Slot(0).IsAnimating, "the party strip drains along with the box");
 
             yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
-                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+                "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
 
             Assert.GreaterOrEqual(Time.realtimeSinceStartup - started, controller.HpDrainSeconds - 0.1f,
                 "the drain should take the full drain time");
-            Assert.AreEqual($"{TestMaxHealth - TestAttack}/{TestMaxHealth}", playerBar.ValueLabel.text);
-            Assert.AreEqual(TestMaxHealth - TestAttack, enemyBar.DisplayedHealth);
-            Assert.AreEqual((TestMaxHealth - TestAttack) / (float)TestMaxHealth, Slot(0).HealthFraction, 0.001f);
+            Assert.AreEqual($"{playerMax - TestAttack}/{playerMax}", playerBar.ValueLabel.text);
+            Assert.AreEqual(enemyMax - TestAttack, enemyBar.DisplayedHealth);
+            Assert.AreEqual((playerMax - TestAttack) / (float)playerMax, Slot(0).HealthFraction, 0.001f);
             Assert.AreEqual(string.Empty, GameObject.Find("PlayerLeadSprite").GetComponentInChildren<Text>().text,
                 "the damage number clears once the Step is drawn");
             Assert.AreEqual(TestMaxHealth, run.LineUp[0].CurrentHP, "the battle must not write damage back to the run");
@@ -628,7 +639,7 @@ namespace Pets.Tests
             // Waited out rather than checked a frame later: a Step is drawn in beats, and the badges
             // are refreshed by the redraw that follows the Leads' lunge (BattleScreenController.PlayStep).
             yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
-                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+                "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
 
             CollectionAssert.Contains(Badges("PlayerLeadSprite"), "Poisoned", "the foe's Poison synergy opened on our Lead");
             CollectionAssert.Contains(Badges("EnemyLeadSprite"), "Armour", "the foe's Steel synergy is on its own Lead");
@@ -654,7 +665,7 @@ namespace Pets.Tests
             var controller = Controller();
             FindButton("StepButton").onClick.Invoke();
             yield return SceneTransitionWait.UntilWithinSeconds(() => !controller.IsAnimating,
-                "the Step should finish drawing", controller.HpDrainSeconds + 3f);
+                "the Step should finish drawing", controller.HpDrainSeconds * 2f + 4f);
 
             var bubble = Bubble("PlayerLeadSprite");
             Assert.IsTrue(bubble.IsShowing, "one Water mon shields the front of its own line-up");

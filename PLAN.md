@@ -213,7 +213,8 @@ and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run
 sprite and card-overflow tests, and the battle HP-drain test the lead lunge broke (see CLAUDE.md for
 details and the CLI commands). After team type synergies and their UI (ADR 0015): 297 EditMode
 (all pass) and 123 PlayMode (122 pass) — the HP-drain test is the only one still failing. After the
-shield bubble: 297 EditMode (all pass) and 124 PlayMode (123 pass), same single failure.
+shield bubble and the opening beat: **299 EditMode and 124 PlayMode, all passing** — that last
+failure was the same beat-ordering problem and is fixed.
 
 **Built and covered by tests:**
 - `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
@@ -233,8 +234,11 @@ shield bubble: 297 EditMode (all pass) and 124 PlayMode (123 pass), same single 
   opening a panel that spells out each side's resolved bonuses, a bubble around each active mon
   carrying a Shield with the amount it will absorb on it (`UI/ShieldBubbleView`, drawn for a passive's
   shield too), and badges over each mon for the rest of what its stat box can't show (blocked damage,
-  lifesteal, status ward, status, charge owed). `docs/type-passives.md` is the table of every
-  synergy's numbers and how each scales, alongside the species passives.
+  lifesteal, status ward, status, charge owed). **The opening gets its own beat** before Step 1
+  (`OnDemandStepRunner.ApplyOpening` + `BattleScreenController.PlayOpening`): the defences are 1-3
+  points and the first exchange spends them, so drawn only after `NextStep` returned they were
+  invisible in every fight. `docs/type-passives.md` is the table of every synergy's numbers and how
+  each scales, alongside the species passives.
   The Team, Character Select and Pokedex cards carry a type-synergy line under their type badges.
 - **All 183 roster species** and 20 hand-authored type-flavored passives under
   `client/Assets/Content`, imported from `docs/pokemon_stats_unique.xlsx` by

@@ -59,8 +59,10 @@ Notes that aren't in the table:
 
 ### On screen
 
-Both sides' live synergies are named in a chip row over the field, and the Synergies button opens a
-panel spelling out the resolved numbers. What a synergy *put on a mon* shows on the mon: a
+The opening is drawn as **a beat of its own**, before Step 1's exchange: the numbers above are small
+and the first exchange spends the defensive ones, so a board drawn only after the Step returned never
+showed them. Both sides' live synergies are also named in a chip row over the field, and the
+Synergies button opens a panel spelling out the resolved numbers. What a synergy *put on a mon* shows on the mon: a
 [shield bubble](../client/Assets/Scripts/UI/ShieldBubbleView.cs) around it with the amount it will
 absorb, and badges above it for blocked damage, Lifesteal, a status ward, a status and charge owed
 ([`EffectBadgeRowView`](../client/Assets/Scripts/UI/EffectBadgeRowView.cs)). Attack, Health and

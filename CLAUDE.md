@@ -249,9 +249,12 @@ referenced or not), everything else goes in `Art` behind a direct reference. See
   and a Pokédex card; and `StepButton_DrainsBothLeadsHp_OverTwoSeconds` checks for the drain one frame
   after Step, but the lead lunge added in `583f8bd` now plays first.
   As of 2026-09-15 after team type synergies and their UI (ADR 0015): **297 EditMode (all pass) and
-  123 PlayMode (122 pass)**. The only failure left is the HP-drain test above. The Nidoran failures
+  123 PlayMode (122 pass)**. The Nidoran failures
   are fixed, and three `HealthBarViewTests` that failed on sprite identity passed again once the
-  sprite atlas was rebuilt — if they fail, run `Pets > Build Sprite Atlases` before believing them. The same binary runs any Editor entry
+  sprite atlas was rebuilt — if they fail, run `Pets > Build Sprite Atlases` before believing them.
+  After the shield bubble and the opening beat: **299 EditMode and 124 PlayMode, all passing** —
+  the long-standing HP-drain failure is fixed, since it was asserting one frame after the Step (the
+  lunge, and now the opening, are drawn first) against pre-synergy HP numbers. The same binary runs any Editor entry
   point headlessly — `-executeMethod Pets.EditorTools.SceneCatalog.BuildAll` to rebuild scenes,
   and the `DevCaptureUiKit` capture methods with `-captureOutput <path>` to render a screen to a
   PNG, which is the only way to actually look at the UI without opening the Editor.

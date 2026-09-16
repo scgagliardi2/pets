@@ -152,6 +152,12 @@ namespace Pets.Gameplay
         /// faint beat lasts exactly as long as the animation it's there to show.</summary>
         private const float FaintDropSeconds = 0.7f;
 
+        /// <summary>How long the board is held after the opening is drawn, before Step 1 is taken —
+        /// long enough to read a shield bubble and the chips that explain it, short enough not to
+        /// put a wait in front of every fight. A const rather than a serialized field so an
+        /// un-rebuilt Battle.unity still gets the beat (see PlayOpening).</summary>
+        private const float OpeningHoldSeconds = 0.9f;
+
         /// <summary>How a redraw treats HP: drain to the new value (a Step just landed), leave a drain
         /// in progress alone, or jump (the first draw, or a skip to the end).</summary>
         private enum HealthMode { Animate, Keep, Snap }
@@ -812,9 +818,73 @@ namespace Pets.Gameplay
             autoplayRoutine = null;
         }
 
+        /// <summary>Draws what the team type synergies did as the fight opened (ADR 0015), as a beat
+        /// of its own before Step 1's exchange.
+        ///
+        /// Not cosmetic sequencing: the simulator applies the opening and Step 1 in one call, and the
+        /// opening's defences are small — one Water mon raises a 1-point shield, which the very
+        /// exchange that follows spends. Drawn only after that call returns, the board never shows it,
+        /// so the shield bubble, an opening poisoning and the opening damage were all invisible in
+        /// every fight where they mattered least — which is most fights. Applying the opening by
+        /// itself gives the screen a board state to draw it in.
+        ///
+        /// Shaped like a Step without the lunge: drain, then any faint it caused, then a held beat to
+        /// read what is now standing on the field. An opening that empties a side ends the fight here,
+        /// which is why the caller re-checks IsBattleOver.</summary>
+        private IEnumerator PlayOpening()
+        {
+            var state = runner.State;
+            var pLead = state.LeadA;
+            var pSupport = state.SupportA;
+            var eLead = state.LeadB;
+            var eSupport = state.SupportB;
+
+            var events = runner.ApplyOpening();
+            fightEvents.AddRange(events);
+            RecordDamage(events);
+
+            // Most openings do no damage at all — they hand out shields, charge and lifesteal — so
+            // the bars only drain when there is something to drain. The tween runs the usual drain
+            // time and carries on under the beats that follow; Step 1's own drain retargets it from
+            // wherever it has got to (HealthBarView.AnimateHealth), so the hold below is a beat to
+            // read the board by, not the length of an animation.
+            bool damaged = damageThisStep.Count > 0;
+            Render(pLead, pSupport, eLead, eSupport, damaged ? HealthMode.Animate : HealthMode.Snap, showFaint: false);
+            yield return new WaitForSeconds(OpeningHoldSeconds);
+
+            // An opening KO (a Fire or Dark opening on a mon already at death's door) drops the
+            // loser before Step 1, exactly as the Step's own faint beat would.
+            if (ChangedLineUp(events))
+            {
+                Render(pLead, pSupport, eLead, eSupport, HealthMode.Keep, showFaint: true);
+                yield return new WaitForSeconds(faintRevealSeconds);
+            }
+
+            damageThisStep.Clear();
+            RenderCurrent(HealthMode.Keep);
+
+            if (runner.IsBattleOver)
+            {
+                ShowResult();
+            }
+        }
+
         private IEnumerator PlayStep()
         {
             IsAnimating = true;
+
+            // The opening first, on its own, the first time anyone advances the fight — see
+            // PlayOpening. Run inside PlayStep rather than beside it so every path that advances the
+            // fight (the Step button, autoplay, a Step taken to resolve a throw) gets it once.
+            if (!runner.OpeningApplied)
+            {
+                yield return PlayOpening();
+                if (runner.IsBattleOver)
+                {
+                    IsAnimating = false;
+                    yield break;
+                }
+            }
 
             var state = runner.State;
             var shownPlayerLead = state.LeadA;
