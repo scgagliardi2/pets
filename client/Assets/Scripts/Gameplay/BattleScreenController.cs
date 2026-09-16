@@ -82,6 +82,24 @@ namespace Pets.Gameplay
         [SerializeField] private Transform catchButtonsContainer;
         [SerializeField] private UiButton catchButtonPrefab;
 
+        [Header("Synergies")]
+        /// <summary>The two chip rows over the field — each side's active team type synergies as a
+        /// badge and a count (ADR 0015). Filled at runtime; the numbers behind them are in the panel
+        /// below, since there is no room on the battlefield to spell them out.</summary>
+        [SerializeField] private RectTransform playerSynergyChips;
+        [SerializeField] private RectTransform enemySynergyChips;
+
+        /// <summary>The Synergies panel: both sides' synergies with their exact, resolved bonuses.
+        /// Hidden until the Synergies button is pressed.</summary>
+        [SerializeField] private GameObject synergyPanel;
+        [SerializeField] private RectTransform playerSynergyRows;
+        [SerializeField] private RectTransform enemySynergyRows;
+        [SerializeField] private Button synergiesButton;
+
+        /// <summary>The TypeIcon prefab, for the chips, the panel rows and the effect badges over
+        /// each mon — the same one the card screens are handed by their builders.</summary>
+        [SerializeField] private GameObject typeIconPrefab;
+
         [Header("Pacing")]
         [SerializeField] private float hpDrainSeconds = 2f;
         [SerializeField] private float faintRevealSeconds = FaintDropSeconds;
@@ -168,6 +186,11 @@ namespace Pets.Gameplay
             /// foe faces you. A property of the slot rather than of the mon standing in it, since
             /// the same species can be on either side of the same fight.</summary>
             public bool DrawsBackSprite;
+
+            /// <summary>The badges floating over this slot's mon — its shield, armour, lifesteal,
+            /// ward, status and charge debt (Pets.UI.EffectBadgeRowView). Attached at runtime like
+            /// the lunge, and refreshed on every redraw of the slot.</summary>
+            public EffectBadgeRowView Badges;
 
             /// <summary>The drop-and-fade on this slot's sprite. Looked up off the sprite rather
             /// than serialized separately — the two always live on the same object (see
@@ -267,6 +290,9 @@ namespace Pets.Gameplay
             foreach (var slot in new[] { playerLead, playerSupport, enemyLead, enemySupport })
             {
                 PokemonSpriteScaler.AnchorToGround(slot.Sprite != null ? slot.Sprite.rectTransform : null);
+                // Over the mon's head, so what a synergy or a passive put on it is visible on the
+                // field rather than only in its stat box's numbers.
+                slot.Badges = EffectBadgeRowView.Attach(slot.Sprite, typeIconPrefab);
             }
 
             // Only the Leads strike, so only they get a lunge. Attached here rather than authored
@@ -285,6 +311,7 @@ namespace Pets.Gameplay
                 }
             }
 
+            BuildSynergyViews();
             SetUpCatching();
             // A node fight is committed the moment the player walks onto the node, so there's no
             // leaving it half-fought — the result panel is the way out. The dev battle keeps its
@@ -298,7 +325,8 @@ namespace Pets.Gameplay
         /// <summary>The real thing: the encounter a map node handed over. Combatants are copied from
         /// the run's mons (held items are already in their stats — Meta/HeldItems), so nothing that
         /// happens in the fight can reach the roster. Passives are left exactly as the content
-        /// resolved them on both sides.</summary>
+        /// resolved them on both sides, and both sides carry their types, so team type synergies
+        /// apply as the first Step is taken (ADR 0015).</summary>
         private List<BattleCombatant> StartNodeFight()
         {
             var state = ActiveRun.State;
@@ -311,8 +339,8 @@ namespace Pets.Gameplay
             int seed = PendingBattle.Seed;
             PendingBattle.Clear();
 
-            var playerLineUp = BattleCombatant.FromLineUp(state.LineUp);
-            var enemyLineUp = BattleCombatant.FromLineUp(nodeEnemyLineUp);
+            var playerLineUp = BattleLineUp.Assemble(state.LineUp, library);
+            var enemyLineUp = BattleLineUp.Assemble(nodeEnemyLineUp, library);
             enemyTeamSize = enemyLineUp.Count;
             // The node's own seed, the one its encounter was rolled from (see PendingBattle.Seed).
             runner = new OnDemandStepRunner(playerLineUp, enemyLineUp, seed);
@@ -1082,6 +1110,7 @@ namespace Pets.Gameplay
                 slot.Sprite.enabled = false;
                 slot.Faint?.Clear();
                 slot.Damage.text = string.Empty;
+                slot.Badges?.Show(null);
                 return;
             }
 
@@ -1133,6 +1162,77 @@ namespace Pets.Gameplay
             slot.Damage.text = mode == HealthMode.Animate && damageThisStep.TryGetValue(mon.InstanceId, out int damage) && damage > 0
                 ? $"-{damage}"
                 : string.Empty;
+            // Read off the combatant every redraw rather than tracked: a shield is spent, a status
+            // is cleared and a charge debt is paid off as the fight goes, and the badges are just a
+            // view of whatever is true now.
+            slot.Badges?.Show(mon);
+        }
+
+        /// <summary>Draws both sides' team type synergies (ADR 0015): a chip row each over the field,
+        /// and the rows of exact numbers inside the Synergies panel.
+        ///
+        /// Built once, here, because the counts are taken once — at battle start, off the whole
+        /// line-up, and they don't move as mons faint (battle-sim-spec.md §8). A fight with no
+        /// synergies at all (the dev random battle, whose combatants carry no types) hides the chip
+        /// rows and the button, rather than leaving empty labels on the battlefield.</summary>
+        private void BuildSynergyViews()
+        {
+            var state = runner.State;
+            var playerSynergies = TeamSynergy.ActiveFor(state.LineUpA);
+            var enemySynergies = TeamSynergy.ActiveFor(state.LineUpB);
+
+            if (playerSynergyChips != null)
+            {
+                SynergyListView.BuildChips(playerSynergyChips, typeIconPrefab, playerSynergies, startX: 0f);
+                SetRowVisible(playerSynergyChips, playerSynergies.Count > 0);
+            }
+            if (enemySynergyChips != null)
+            {
+                SynergyListView.BuildChips(enemySynergyChips, typeIconPrefab, enemySynergies, startX: 0f);
+                SetRowVisible(enemySynergyChips, enemySynergies.Count > 0);
+            }
+
+            if (playerSynergyRows != null)
+            {
+                SynergyListView.BuildDetailRows(playerSynergyRows, typeIconPrefab, playerSynergies, "No type synergies");
+            }
+            if (enemySynergyRows != null)
+            {
+                SynergyListView.BuildDetailRows(enemySynergyRows, typeIconPrefab, enemySynergies, "No type synergies");
+            }
+
+            bool anySynergies = playerSynergies.Count > 0 || enemySynergies.Count > 0;
+            if (synergiesButton != null)
+            {
+                synergiesButton.gameObject.SetActive(anySynergies);
+            }
+            synergyPanel?.SetActive(false);
+        }
+
+        /// <summary>The chip row and the label beside it, which is its sibling — a row of nothing
+        /// with a "You" next to it reads as a bug.</summary>
+        private static void SetRowVisible(RectTransform row, bool visible)
+        {
+            row.gameObject.SetActive(visible);
+            var label = row.parent != null ? row.parent.Find($"{row.name}Label") : null;
+            if (label != null)
+            {
+                label.gameObject.SetActive(visible);
+            }
+        }
+
+        /// <summary>True while the Synergies panel is up.</summary>
+        public bool IsShowingSynergies => synergyPanel != null && synergyPanel.activeSelf;
+
+        /// <summary>Shows or hides the panel of exact synergy bonuses. The same handler closes it,
+        /// from the button on the panel itself — a fight is paused or not regardless, so this only
+        /// ever covers the field while the player is reading it.</summary>
+        public void OnSynergiesClicked()
+        {
+            if (synergyPanel != null)
+            {
+                synergyPanel.SetActive(!synergyPanel.activeSelf);
+            }
         }
 
         private void ApplyHealth(HealthBarView bar, int hp, int maxHp, HealthMode mode)

@@ -267,25 +267,53 @@ namespace Pets.UI
             public int SpriteHeight;
             public NameAttackRow NameRow;
             public TypeIconRow TypeIcons;
+            public Text SynergyLine;
             public HealthBarView HealthBar;
             public StatBarView SpeedBar;
         }
 
+        /// <summary>The type-synergy line under the type badges: what each of this mon's types is
+        /// worth to a team, per mon of that type (Simulation/TeamSynergy). A dual-type mon shows both,
+        /// which is the whole point — it counts toward two synergies.
+        ///
+        /// Deliberately the short form: these cards are 200 units wide at most, and the exact numbers
+        /// depend on a line-up this screen doesn't have. The battle screen's panel is where a team's
+        /// resolved bonuses are spelled out.</summary>
+        public const int StatCardSynergyFontSize = Theme.FontSizeSmall;
+        public const int StatCardSynergyLineHeight = StatCardSynergyFontSize + 6;
+
+        public static string SynergySummary(PokemonType type1, bool hasSecondType, PokemonType type2)
+        {
+            string first = TeamSynergy.Summary(type1);
+            return hasSecondType && type2 != type1 ? $"{first} · {TeamSynergy.Summary(type2)}" : first;
+        }
+
         /// <summary>Adds a stat card's rows to <paramref name="card"/> (from <see cref="CreateCard"/>).
-        /// Height used, before the card's own padding: sprite + 24 name + 30 types + 18 HP + 18 SPD,
-        /// plus the card's one-unit gaps — each caller budgets that into its cell.</summary>
+        /// Height used, before the card's own padding: sprite + 24 name + 30 types + 19 synergy +
+        /// 18 HP + 18 SPD, plus the card's one-unit gaps — each caller budgets that into its cell.</summary>
         public static StatCard AddStatCardBody(Transform card, GameObject typeIconPrefab, GameObject healthBarPrefab,
             GameObject speedBarPrefab, int spriteHeight)
         {
-            return new StatCard
+            var body = new StatCard
             {
                 Sprite = AddSprite(card, null, spriteHeight),
                 SpriteHeight = spriteHeight,
                 NameRow = AddNameAttackRow(card, StatCardNameFontSize, Theme.TextDark, StatCardSideInset, StatCardAttackIconSize),
                 TypeIcons = AddTypeIconRow(card, typeIconPrefab, StatCardTypesRowHeight),
-                HealthBar = AddStatBar<HealthBarView>(card, healthBarPrefab, StatCardSideInset),
-                SpeedBar = AddStatBar<StatBarView>(card, speedBarPrefab, StatCardSideInset),
             };
+
+            // Directly under the badges it describes, and shrinking rather than overflowing: a
+            // dual-type mon's two summaries are twice as long as a single type's and the card is the
+            // same width either way.
+            body.SynergyLine = AddLine(card, string.Empty, StatCardSynergyFontSize, FontStyle.Bold, Theme.TextMuted);
+            body.SynergyLine.name = "SynergyLine";
+            body.SynergyLine.resizeTextForBestFit = true;
+            body.SynergyLine.resizeTextMinSize = 9;
+            body.SynergyLine.resizeTextMaxSize = StatCardSynergyFontSize;
+
+            body.HealthBar = AddStatBar<HealthBarView>(card, healthBarPrefab, StatCardSideInset);
+            body.SpeedBar = AddStatBar<StatBarView>(card, speedBarPrefab, StatCardSideInset);
+            return body;
         }
 
         /// <param name="speedMax">What the SPD bar is drawn against — the roster-wide cap, so the bar
@@ -297,6 +325,10 @@ namespace Pets.UI
             card.NameRow.Name.text = displayName;
             card.NameRow.Attack.text = stats.Attack.ToString();
             card.TypeIcons.SetTypes(type1, hasSecondType, type2);
+            if (card.SynergyLine != null)
+            {
+                card.SynergyLine.text = SynergySummary(type1, hasSecondType, type2);
+            }
             card.HealthBar.SetHealth(currentHp, stats.Health);
             card.SpeedBar.SetValue(stats.Speed, speedMax);
         }

@@ -266,6 +266,19 @@ namespace Pets.Tests
             Assert.AreEqual("Alpha", SlotText("PartySlot1", "NameRow/Name"));
         }
 
+        /// <summary>A party card carries the same type-synergy line Character Select's cards do — on
+        /// this screen it's what a player rearranges a line-up against (ADR 0015).</summary>
+        [UnityTest]
+        public IEnumerator TeamScene_PartyCards_ShowTheTypeSynergyEachMonContributes()
+        {
+            ActiveRun.Begin(MakeRun(), MakeLibrary());
+
+            yield return LoadScene(TeamScenePath);
+
+            Assert.AreEqual(TeamSynergy.Summary(PokemonType.Normal), SlotText("PartySlot0", "SynergyLine"),
+                "the test species are Normal, so every card names Steady Growth's bonus");
+        }
+
         /// <summary>Six party slots and six Box slots are always drawn, filled or not: the point
         /// of showing the whole row is that a player can see the room they have, and the empty
         /// ones still say what they'd be.</summary>

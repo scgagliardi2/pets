@@ -130,7 +130,8 @@ consistent with the Type-flavor seeds in design doc §11):
 | `asleep` | This mon's charge accrual is fully zeroed until cleared | Same as above |
 
 Only one status applies at a time — a new status effect overwrites the existing one rather than
-stacking multiple statuses on the same mon. This also feeds the catch-chance formula (design doc
+stacking multiple statuses on the same mon. The exception is a mon holding a Fairy synergy
+**status ward** (§8): the application spends the ward and changes nothing else. This also feeds the catch-chance formula (design doc
 §12.1) but that formula itself lives with the catching system, not here.
 
 ## 6. Same-Step multi-trigger ordering
@@ -175,13 +176,57 @@ and `Faint` events are the record of who fell and in what order.
 
 ## 8. Team synergy (not Step-triggered)
 
-Type-count synergy bonuses (design doc §11) are **not** part of the Step loop — they're computed
-once, when a line-up is assembled for battle (at Location-Hub confirm time, or PvE's "current
-Team Management order" per design doc §5.1), as a flat modifier applied to `currentStats` before
-the mon ever becomes a Lead or Support. Re-deriving them mid-battle isn't needed since the active
-line-up's type composition doesn't change mid-fight (catching adds to the player's Box, not their
-current line-up, until the player re-arranges outside battle). Implement this as a pre-battle
-pass, not inside `AdvanceStep`.
+**Implemented (2026-09-15, ADR 0015)** as `Simulation/TeamSynergy.Apply(BattleState)`. Type-count
+synergy bonuses (design doc §11) are **not** part of the Step loop and never run inside
+`AdvanceStep`. They are applied once per battle, as the **opening** ("Step 0"), by both runners:
+the precomputed runner before its loop, the on-demand runner at the start of its first `NextStep`
+(so a screen drawing the line-ups before the fight shows them as they arrived). The events are
+stamped `Step = 0`, and the on-demand runner returns them at the front of Step 1's.
+
+- **What is counted.** For each side, the number of mons in the whole line-up (dormant included)
+  carrying each type; a dual-type mon counts toward both. Types come from
+  `BattleCombatant.Types`, which the assembler sets (`Meta/BattleLineUp.Assemble`); a combatant
+  with no types counts for nothing, so a line-up built straight from `PokemonInstance`s plays
+  exactly as before. The count is taken once and doesn't change as mons faint or are caught.
+- **Order, fixed:** a `TypeSynergy` event per (side, type present) → each side's own stat bonuses
+  (Normal, Fighting, Flying, Bug, Rock, Ghost) → each side's Dragon on the other → defenses (Water,
+  Steel, Grass, Fairy) → own charge (Electric, Psychic) → enemy charge (Ice, Ground) → openings
+  (Fire, Dark, Poison; side A then B) → a faint check with promotion. An opening that KOs a Lead
+  therefore promotes before Step 1's exchange; one that empties a side ends the battle with no
+  Step taken.
+- **Per type** (N = that type's count; constants in `TeamSynergy`):
+
+  | Type | Effect |
+  |---|---|
+  | Normal | Every mon +1 Health per N |
+  | Fire | Enemy Lead takes N damage, through DamageReduction and Shield (no Lifesteal) |
+  | Water | The first N mons each start with N Shield |
+  | Electric | Lead starts with +2 charge per N, capped at the threshold |
+  | Grass | Every mon +10% Lifesteal per N (still capped at 100%) |
+  | Ice | Enemy Lead and Support start with −1 charge per N |
+  | Fighting | Every mon +1 Attack per N |
+  | Poison | Enemy Lead starts Poisoned with tick damage N |
+  | Ground | Enemy Lead starts with −2 charge per N |
+  | Flying | Every mon +1 Speed per 2 N, not past Speed 3 |
+  | Psychic | Lead and Support start with +1 charge per N, capped at the threshold |
+  | Bug | Every mon +1 Speed per 3 N, uncapped |
+  | Rock | Lead +10% Health per N (at least +1 per N) |
+  | Ghost | Lead loses 2 HP per N (not below 1); every other mon +1 Attack and +1 Health per N. Skipped with no one behind the Lead |
+  | Dragon | Every enemy mon −1 Attack per N, not below 1 (a 0-Attack mon stays 0) |
+  | Dark | Enemy Lead takes N true damage (ignores Shield and DamageReduction) |
+  | Steel | Lead +1 DamageReduction per N |
+  | Fairy | The last N mons each get one status ward |
+
+- **Charge can start negative.** Ice and Ground are a starting charge deficit rather than a
+  `ChargeRateMultiplier` percentage, because accrual truncates `Speed × multiplier` to an int and
+  at Speed 1 any slowdown at all becomes zero charge. A deficit of D delays a mon's first trigger by
+  D / Speed Steps and nothing after.
+- **Status wards** (`BattleCombatant.StatusWards`): an `ApplyStatus` against a warded mon spends one
+  ward and raises `StatusBlocked` instead, leaving any existing status alone. This applies to
+  passives as well as to Poison's opening.
+- Everything a synergy writes is one of the existing bounded modifiers (Shield, the
+  MinimumAttackDamage-floored DamageReduction, the capped Lifesteal) or a one-off change, so it adds
+  nothing sudden death (§9) has to outrun.
 
 ## 9. Battle end
 

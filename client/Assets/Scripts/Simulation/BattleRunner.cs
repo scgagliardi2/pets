@@ -20,6 +20,10 @@ namespace Pets.Simulation
             var rng = new DeterministicRandom(seed);
             var log = new StepLog();
 
+            // Team synergies open the fight (battle-sim-spec.md §8). A no-op for combatants
+            // without Types.
+            log.Events.AddRange(TeamSynergy.Apply(state));
+
             while (state.LineUpA.Count > 0 && state.LineUpB.Count > 0)
             {
                 if (state.StepNumber >= BattleConfig.StepCap || log.Events.Count >= BattleConfig.EventCap)
@@ -86,7 +90,24 @@ namespace Pets.Simulation
             {
                 return new List<StepEvent>();
             }
-            return BattleSimulator.AdvanceStep(State, rng);
+
+            var events = new List<StepEvent>();
+            // Team synergies are applied as the first Step is taken rather than at construction, so
+            // a screen that draws the line-ups before the fight shows them as the teams arrived and
+            // the opening plays out with Step 1 — its events come back at the front of that Step's.
+            if (!synergyApplied)
+            {
+                synergyApplied = true;
+                events.AddRange(TeamSynergy.Apply(State));
+                if (IsBattleOver)
+                {
+                    return events;
+                }
+            }
+            events.AddRange(BattleSimulator.AdvanceStep(State, rng));
+            return events;
         }
+
+        private bool synergyApplied;
     }
 }

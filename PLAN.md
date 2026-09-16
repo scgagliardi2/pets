@@ -211,7 +211,8 @@ and Team's "Dev: Random Battle" still opens a throwaway fight that costs the run
 *Test status (2026-09-15, after road events, three held items and the three-row Center — ADR 0014):*
 263 EditMode (262 pass) and 113 PlayMode (110 pass). All four failures predate ADR 0014: the Nidoran-F/M
 sprite and card-overflow tests, and the battle HP-drain test the lead lunge broke (see CLAUDE.md for
-details and the CLI commands).
+details and the CLI commands). After team type synergies and their UI (ADR 0015): 297 EditMode
+(all pass) and 123 PlayMode (122 pass) — the HP-drain test is the only one still failing.
 
 **Built and covered by tests:**
 - `Scripts/Simulation` implements the Lead/Support/Step model per `docs/battle-sim-spec.md` —
@@ -221,6 +222,16 @@ details and the CLI commands).
   1 HP however much DamageReduction has stacked, and Lifesteal stops at 100% (ADR 0011). Real fights
   run 5-17 Steps, so none of that is reachable in normal play — it exists because two Bulbasaurs
   could previously stack Vine Drain past parity and freeze a fight for 190 Steps.
+- **Team type synergies** (ADR 0015): `Simulation/TeamSynergy` applies one small rule per type in a
+  line-up, scaled by how many mons carry it (Steady Growth +1 Health per Normal, Ember Burst 1
+  opening damage per Fire, and so on), to both sides, once, as the battle opens. Both node fights and the dev
+  random battle get their types from `Meta/BattleLineUp.Assemble` (the dev battle still strips
+  passives — a separate switch). `TeamSynergyTests.cs` covers each rule, plus `shared/fixtures/type-synergy-opening.json`.
+  The rules are code constants, not the `TeamSynergyDefinition` asset content-schema §6 describes.
+  The battle screen shows them: a "You"/"Foe" chip row per side over the field, a Synergies button
+  opening a panel that spells out each side's resolved bonuses, and badges over each active mon for
+  what its stat box can't show (shield, blocked damage, lifesteal, status ward, status, charge owed).
+  The Team, Character Select and Pokedex cards carry a type-synergy line under their type badges.
 - **All 183 roster species** and 20 hand-authored type-flavored passives under
   `client/Assets/Content`, imported from `docs/pokemon_stats_unique.xlsx` by
   `Assets/Editor/SpeciesRosterImporter.cs` (ADR 0004). `PokemonContentTests.cs` runs a full
@@ -424,7 +435,7 @@ handed it again when a wild fight starts with none — which undercuts buying th
 
 **Also not built:** the Trailblazer minigame
 (no `Scripts/Minigame` folder — it was never started), Pokémon Center healing, items
-beyond the four flat-stat held items (passive overrides, locking, more than one slot), type synergy bonuses, the badge-as-relic reward behind the Gym win, PvP node
+beyond the four flat-stat held items (passive overrides, locking, more than one slot), the badge-as-relic reward behind the Gym win, PvP node
 behavior, Event encounters as data or biased by Location, paging the Box past six slots, and **any save/load
 layer** — which is why "Continue Run" only resumes a run still in memory this session, and why
 History has nothing to list even now that a run can be won. Save/load is Phase 2 in the list
@@ -470,7 +481,7 @@ retired hub scene (ADR 0002, ADR 0003).*
   Pets > Build Battle Scene after pulling this**. The "pick 1 from defeated" stub
   is still there on the result panel and still works — it covers mons that fainted rather than
   being caught, so the two are complementary, not duplicates.
-- Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center healing, type synergy bonuses, the
+- Still to do: the branching-evolution picker (Eevee/Tyrogue/Nincada), Pokémon Center healing, the
   badge-as-relic reward, the Line-Up menu before a Gym, a real PvP node in place of its modal
   (Event nodes now have four encounters — ADR 0014), and the real Trailblazer minigame (lane obstacle-dodge, Speed/Type-driven
   per §6 of the design doc). Each is its own piece of work, not a finishing touch on the above.

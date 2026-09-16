@@ -10,6 +10,14 @@ namespace Pets.Simulation
         StatusCleared,
         StatusTick,
 
+        /// <summary>A status that would have applied was stopped by a Fairy synergy ward.</summary>
+        StatusBlocked,
+
+        /// <summary>A side has a type synergy active this battle (TeamSynergy). One per side per type
+        /// present, stamped Step 0; Amount is how many of that side's mons carry
+        /// <see cref="StepEvent.SynergyType"/>.</summary>
+        TypeSynergy,
+
         /// <summary>Escalating true damage dealt to both Leads once a fight has run past
         /// BattleConfig.SuddenDeathStep without resolving (battle-sim-spec.md §9).</summary>
         SuddenDeath,
@@ -50,9 +58,12 @@ namespace Pets.Simulation
         public StatusType? Status;
         public BattleOutcome? Outcome;
 
+        /// <summary>Only set on a TypeSynergy event.</summary>
+        public PokemonType? SynergyType;
+
         public override string ToString()
         {
-            return $"Step {Step}: {Kind} src={SourceInstanceId} tgt={TargetInstanceId} amount={Amount} status={Status} outcome={Outcome}";
+            return $"Step {Step}: {Kind} src={SourceInstanceId} tgt={TargetInstanceId} amount={Amount} status={Status} outcome={Outcome} synergy={SynergyType}";
         }
     }
 }

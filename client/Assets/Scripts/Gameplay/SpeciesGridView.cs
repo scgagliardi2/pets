@@ -26,16 +26,16 @@ namespace Pets.Gameplay
     ///
     /// Laid out like a battle panel: name with a sword + attack at its right end, then HP and SPD
     /// as bars. Budget: 12 padding + 96 sprite + 24 name row (the 24-unit sword sets it) + 30
-    /// types row + 18 HP bar + 18 SPD bar + 4 one-unit gaps = 202, inside the 205-unit cell (the
-    /// types row is two 28-unit TypeIconView icons — see PokemonCardBuilder.AddTypeIcons; each
-    /// bar's 18 is its prefab's own LayoutElement, set in UiPrefabBuilder). Grow the scene
-    /// builders' CardHeight alongside any of these.</summary>
+    /// types row + 19 type-synergy line + 18 HP bar + 18 SPD bar + 5 one-unit gaps = 222, inside the
+    /// 224-unit cell (the types row is two 28-unit TypeIconView icons — see
+    /// PokemonCardBuilder.AddTypeIcons; each bar's 18 is its prefab's own LayoutElement, set in
+    /// UiPrefabBuilder). Grow the scene builders' CardHeight alongside any of these.</summary>
     public sealed class SpeciesGridView
     {
         /// <summary>The cell height the card metrics below add up to. Both scene builders read it
-        /// rather than each hand-typing 205, so a card that grows can't silently overflow one
-        /// screen's cell while fitting the other's.</summary>
-        public const float CardHeight = 205f;
+        /// rather than each hand-typing it, so a card that grows can't silently overflow one
+        /// screen's cell while fitting the other's. 205 before the type-synergy line (ADR 0015).</summary>
+        public const float CardHeight = 224f;
 
         private const int CardSpriteHeight = 96;
 

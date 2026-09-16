@@ -58,7 +58,7 @@ namespace Pets.Tests
             }
         }
 
-        private static void RunToCompletionAndAssertOutcome(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, FixtureFile fixture, string name)
+        private static void RunToCompletionAndAssertOutcome(List<BattleCombatant> lineUpA, List<BattleCombatant> lineUpB, FixtureFile fixture, string name)
         {
             var log = PrecomputedStepLogRunner.Run(lineUpA, lineUpB, fixture.seed);
 
@@ -79,7 +79,7 @@ namespace Pets.Tests
             }
         }
 
-        private static void RunStepsAndAssertState(List<PokemonInstance> lineUpA, List<PokemonInstance> lineUpB, FixtureFile fixture, string name)
+        private static void RunStepsAndAssertState(List<BattleCombatant> lineUpA, List<BattleCombatant> lineUpB, FixtureFile fixture, string name)
         {
             // Through the on-demand runner rather than driving AdvanceStep against a hand-built
             // BattleState: advancing a Step at a time is exactly what that runner is for, and going
@@ -104,9 +104,20 @@ namespace Pets.Tests
             }
         }
 
-        private static List<PokemonInstance> ToLineUp(List<FixtureMon> mons)
+        /// <summary>Through PokemonInstance and BattleCombatant.FromInstance — the same copy a real
+        /// fight makes — then the fixture's types, which only a combatant carries (they're what
+        /// team synergies count; a fixture that lists none gets none).</summary>
+        private static List<BattleCombatant> ToLineUp(List<FixtureMon> mons)
         {
-            return mons.Select(ToPokemonInstance).ToList();
+            return mons.Select(m =>
+            {
+                var combatant = BattleCombatant.FromInstance(ToPokemonInstance(m));
+                if (m.types != null && m.types.Count > 0)
+                {
+                    combatant.Types = m.types.Select(t => (PokemonType)Enum.Parse(typeof(PokemonType), t)).ToList();
+                }
+                return combatant;
+            }).ToList();
         }
 
         private static PokemonInstance ToPokemonInstance(FixtureMon m)
@@ -159,6 +170,7 @@ namespace Pets.Tests
             public int health;
             public int speed;
             public FixturePassive passive;
+            public List<string> types = new List<string>();
         }
 
         [Serializable]
