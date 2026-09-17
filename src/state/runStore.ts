@@ -26,6 +26,7 @@ import {
   addMoney,
   awardBadge,
   benchToBox,
+  combineMons,
   completeNode,
   createRun,
   enterNode,
@@ -39,6 +40,7 @@ import {
   type MapNode,
   type RunState,
 } from '../meta/runState.js';
+import type { Fusion } from '../meta/fusion.js';
 import type { BattleOutcome } from '../sim/index.js';
 
 /** Where the player is in the loop. */
@@ -69,6 +71,8 @@ interface RunStore {
   lastResult: BattleResult | null;
   /** Throws this fight, newest first — what the battle screen narrates. */
   throwLog: ThrowResult[];
+  /** The most recent fusion, so the team screens can say what came out of it. */
+  lastFusion: Fusion | null;
 
   startRun: (seed?: number) => void;
   enter: (nodeId: string) => void;
@@ -91,6 +95,8 @@ interface RunStore {
   moveToLineUp: (instanceId: string) => void;
   moveToBox: (instanceId: string) => void;
   reorder: (instanceId: string, toIndex: number) => void;
+  /** Folds two mons of a family into one. A no-op if they aren't a pair. */
+  combine: (aId: string, bId: string) => void;
 }
 
 const freshRun = (seed: number) => createRun(seed, defaultStarters());
@@ -105,6 +111,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
   opponents: [],
   lastResult: null,
   throwLog: [],
+  lastFusion: null,
 
   startRun: (seed = Math.floor(Math.random() * 1_000_000)) => {
     const map = generateLocationMap(seed, 0);
@@ -118,6 +125,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
       opponents: [],
       lastResult: null,
       throwLog: [],
+      lastFusion: null,
     });
   },
 
@@ -270,4 +278,12 @@ export const useRunStore = create<RunStore>((set, get) => ({
   moveToLineUp: (instanceId) => set({ run: promoteFromBox(get().run, instanceId) }),
   moveToBox: (instanceId) => set({ run: benchToBox(get().run, instanceId) }),
   reorder: (instanceId, toIndex) => set({ run: reorderLineUp(get().run, instanceId, toIndex) }),
+
+  combine: (aId, bId) => {
+    const result = combineMons(get().run, aId, bId);
+    // Null means the two aren't of a family, or one of them has already been merged away by an
+    // earlier click. Either way there is nothing to do and nothing to say.
+    if (result === null) return;
+    set({ run: result.run, lastFusion: result.fusion });
+  },
 }));

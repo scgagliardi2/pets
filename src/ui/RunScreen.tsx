@@ -10,12 +10,16 @@ import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 
 import { speciesOf } from '../content/index.js';
 import { spriteUrl } from '../content/sprites.js';
-import { statsOf, type PokemonInstance } from '../content/factory.js';
+import { displayNameOf, statsOf, type PokemonInstance } from '../content/factory.js';
+import type { Stats } from '../sim/index.js';
 import { EXP_PER_EVOLUTION, expSinceEvolution } from '../meta/experience.js';
+import { canCombine, combine as fuse, partnersFor } from '../meta/fusion.js';
 import { BADGES_TO_WIN, MAX_PARTY_SIZE } from '../meta/progression.js';
 import { useRunStore } from '../state/runStore.js';
 import { SHOP_STOCK, canAfford, describeInventory } from '../meta/shop.js';
 import { acceptDrop, readDragPayload, setDragPayload } from './dragDrop.js';
+import { EvolutionScene } from './EvolutionScene.js';
+import { TeamSynergies } from './TeamSynergies.js';
 
 export function RunHeader() {
   const run = useRunStore((s) => s.run);
@@ -186,6 +190,135 @@ export function ShopPanel() {
 }
 
 /**
+ * Combining, as a two-step choice: pick a mon, then pick what it merges into.
+ *
+ * Dragging one mon onto another is the better verb — you are folding one thing into another — so
+ * that is what the cards highlight for. The click path is here for the same reason the reorder
+ * arrows are: a drag is impossible with a keyboard and awkward on a trackpad, and this move
+ * destroys a Pokémon, so it must not be drag-only.
+ *
+ * Whichever path is in flight, the *same* candidate test lights the cards up, and it is the real
+ * one from `/src/meta/fusion` — a card only glows when dropping there would actually merge.
+ * Highlighting everything and refusing on drop would teach the rule by failure.
+ */
+interface CombineSelection {
+  /** The mon waiting for a partner, if the player picked one by clicking. */
+  pendingId: string | null;
+  /** Whether this mon has anything at all to merge with, which is what enables its button. */
+  hasPartner: (mon: PokemonInstance) => boolean;
+  /** Whether what is in flight — dragged or picked — would merge into this mon. */
+  isCandidate: (mon: PokemonInstance) => boolean;
+  /** The stat line the merge would produce, so the choice is made on numbers, not faith. */
+  previewFor: (mon: PokemonInstance) => Stats | null;
+  toggle: (instanceId: string) => void;
+  commit: (targetId: string) => void;
+  beginDrag: (instanceId: string) => void;
+  endDrag: () => void;
+  dropOnto: (targetId: string, event: React.DragEvent) => void;
+}
+
+function useCombineSelection(pool: readonly PokemonInstance[]): CombineSelection {
+  const applyCombine = useRunStore((s) => s.combine);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  const find = (id: string | null): PokemonInstance | null =>
+    id === null ? null : (pool.find((m) => m.instanceId === id) ?? null);
+
+  // A drag beats a pending pick: if the player has started dragging, that is the mon they mean.
+  const source = find(draggingId) ?? find(pendingId);
+
+  return {
+    pendingId,
+    hasPartner: (mon) => partnersFor(mon, pool).length > 0,
+    isCandidate: (mon) => source !== null && canCombine(source, mon),
+    previewFor: (mon) => {
+      if (source === null) return null;
+      // The target goes first, so a tie over which form survives falls to the mon the player
+      // aimed at — the same call the store will make when this is committed.
+      const fusion = fuse(mon, source);
+      return fusion === null ? null : statsOf(fusion.mon);
+    },
+    toggle: (instanceId) => setPendingId((current) => (current === instanceId ? null : instanceId)),
+    commit: (targetId) => {
+      if (pendingId === null) return;
+      applyCombine(targetId, pendingId);
+      setPendingId(null);
+    },
+    beginDrag: (instanceId) => setDraggingId(instanceId),
+    endDrag: () => setDraggingId(null),
+    dropOnto: (targetId, event) => {
+      const payload = readDragPayload(event);
+      setDraggingId(null);
+      setPendingId(null);
+      if (payload === null || payload.kind !== 'mon') return;
+      applyCombine(targetId, payload.instanceId);
+    },
+  };
+}
+
+/** The one button that both starts a combine and finishes it, depending on what is in flight. */
+function CombineButton({
+  mon,
+  selection,
+}: {
+  mon: PokemonInstance;
+  selection: CombineSelection;
+}) {
+  if (selection.isCandidate(mon)) {
+    return (
+      <button
+        className="combine-go"
+        onClick={() => selection.commit(mon.instanceId)}
+        title={`Combine into ${displayNameOf(mon)}`}
+      >
+        ⊕
+      </button>
+    );
+  }
+
+  const selected = selection.pendingId === mon.instanceId;
+  const partnered = selection.hasPartner(mon);
+  return (
+    <button
+      className={selected ? 'combine-on' : ''}
+      disabled={!partnered}
+      onClick={() => selection.toggle(mon.instanceId)}
+      title={
+        selected
+          ? 'Cancel combine'
+          : partnered
+            ? 'Combine with another of its family'
+            : 'Nothing of its family to combine with'
+      }
+    >
+      ⊕
+    </button>
+  );
+}
+
+/** What the last combine produced. Stays until the next fight starts, then clears itself. */
+function FusionNote() {
+  const fusion = useRunStore((s) => s.lastFusion);
+  if (fusion === null) return null;
+
+  const stats = statsOf(fusion.mon);
+  return (
+    <p className="fusion-note">
+      {displayNameOf(fusion.mon)} absorbed its own kind — now {stats.attack} atk &middot;{' '}
+      {stats.health} hp
+      {fusion.evolutions.map((e) => (
+        <span key={e.instanceId + e.to.id}>
+          {' '}
+          and evolved into {e.to.name}
+        </span>
+      ))}
+      .
+    </p>
+  );
+}
+
+/**
  * The line-up, laid out horizontally under the map.
  *
  * Order is the whole of formation — slot 0 fights, slot 1 is the Support a passive can target,
@@ -205,6 +338,7 @@ export function TeamBuilder() {
   const openBox = useRunStore((s) => s.openBox);
 
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const selection = useCombineSelection(run.lineUp);
 
   const onDropAt = (index: number) => (event: React.DragEvent) => {
     event.preventDefault();
@@ -212,6 +346,7 @@ export function TeamBuilder() {
     // to the end and silently undoes the placement that just happened.
     event.stopPropagation();
     setDropIndex(null);
+    selection.endDrag();
     const payload = readDragPayload(event);
     if (payload === null || payload.kind !== 'mon') return;
     placeInLineUp(payload.instanceId, index);
@@ -241,6 +376,8 @@ export function TeamBuilder() {
         <button onClick={openBox}>Box ({run.box.length})</button>
       </div>
 
+      <TeamSynergies mons={run.lineUp} />
+
       <div
         className="slot-row"
         onDragOver={acceptDrop}
@@ -252,9 +389,12 @@ export function TeamBuilder() {
             <TeamCard
               mon={mon}
               index={index}
-              onDragStart={(e) =>
-                setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'lineUp' })
-              }
+              selection={selection}
+              onDragStart={(e) => {
+                setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'lineUp' });
+                selection.beginDrag(mon.instanceId);
+              }}
+              onDragEnd={selection.endDrag}
               actions={
                 <>
                   <button
@@ -271,6 +411,7 @@ export function TeamBuilder() {
                   >
                     ›
                   </button>
+                  <CombineButton mon={mon} selection={selection} />
                   <button
                     disabled={run.lineUp.length <= 1}
                     onClick={() => moveToBox(mon.instanceId)}
@@ -292,6 +433,13 @@ export function TeamBuilder() {
           </div>
         )}
       </div>
+
+      {selection.pendingId !== null && (
+        <p className="combine-hint">
+          Pick another of the same family to combine with — or press ⊕ again to cancel.
+        </p>
+      )}
+      <FusionNote />
     </div>
   );
 }
@@ -307,6 +455,9 @@ export function BoxScreen() {
   const [overLineUp, setOverLineUp] = useState(false);
   const [overBox, setOverBox] = useState(false);
   const full = run.lineUp.length >= MAX_PARTY_SIZE;
+  // Everything the player owns, because this is the screen where a boxed Charmander can be fed
+  // to the Charizard that is fighting.
+  const selection = useCombineSelection([...run.lineUp, ...run.box]);
 
   return (
     <div className="panel box-screen">
@@ -320,8 +471,11 @@ export function BoxScreen() {
 
       <p className="shop-sub quiet">
         Mons in the Box earn no EXP — one that didn't fight doesn't grow. Move one into the line-up
-        and the next win's catch-up brings it back within a couple of points of the rest.
+        and the next win's catch-up brings it back within a couple of points of the rest. Two of
+        one family can be combined into a single stronger mon, wherever either of them is kept.
       </p>
+
+      <TeamSynergies mons={run.lineUp} detailed label="Type buffs your line-up carries into the next fight" />
 
       <div className="box-heading">
         Line-up ({run.lineUp.length}/{MAX_PARTY_SIZE})
@@ -337,6 +491,7 @@ export function BoxScreen() {
         onDrop={(e) => {
           e.preventDefault();
           setOverLineUp(false);
+          selection.endDrag();
           const payload = readDragPayload(e);
           if (payload?.kind === 'mon') placeInLineUp(payload.instanceId, run.lineUp.length);
         }}
@@ -346,17 +501,23 @@ export function BoxScreen() {
             key={mon.instanceId}
             mon={mon}
             index={index}
-            onDragStart={(e) =>
-              setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'lineUp' })
-            }
+            selection={selection}
+            onDragStart={(e) => {
+              setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'lineUp' });
+              selection.beginDrag(mon.instanceId);
+            }}
+            onDragEnd={selection.endDrag}
             actions={
-              <button
-                disabled={run.lineUp.length <= 1}
-                onClick={() => moveToBox(mon.instanceId)}
-                title="Send to the Box"
-              >
-                ✕
-              </button>
+              <>
+                <CombineButton mon={mon} selection={selection} />
+                <button
+                  disabled={run.lineUp.length <= 1}
+                  onClick={() => moveToBox(mon.instanceId)}
+                  title="Send to the Box"
+                >
+                  ✕
+                </button>
+              </>
             }
           />
         ))}
@@ -375,6 +536,7 @@ export function BoxScreen() {
         onDrop={(e) => {
           e.preventDefault();
           setOverBox(false);
+          selection.endDrag();
           const payload = readDragPayload(e);
           if (payload?.kind === 'mon' && payload.from === 'lineUp') moveToBox(payload.instanceId);
         }}
@@ -383,37 +545,59 @@ export function BoxScreen() {
           <TeamCard
             key={mon.instanceId}
             mon={mon}
-            onDragStart={(e) =>
-              setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'box' })
-            }
+            selection={selection}
+            onDragStart={(e) => {
+              setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'box' });
+              selection.beginDrag(mon.instanceId);
+            }}
+            onDragEnd={selection.endDrag}
             actions={
-              <button
-                disabled={full}
-                onClick={() => moveToLineUp(mon.instanceId)}
-                title={full ? 'Line-up is full' : 'Add to the line-up'}
-              >
-                +
-              </button>
+              <>
+                <CombineButton mon={mon} selection={selection} />
+                <button
+                  disabled={full}
+                  onClick={() => moveToLineUp(mon.instanceId)}
+                  title={full ? 'Line-up is full' : 'Add to the line-up'}
+                >
+                  +
+                </button>
+              </>
             }
           />
         ))}
         {run.box.length === 0 && <p className="map-note">Nothing stored. Catch something.</p>}
       </div>
+
+      {selection.pendingId !== null && (
+        <p className="combine-hint">
+          Pick another of the same family to combine with — or press ⊕ again to cancel.
+        </p>
+      )}
+      <FusionNote />
     </div>
   );
 }
 
-/** One mon, as a draggable card. Used by the line-up row and by both grids in the Box. */
+/**
+ * One mon, as a draggable card. Used by the line-up row and by both grids in the Box.
+ *
+ * The card is a drop target only while a merge would actually land — the gaps between slots stay
+ * the place a reorder is dropped, so the two drags never compete for the same pixel.
+ */
 function TeamCard({
   mon,
   index,
   actions,
   onDragStart,
+  onDragEnd,
+  selection,
 }: {
   mon: PokemonInstance;
   index?: number;
   actions?: React.ReactNode;
   onDragStart?: (event: React.DragEvent) => void;
+  onDragEnd?: () => void;
+  selection?: CombineSelection;
 }) {
   const species = speciesOf(mon.speciesId);
   if (species === null) return null;
@@ -422,22 +606,52 @@ function TeamCard({
   const since = expSinceEvolution(mon);
   const canEvolve = species.evolvesIntoId !== null;
 
+  const selected = selection?.pendingId === mon.instanceId;
+  const candidate = selection?.isCandidate(mon) ?? false;
+  const merged = candidate ? (selection?.previewFor(mon) ?? null) : null;
+  const fused = mon.timesFused ?? 0;
+
   return (
     <div
-      className={`team-card ${index === 0 ? 'lead' : index === 1 ? 'support' : ''}`}
+      className={`team-card ${index === 0 ? 'lead' : index === 1 ? 'support' : ''} ${selected === true ? 'combining' : ''} ${candidate ? 'combine-candidate' : ''}`}
       draggable={onDragStart !== undefined}
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragEnter={candidate ? acceptDrop : undefined}
+      onDragOver={candidate ? acceptDrop : undefined}
+      onDrop={
+        candidate
+          ? (event) => {
+              event.preventDefault();
+              // Stopped, or the grid underneath treats the same drop as a move and shuffles the
+              // mon that was just merged away.
+              event.stopPropagation();
+              selection?.dropOnto(mon.instanceId, event);
+            }
+          : undefined
+      }
     >
       {index !== undefined && <span className="slot-number">{index + 1}</span>}
       <img src={spriteUrl(species, { facing: 'front' })} alt="" />
       <div className="team-meta">
-        <span className="team-name">{species.name}</span>
+        <span className="team-name">
+          {species.name}
+          {fused > 0 && (
+            <em title={`${fused} mon${fused === 1 ? '' : 's'} folded into this one`}>⊕{fused}</em>
+          )}
+        </span>
         <span className="team-figures">
           {stats.attack} atk · {stats.health} hp · spd {stats.speed}
         </span>
-        <span className="team-exp" title={`${mon.exp} lifetime EXP`}>
-          {canEvolve ? `${since}/${EXP_PER_EVOLUTION} to evolve` : `${mon.exp} exp`}
-        </span>
+        {merged !== null ? (
+          <span className="team-preview">
+            → {merged.attack} atk · {merged.health} hp if combined
+          </span>
+        ) : (
+          <span className="team-exp" title={`${mon.exp} lifetime EXP`}>
+            {canEvolve ? `${since}/${EXP_PER_EVOLUTION} to evolve` : `${mon.exp} exp`}
+          </span>
+        )}
         <span className="team-types">
           {species.types.map((t) => (
             <img key={t} src={`/icons/types/${t.toLowerCase()}.png`} alt={t} title={t} />
@@ -449,10 +663,38 @@ function TeamCard({
   );
 }
 
+/**
+ * Evolutions earned by the fight that just ended, played once before the screen behind them.
+ *
+ * Keyed by the node and by what evolved, so dismissing the ceremony doesn't re-arm it on the next
+ * render and the next fight gets its own.
+ */
+function useEvolutionCeremony() {
+  const result = useRunStore((s) => s.lastResult);
+  const [seen, setSeen] = useState<string | null>(null);
+
+  const evolutions = result?.report.evolutions ?? [];
+  const key =
+    result === null ? null : `${result.nodeId}:${evolutions.map((e) => e.instanceId + e.to.id).join(',')}`;
+
+  return {
+    evolutions,
+    pending: key !== null && evolutions.length > 0 && seen !== key,
+    finish: () => setSeen(key),
+  };
+}
+
 export function ResultPanel() {
   const result = useRunStore((s) => s.lastResult);
   const dismiss = useRunStore((s) => s.dismissResult);
+  const ceremony = useEvolutionCeremony();
   if (result === null) return null;
+
+  // The ceremony comes first and the tally waits behind it: an evolution is the one thing a fight
+  // produces that is worth stopping for, and it cannot compete with a list it is an item in.
+  if (ceremony.pending) {
+    return <EvolutionScene evolutions={ceremony.evolutions} onDone={ceremony.finish} />;
+  }
 
   const won = result.outcome === 'SideAWins';
 
@@ -483,7 +725,13 @@ export function ResultPanel() {
 export function RunOverPanel() {
   const run = useRunStore((s) => s.run);
   const startRun = useRunStore((s) => s.startRun);
+  const ceremony = useEvolutionCeremony();
   const won = run.badges >= BADGES_TO_WIN;
+
+  // The last fight of a run evolves things too, and the run ending is no reason to skip it.
+  if (ceremony.pending) {
+    return <EvolutionScene evolutions={ceremony.evolutions} onDone={ceremony.finish} />;
+  }
 
   return (
     <div className="panel result-panel">

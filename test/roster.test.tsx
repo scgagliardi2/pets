@@ -14,7 +14,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DRAG_MIME, readDragPayload, setDragPayload } from '../src/ui/dragDrop.js';
 import { BoxScreen, TeamBuilder } from '../src/ui/RunScreen.js';
 import { useRunStore } from '../src/state/runStore.js';
-import { createInstance } from '../src/content/factory.js';
+import { createInstance, statsOf } from '../src/content/factory.js';
 import { createRun } from '../src/meta/runState.js';
 import { MAX_PARTY_SIZE } from '../src/meta/progression.js';
 
@@ -230,5 +230,158 @@ describe('the Box screen', () => {
     useRunStore.setState({ run: { ...useRunStore.getState().run, box: [] } });
     render(<BoxScreen />);
     expect(screen.getByText(/Nothing stored/)).toBeDefined();
+  });
+});
+
+describe('the type buffs outside battle', () => {
+  beforeEach(() => {
+    useRunStore.setState({
+      run: createRun(1, [
+        createInstance('Charmander', { instanceId: 'a' }),
+        createInstance('Squirtle', { instanceId: 'b' }),
+        createInstance('Pidgey', { instanceId: 'c' }),
+      ]),
+      phase: 'map',
+      lastFusion: null,
+    });
+  });
+
+  it('names every synergy the line-up is carrying, with its count', () => {
+    render(<TeamBuilder />);
+
+    // One of each: the same counts the battle screen's corners would show for this team.
+    expect(screen.getByText('Ember Burst x1')).toBeDefined();
+    expect(screen.getByText('Shell Guard x1')).toBeDefined();
+    expect(screen.getByText('Steady Growth x1')).toBeDefined();
+    expect(screen.getByText('Tailwind x1')).toBeDefined();
+  });
+
+  it('counts a second mon of a type, so the readout moves as the team is edited', () => {
+    useRunStore.setState({
+      run: {
+        ...useRunStore.getState().run,
+        lineUp: [
+          createInstance('Charmander', { instanceId: 'a' }),
+          createInstance('Charmander', { instanceId: 'd' }),
+        ],
+      },
+    });
+    render(<TeamBuilder />);
+
+    expect(screen.getByText('Ember Burst x2')).toBeDefined();
+  });
+
+  it('spells the effect out where there is room for it, on the Box screen', () => {
+    render(<BoxScreen />);
+    expect(screen.getByText(/damage to the foe's Lead as the fight opens/)).toBeDefined();
+  });
+});
+
+describe('combining two of a family', () => {
+  beforeEach(() => {
+    useRunStore.setState({
+      run: {
+        ...createRun(1, [
+          createInstance('Charmander', { instanceId: 'a', exp: 3 }),
+          createInstance('Charmeleon', { instanceId: 'b', exp: 4, timesEvolved: 1 }),
+          createInstance('Squirtle', { instanceId: 'c' }),
+        ]),
+        box: [createInstance('Charmander', { instanceId: 'boxed' })],
+      },
+      phase: 'map',
+      lastFusion: null,
+    });
+  });
+
+  it('offers a mon with a partner and refuses one without', () => {
+    render(<TeamBuilder />);
+
+    expect(screen.getAllByTitle('Combine with another of its family')).toHaveLength(2);
+    const alone = screen.getByTitle('Nothing of its family to combine with') as HTMLButtonElement;
+    expect(alone.disabled).toBe(true);
+  });
+
+  it('merges the pair the player picks, keeping the evolved form', () => {
+    render(<TeamBuilder />);
+    const before = {
+      charmander: statsOf(useRunStore.getState().run.lineUp[0]!),
+      charmeleon: statsOf(useRunStore.getState().run.lineUp[1]!),
+    };
+
+    // Pick the Charmander, then commit into the Charmeleon.
+    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
+    fireEvent.click(screen.getByTitle('Combine into Charmeleon'));
+
+    const lineUp = useRunStore.getState().run.lineUp;
+    expect(lineUp.map((m) => m.instanceId)).toEqual(['b', 'c']);
+
+    const merged = statsOf(lineUp[0]!);
+    expect(merged.attack).toBe(Math.max(before.charmander.attack, before.charmeleon.attack) + 1);
+    expect(merged.health).toBe(Math.max(before.charmander.health, before.charmeleon.health) + 1);
+  });
+
+  it('shows what the merge would produce before it is committed', () => {
+    render(<TeamBuilder />);
+    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
+
+    expect(screen.getByText(/if combined/)).toBeDefined();
+  });
+
+  it('cancels on a second press, leaving the team alone', () => {
+    render(<TeamBuilder />);
+    const start = screen.getAllByTitle('Combine with another of its family')[0]!;
+
+    fireEvent.click(start);
+    fireEvent.click(screen.getByTitle('Cancel combine'));
+
+    expect(screen.queryByTitle('Combine into Charmeleon')).toBeNull();
+    expect(useRunStore.getState().run.lineUp).toHaveLength(3);
+  });
+
+  it('merges by dragging one mon onto another of its family', () => {
+    const { container } = render(<TeamBuilder />);
+    const cards = container.querySelectorAll('.team-card');
+
+    // The drag has to start for the target to become a drop target at all — that is what tells
+    // the card whether this particular mon would merge into it.
+    fireEvent.dragStart(cards[0]!, { dataTransfer: payloadFor('a', 'lineUp') });
+    fireEvent.drop(container.querySelectorAll('.team-card')[1]!, {
+      dataTransfer: payloadFor('a', 'lineUp'),
+    });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'c']);
+  });
+
+  it('will not merge a mon onto something outside its family', () => {
+    const { container } = render(<TeamBuilder />);
+    const cards = container.querySelectorAll('.team-card');
+
+    fireEvent.dragStart(cards[0]!, { dataTransfer: payloadFor('a', 'lineUp') });
+    fireEvent.drop(container.querySelectorAll('.team-card')[2]!, {
+      dataTransfer: payloadFor('a', 'lineUp'),
+    });
+
+    // Both are still there: a drop on a mon of another family is not a merge.
+    expect(useRunStore.getState().run.lineUp).toHaveLength(3);
+  });
+
+  it('feeds a boxed mon to one that is fighting, and says what came out', () => {
+    render(<BoxScreen />);
+
+    fireEvent.click(screen.getAllByTitle('Combine with another of its family').pop()!);
+    fireEvent.click(screen.getByTitle('Combine into Charmeleon'));
+
+    const run = useRunStore.getState().run;
+    expect(run.box).toHaveLength(0);
+    expect(run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'b', 'c']);
+    expect(screen.getByText(/absorbed its own kind/)).toBeDefined();
+  });
+
+  it('marks a mon that has been fused', () => {
+    render(<TeamBuilder />);
+    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
+    fireEvent.click(screen.getByTitle('Combine into Charmeleon'));
+
+    expect(screen.getByTitle('1 mon folded into this one')).toBeDefined();
   });
 });

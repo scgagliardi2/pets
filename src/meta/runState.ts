@@ -13,6 +13,7 @@
  */
 
 import type { PokemonInstance } from '../content/factory.js';
+import { combine, type Fusion } from './fusion.js';
 import { MAX_PARTY_SIZE, STARTING_MONEY, STARTING_MORALE } from './progression.js';
 import { spendBall, STARTING_BALLS, type BallInventory, type BallTier } from './balls.js';
 
@@ -110,6 +111,54 @@ export function reorderLineUp(run: RunState, instanceId: string, toIndex: number
   const [mon] = next.splice(from, 1);
   next.splice(Math.max(0, Math.min(next.length, toIndex)), 0, mon!);
   return { ...run, lineUp: next };
+}
+
+/** A mon the run owns, wherever it is kept. */
+export const findMon = (run: RunState, instanceId: string): PokemonInstance | null =>
+  allMons(run).find((m) => m.instanceId === instanceId) ?? null;
+
+/**
+ * Folds two mons of a family into one, wherever the two are kept.
+ *
+ * **The survivor lands in the line-up if either half was fighting**, in the earlier of their two
+ * slots. Merging is meant to be a way to turn two bodies into one better one, not a way to
+ * accidentally bench it — and the alternative rule, "it lands where the one you dropped onto
+ * was", can empty a line-up of one by dragging its last mon into the Box.
+ *
+ * Returns null when the two can't merge, so a stale click or a hand-made id changes nothing.
+ */
+export function combineMons(
+  run: RunState,
+  aId: string,
+  bId: string,
+): { run: RunState; fusion: Fusion } | null {
+  const a = findMon(run, aId);
+  const b = findMon(run, bId);
+  if (a === null || b === null) return null;
+
+  const fusion = combine(a, b);
+  if (fusion === null) return null;
+
+  const indexIn = (list: readonly PokemonInstance[], id: string): number =>
+    list.findIndex((m) => m.instanceId === id);
+  const positions = (list: readonly PokemonInstance[]): number[] =>
+    [indexIn(list, aId), indexIn(list, bId)].filter((i) => i >= 0);
+
+  const lineUpSlots = positions(run.lineUp);
+  const boxSlots = positions(run.box);
+  const isOther = (m: PokemonInstance): boolean =>
+    m.instanceId !== aId && m.instanceId !== bId;
+
+  const lineUp = run.lineUp.filter(isOther);
+  const box = run.box.filter(isOther);
+
+  if (lineUpSlots.length > 0) {
+    lineUp.splice(Math.min(Math.min(...lineUpSlots), lineUp.length), 0, fusion.mon);
+  } else {
+    box.splice(Math.min(Math.min(...boxSlots), box.length), 0, fusion.mon);
+  }
+
+  return { run: { ...run, lineUp, box }, fusion };
 }
 
 /** A caught mon joins the Box, or the line-up if there's room and the caller asks. */

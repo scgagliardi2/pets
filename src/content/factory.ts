@@ -28,6 +28,19 @@ export interface PokemonInstance {
   /** Damage carried between nodes, if the run carries it. Null means undamaged. */
   readonly currentHP: number | null;
   readonly nickname?: string;
+  /**
+   * Flat Attack and Health a fusion bolted on, on top of everything derived.
+   *
+   * The one thing about a mon that is **stored rather than derived**, and it is stored because it
+   * cannot be rebuilt: a fusion is a fact about two mons that no longer both exist, so there is
+   * nothing left to re-derive it from. Everything else on a stat line still comes from the base
+   * form, the EXP count and the evolutions behind it, and the bonus is simply added last — which
+   * means EXP earned after a fusion keeps growing the mon normally.
+   */
+  readonly bonusAttack?: number;
+  readonly bonusHealth?: number;
+  /** How many mons have been absorbed into this one. Zero for a mon that was never fused. */
+  readonly timesFused?: number;
 }
 
 let nextInstanceOrdinal = 0;
@@ -55,6 +68,9 @@ export interface CreateOptions {
   instanceId?: string;
   nickname?: string;
   currentHP?: number | null;
+  bonusAttack?: number;
+  bonusHealth?: number;
+  timesFused?: number;
 }
 
 /** A new mon of a species. Accepts a dex id, a name, or the species itself. */
@@ -70,6 +86,9 @@ export function createInstance(
     timesEvolved: Math.max(0, options.timesEvolved ?? 0),
     currentHP: options.currentHP ?? null,
     nickname: options.nickname,
+    bonusAttack: Math.max(0, options.bonusAttack ?? 0),
+    bonusHealth: Math.max(0, options.bonusHealth ?? 0),
+    timesFused: Math.max(0, options.timesFused ?? 0),
   };
 }
 
@@ -93,8 +112,29 @@ export function speciesOfInstance(instance: PokemonInstance): Species {
   return found;
 }
 
-/** A mon's current stat line, derived from scratch. */
+/**
+ * A mon's current stat line, derived from scratch, plus whatever a fusion added.
+ *
+ * The derived half is rebuilt every time it is asked for; the fusion bonus is the only part read
+ * out of the record rather than recomputed. See `bonusAttack` on `PokemonInstance` for why.
+ */
 export function statsOf(instance: PokemonInstance): Stats {
+  const species = speciesOfInstance(instance);
+  const derived = statsAtExp(
+    baseFormOf(species),
+    instance.instanceId,
+    instance.exp,
+    instance.timesEvolved,
+  );
+  return {
+    attack: derived.attack + Math.max(0, instance.bonusAttack ?? 0),
+    health: derived.health + Math.max(0, instance.bonusHealth ?? 0),
+    speed: derived.speed,
+  };
+}
+
+/** The stat line a mon would have with no fusion bonus — what EXP and evolution alone bought. */
+export function derivedStatsOf(instance: PokemonInstance): Stats {
   const species = speciesOfInstance(instance);
   return statsAtExp(baseFormOf(species), instance.instanceId, instance.exp, instance.timesEvolved);
 }

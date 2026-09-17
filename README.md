@@ -32,6 +32,8 @@ There is **no UI yet**. The sim is exercised through the test suite and the text
 
 ## Getting started
 
+Node 22.12 or newer — that is what the build toolchain (Vite 8, Vitest 5) requires.
+
 ```bash
 npm install
 npm test            # the full suite, including the shared golden fixtures
@@ -104,6 +106,7 @@ src/
     progression.ts    how difficulty scales
     runState.ts       party, box, morale, money, badges
     experience.ts     EXP, evolution, catch-up
+    fusion.ts         combining two mons of a family into one
     encounters.ts     who you fight, and the first Location
   state/
     runStore.ts       the one mutable thing
@@ -116,8 +119,10 @@ src/
     theme.css
     MonView.tsx       sprite, charge arc, shield bubble, readout
     BattleScreen.tsx
-    RunScreen.tsx     map, team, results
-    TraitCounters.tsx
+    RunScreen.tsx     map, team, results, combining
+    TraitCounters.tsx the field's type counters
+    TeamSynergies.tsx the same counts, on the screens where the team is edited
+    EvolutionScene.tsx the ceremony played after a fight that grew something
   harness/
     fight.ts          text-mode fight printer
 test/
@@ -215,6 +220,13 @@ Locations, each with its own type theme and Gym Leader. Every win gives one EXP 
 costs one Morale, and at zero Morale the run ends. **Damage does not carry between fights** —
 everyone is restored after every battle, fainted included — so the pressure is Morale, not
 attrition, and a run is decided by the team you build rather than the health you nursed.
+
+Between fights you can also **combine two mons of one family** — a Charmander into a Charmeleon,
+or two Charmanders — anywhere you can edit the team. The one furthest along the chain survives
+with the higher Attack and Health of the two plus one, a point of EXP, and sometimes the evolution
+that point tips it into; the other is consumed. It is the one place a stat is *stored* on a mon
+rather than derived from its EXP, for the reason `meta/fusion.ts` gives: the mon the bonus came
+from no longer exists, so there is nothing left to re-derive it from.
 
 ## Balance findings worth revisiting
 
