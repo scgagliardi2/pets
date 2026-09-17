@@ -77,6 +77,25 @@ function makeXorshift32(initialState: number): Rng {
 }
 
 /**
+ * A seed derived from a string — a node id, an instance id, anything that names one thing.
+ *
+ * FNV-1a, which is small, has no dependencies and avalanches well enough that ids differing only
+ * in their last character ("L0-1-0" and "L0-1-1") land far apart. That last property is the whole
+ * point: seeds built from a node's *position* alone gave every node in a layer the same encounter,
+ * because the position is what they have in common.
+ *
+ * The result is a signed 32-bit integer, which `createRandom` handles — it takes the seed through
+ * `>>> 0` before use.
+ */
+export function hashString(text: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+  }
+  return hash | 0;
+}
+
+/**
  * The standard battle RNG: seed conditioned through splitmix32, stream from xorshift32.
  * One instance per battle (battle-sim-spec.md §10).
  */

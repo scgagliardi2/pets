@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createInstance, statsOf, type PokemonInstance } from '../src/content/factory.js';
 import { speciesNamed, speciesOf } from '../src/content/index.js';
+import { locationFor } from '../src/meta/locations.js';
 import {
   CATCH_UP_EXP_GAP,
   EXP_PER_EVOLUTION,
@@ -48,6 +49,7 @@ import {
   promoteFromBox,
   reorderLineUp,
   spendMorale,
+  type MapNode,
   type RunState,
 } from '../src/meta/runState.js';
 
@@ -348,6 +350,63 @@ describe('the Location', () => {
   });
 });
 
+describe('who a node fields', () => {
+  const wildNode = (layer: number, id: string): MapNode => ({ id, type: 'Wild', layer, label: '' });
+
+  it('gives two nodes on the same layer different opposition', () => {
+    // They were seeded from position alone, so every node on a layer fielded the same team — all
+    // three entry nodes the same Eevee. Nothing about the game looked random after that.
+    const teamAt = (id: string) =>
+      generateWildEncounter(1, 2, wildNode(2, id)).map((m) => m.speciesId).join();
+
+    const siblings = ['L0-1-0', 'L0-1-1', 'L0-1-2', 'L0-1-3'].map(teamAt);
+    expect(new Set(siblings).size).toBe(siblings.length);
+  });
+
+  it('is still the same fight every time that one node is entered', () => {
+    // The other half: stable per node, so re-entering after a loss is the same fight rather than
+    // a re-roll, and previewing a node costs nothing.
+    const node = wildNode(3, 'L0-2-1');
+    expect(generateWildEncounter(9, 1, node).map((m) => m.speciesId)).toEqual(
+      generateWildEncounter(9, 1, node).map((m) => m.speciesId),
+    );
+  });
+
+  it('gives different runs different opposition at the same node', () => {
+    const node = wildNode(2, 'L0-1-0');
+    const runs = [1, 2, 3, 4, 5, 6].map((seed) =>
+      generateWildEncounter(seed, 1, node).map((m) => m.speciesId).join(),
+    );
+    expect(new Set(runs).size).toBeGreaterThan(1);
+  });
+
+  it('does not field the same species twice while the pool has others', () => {
+    // Drawing with replacement put the same mon up two or three times often enough to read as a
+    // bug. A team may still repeat once the pool is smaller than the team, which is the only case
+    // where the alternative is no encounter at all.
+    for (let badges = 3; badges < BADGES_TO_WIN; badges++) {
+      const size = wildEncounterSize(badges);
+      const pool = encounterPool(badges);
+      if (pool.length < size) continue;
+
+      for (let i = 0; i < 25; i++) {
+        const team = generateWildEncounter(i + 1, badges, wildNode(3, `n-${i}`));
+        const species = new Set(team.map((m) => m.speciesId));
+        expect(species.size, `badges ${badges}, seed ${i + 1}`).toBe(team.length);
+      }
+    }
+  });
+
+  it('gives a Gym Leader a line-up rather than one species repeated', () => {
+    for (let badges = 0; badges < BADGES_TO_WIN; badges++) {
+      const team = generateGymTeam(5, badges, 4, locationFor(badges).gymTheme);
+      const pool = encounterPool(badges, locationFor(badges).gymTheme);
+      if (pool.length < team.length) continue;
+      expect(new Set(team.map((m) => m.speciesId)).size, `badge ${badges}`).toBe(team.length);
+    }
+  });
+});
+
 describe('the tier curve outpaces EXP, which is what catching is for', () => {
   it('a Location is worth exactly the EXP the next one is pitched forward by', () => {
     // These two have to climb together or the player falls behind by design.
@@ -368,15 +427,33 @@ describe('the tier curve outpaces EXP, which is what catching is for', () => {
     expect(maxTier(1)).toBe(2);
   });
 
-  it('a starter that won every fight in the first Location is still behind a second-Location wild', () => {
-    const starter = defaultStarters()[0]!;
-    const afterLocationOne = raiseToExp(starter, EXP_PER_BADGE).mon;
-    const mine = statsOf(afterLocationOne);
+  it('puts something in the second Location a fully-grown starter cannot match', () => {
+    // The claim is about the *pool*, not about one draw. It used to be checked against a single
+    // seeded encounter, which passed only because that seed happened to draw the one tier-2
+    // species in the Location's themed pool — the other twelve are tier 1, and the assertion
+    // flipped the moment the seeding changed. What is actually true, and is what catching exists
+    // to answer, is that the tier cap puts something out of the starter's reach into the pool.
+    const mine = statsOf(raiseToExp(defaultStarters()[0]!, EXP_PER_BADGE).mon);
+    const budget = (s: { attack: number; health: number }): number => s.attack + s.health;
 
-    const node = FIRST_LOCATION.nodes[0]!;
-    const theirs = generateWildEncounter(1, 1, node).map((m) => statsOf(m));
-    const strongest = Math.max(...theirs.map((s) => s.attack + s.health));
+    const pool = encounterPool(1, locationFor(1).typeBias).map((species) =>
+      budget(statsOf(createInstance(species, { exp: wildExp(1, 2), instanceId: 'probe' }))),
+    );
 
-    expect(mine.attack + mine.health).toBeLessThan(strongest);
+    expect(Math.max(...pool)).toBeGreaterThan(budget(mine));
+  });
+
+  it('but most of what that Location fields is still beatable, or the run would be over', () => {
+    // The other half of the same fact, and the reason a run is playable at all: the tier cap makes
+    // a stronger mon *available*, it does not make every encounter one.
+    const mine = statsOf(raiseToExp(defaultStarters()[0]!, EXP_PER_BADGE).mon);
+    const budget = (s: { attack: number; health: number }): number => s.attack + s.health;
+
+    const pool = encounterPool(1, locationFor(1).typeBias).map((species) =>
+      budget(statsOf(createInstance(species, { exp: wildExp(1, 2), instanceId: 'probe' }))),
+    );
+    const beatable = pool.filter((b) => b <= budget(mine)).length;
+
+    expect(beatable).toBeGreaterThan(pool.length / 2);
   });
 });

@@ -110,6 +110,7 @@ describe('the results screen', () => {
     badge: false,
     moraleLost: 0,
     report: { gained: {}, evolutions },
+    bounty: null,
   });
 
   beforeEach(() => {

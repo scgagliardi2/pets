@@ -9,12 +9,20 @@
 import { create } from 'zustand';
 
 import type { PokemonInstance } from '../content/factory.js';
-import { catchUpFloor, grantWinExp, type GrowthReport } from '../meta/experience.js';
+import { catchUpFloor, grantWinExp, mergeReports, type GrowthReport } from '../meta/experience.js';
 import { hasBall } from '../meta/balls.js';
 import { caughtInstance, type ThrowResult } from '../meta/catching.js';
 import { defaultStarters, opponentsFor } from '../meta/encounters.js';
 import { generateLocationMap, reachableFrom, type LocationMap } from '../meta/mapGenerator.js';
 import { locationFor, type Location } from '../meta/locations.js';
+import {
+  eventSeedFor,
+  grantBounty,
+  resolveRoadEvent,
+  rollRoadEvent,
+  type Bounty,
+  type RoadEvent,
+} from '../meta/roadEvents.js';
 import { buy, type ShopItem } from '../meta/shop.js';
 import {
   BADGES_TO_WIN,
@@ -33,6 +41,8 @@ import {
   healAll,
   isRunOver,
   isRunWon,
+  leaveNode,
+  placeInSlot,
   promoteFromBox,
   reorderLineUp,
   spendMorale,
@@ -44,7 +54,13 @@ import type { Fusion } from '../meta/fusion.js';
 import type { BattleOutcome } from '../sim/index.js';
 
 /** Where the player is in the loop. */
-export type Phase = 'map' | 'battle' | 'result' | 'shop' | 'box' | 'over';
+export type Phase = 'map' | 'battle' | 'result' | 'shop' | 'encounter' | 'box' | 'over';
+
+/** An Encounter after a choice has been taken: what it said, and what it grew. */
+export interface EncounterResult {
+  readonly message: string;
+  readonly report: GrowthReport;
+}
 
 /** What a fight did, for the results screen. */
 export interface BattleResult {
@@ -56,6 +72,8 @@ export interface BattleResult {
   badge: boolean;
   moraleLost: number;
   report: GrowthReport;
+  /** Paid on top of the ordinary win, when the fight came out of an Encounter. */
+  bounty: Bounty | null;
 }
 
 interface RunStore {
@@ -69,6 +87,12 @@ interface RunStore {
   activeNode: MapNode | null;
   opponents: PokemonInstance[];
   lastResult: BattleResult | null;
+  /** The Encounter being played, while phase is 'encounter'. */
+  event: RoadEvent | null;
+  /** What the chosen branch did, once one has been chosen. Null while the choice is still open. */
+  eventResult: EncounterResult | null;
+  /** What winning the fight an Encounter started will pay. Cleared once paid. */
+  pendingBounty: Bounty | null;
   /** Throws this fight, newest first — what the battle screen narrates. */
   throwLog: ThrowResult[];
   /** The most recent fusion, so the team screens can say what came out of it. */
@@ -76,12 +100,16 @@ interface RunStore {
 
   startRun: (seed?: number) => void;
   enter: (nodeId: string) => void;
+  /** Takes an Encounter's branch. A no-op once one has been taken, so a double click can't take two. */
+  chooseEncounter: (index: number) => void;
+  /** Leaves a resolved Encounter, marking its node taken. */
+  leaveEncounter: () => void;
   purchase: (item: ShopItem) => void;
   leaveShop: () => void;
   openBox: () => void;
   closeBox: () => void;
-  /** Moves a mon to an index in the line-up, pulling it out of the Box if that is where it is. */
-  placeInLineUp: (instanceId: string, toIndex: number) => void;
+  /** Drops a mon on a line-up slot: swap with whoever is there, or take the slot if it is free. */
+  dropOnSlot: (instanceId: string, slotIndex: number) => void;
   /** Called by the battle screen when the fight ends. */
   finishBattle: (outcome: BattleOutcome) => void;
   dismissResult: () => void;
@@ -101,19 +129,32 @@ interface RunStore {
 
 const freshRun = (seed: number) => createRun(seed, defaultStarters());
 
+/** A seed for a run nobody asked for a seed for. */
+export const randomSeed = (): number => Math.floor(Math.random() * 1_000_000);
+
+// The store's *initial* state is a real run, not a placeholder — the app opens straight onto the
+// map without anyone pressing "New run". It was seeded 1, which meant every page load replayed the
+// same Location against the same opposition and the game looked like it had no randomness in it at
+// all. Tests that care about a specific run set one; nothing else should depend on this value.
+const openingSeed = randomSeed();
+const openingMap = generateLocationMap(openingSeed, 0);
+
 export const useRunStore = create<RunStore>((set, get) => ({
-  run: freshRun(1),
+  run: freshRun(openingSeed),
   phase: 'map',
-  map: generateLocationMap(1, 0),
+  map: openingMap,
   location: locationFor(0),
-  available: generateLocationMap(1, 0).entryIds.slice(),
+  available: [...openingMap.entryIds],
   activeNode: null,
   opponents: [],
   lastResult: null,
+  event: null,
+  eventResult: null,
+  pendingBounty: null,
   throwLog: [],
   lastFusion: null,
 
-  startRun: (seed = Math.floor(Math.random() * 1_000_000)) => {
+  startRun: (seed = randomSeed()) => {
     const map = generateLocationMap(seed, 0);
     set({
       run: freshRun(seed),
@@ -124,6 +165,9 @@ export const useRunStore = create<RunStore>((set, get) => ({
       activeNode: null,
       opponents: [],
       lastResult: null,
+      event: null,
+      eventResult: null,
+      pendingBounty: null,
       throwLog: [],
       lastFusion: null,
     });
@@ -141,18 +185,76 @@ export const useRunStore = create<RunStore>((set, get) => ({
       return;
     }
 
+    if (node.type === 'Encounter') {
+      // Rolled from the node's own seed rather than from the moment of entry, so the Encounter a
+      // node holds is a fact about the map — the same one however often you look at it.
+      const event = rollRoadEvent(run, get().location, eventSeedFor(run.seed, run.badges, node));
+      set({
+        run: enterNode(run, nodeId),
+        phase: 'encounter',
+        activeNode: node,
+        event,
+        eventResult: null,
+        pendingBounty: null,
+        opponents: [],
+      });
+      return;
+    }
+
     const opponents = opponentsFor(run.seed, run.badges, node, run.lineUp.length, get().location);
     set({
       run: enterNode(run, nodeId),
       phase: 'battle',
       activeNode: node,
       opponents,
+      pendingBounty: null,
       throwLog: [],
     });
   },
 
+  chooseEncounter: (index) => {
+    const { run, event, eventResult } = get();
+    // One branch per Encounter. The event object is pre-rolled and pure, so without this a second
+    // click would resolve it again against the run its first click had already changed.
+    if (event === null || eventResult !== null) return;
+
+    const result = resolveRoadEvent(event, index, run);
+    if (result === null) return;
+
+    if (result.foes.length > 0) {
+      set({
+        run: result.run,
+        phase: 'battle',
+        opponents: [...result.foes],
+        pendingBounty: result.bounty,
+        eventResult: { message: result.message, report: result.report },
+        throwLog: [],
+      });
+      return;
+    }
+
+    set({
+      run: result.run,
+      eventResult: { message: result.message, report: result.report },
+    });
+  },
+
+  leaveEncounter: () => {
+    const { run, activeNode, map } = get();
+    if (activeNode === null) return;
+    const next = completeNode(healAll(run), activeNode.id);
+    set({
+      run: next,
+      phase: isRunOver(next) ? 'over' : 'map',
+      activeNode: null,
+      event: null,
+      eventResult: null,
+      available: reachableFrom(map, next.visited),
+    });
+  },
+
   finishBattle: (outcome) => {
-    const { run, activeNode } = get();
+    const { run, activeNode, pendingBounty, eventResult } = get();
     if (activeNode === null) return;
 
     const won = outcome === 'SideAWins';
@@ -170,8 +272,11 @@ export const useRunStore = create<RunStore>((set, get) => ({
       const granted = grantWinExp(next, EXP_PER_WIN);
       next = granted.run;
       report = granted.report;
-      money = moneyForWin(isGym);
+      money = moneyForWin(activeNode.type);
       next = addMoney(next, money);
+      // The bounty is banked here but reported separately, so the result panel can name what the
+      // Encounter paid rather than folding it into the node's ordinary takings.
+      if (pendingBounty !== null) next = grantBounty(next, pendingBounty);
       if (isGym) {
         next = awardBadge(next);
         badge = true;
@@ -180,11 +285,21 @@ export const useRunStore = create<RunStore>((set, get) => ({
       next = spendMorale(next, moraleLost);
     }
 
+    // Growth an Encounter's own branch granted is folded in, so one screen narrates the whole node
+    // rather than the evolution being lost behind the fight it paid for.
+    if (eventResult !== null) report = mergeReports(eventResult.report, report);
+
     // Damage never carries: HP is restored and the fainted are back, win or lose.
     next = healAll(next);
-    // A lost node is still resolved — you don't get to retry it. Losing costs the node and the
-    // Morale, which is what makes a run finite.
-    next = completeNode(next, activeNode.id);
+    // A win consumes the node; a loss does not. What a loss costs is the Morale, and Morale is
+    // already what makes a run finite — taking the node as well can strand a player on a layer
+    // that offered them one way forward. The retry is not free: the opponents and the battle seed
+    // are drawn from the node, so the same team fights the same fight, and something about the
+    // line-up has to change for the second attempt to go differently.
+    //
+    // A draw still consumes the node. It costs no Morale, so a retryable draw is an unlimited
+    // number of identical re-runs at no price at all.
+    next = won || outcome === 'Draw' ? completeNode(next, activeNode.id) : leaveNode(next);
 
     // A won Gym ends the Location: a fresh map, a fresh Location, and the visited list reset so
     // the new map's entry layer is what's on offer.
@@ -202,6 +317,9 @@ export const useRunStore = create<RunStore>((set, get) => ({
       location,
       available: reachableFrom(map, next.visited),
       phase: isRunOver(next) || isRunWon(next, BADGES_TO_WIN) ? 'over' : 'result',
+      event: null,
+      eventResult: null,
+      pendingBounty: null,
       lastResult: {
         outcome,
         nodeId: activeNode.id,
@@ -211,6 +329,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
         badge,
         moraleLost,
         report,
+        bounty: won ? pendingBounty : null,
       },
     });
   },
@@ -265,15 +384,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
   openBox: () => set({ phase: 'box' }),
   closeBox: () => set({ phase: 'map' }),
 
-  placeInLineUp: (instanceId, toIndex) => {
-    const { run } = get();
-    const inBox = run.box.some((m) => m.instanceId === instanceId);
-    // Promote first if it is coming from the Box, then position it — one action from the player's
-    // point of view, two from the run's.
-    const promoted = inBox ? promoteFromBox(run, instanceId) : run;
-    if (inBox && promoted === run) return; // line-up was full
-    set({ run: reorderLineUp(promoted, instanceId, toIndex) });
-  },
+  dropOnSlot: (instanceId, slotIndex) => set({ run: placeInSlot(get().run, instanceId, slotIndex) }),
 
   moveToLineUp: (instanceId) => set({ run: promoteFromBox(get().run, instanceId) }),
   moveToBox: (instanceId) => set({ run: benchToBox(get().run, instanceId) }),

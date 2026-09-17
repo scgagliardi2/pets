@@ -15,9 +15,20 @@
 import type { PokemonInstance } from '../content/factory.js';
 import { combine, type Fusion } from './fusion.js';
 import { MAX_PARTY_SIZE, STARTING_MONEY, STARTING_MORALE } from './progression.js';
-import { spendBall, STARTING_BALLS, type BallInventory, type BallTier } from './balls.js';
+import { addBalls, spendBall, STARTING_BALLS, type BallInventory, type BallTier } from './balls.js';
 
-export type NodeType = 'Wild' | 'Gym' | 'Center';
+/**
+ * What a node on a Location's path is.
+ *
+ * Five kinds, and they are the five the original map icons were drawn for: a wild fight, a
+ * trainer whose team you don't see until you take it, a narrative Encounter, the Center, and the
+ * Gym that ends the Location.
+ */
+export type NodeType = 'Wild' | 'Trainer' | 'Encounter' | 'Center' | 'Gym';
+
+/** Node kinds that open the battle screen. The other two resolve on the map layer. */
+export const isBattleNode = (type: NodeType): boolean =>
+  type === 'Wild' || type === 'Trainer' || type === 'Gym';
 
 /** One node on a Location's path. */
 export interface MapNode {
@@ -62,6 +73,18 @@ export const isRunOver = (run: RunState): boolean => run.morale <= 0;
 export const useBall = (run: RunState, tier: BallTier): RunState => ({
   ...run,
   balls: spendBall(run.balls, tier),
+});
+
+/**
+ * Hands the run balls it didn't buy.
+ *
+ * Balls are the only consumable this build has, so they are also what an Encounter means by "an
+ * item" — a reward that is spent rather than banked, and therefore one that can be given
+ * generously without inflating the run's power.
+ */
+export const grantBalls = (run: RunState, tier: BallTier, amount: number): RunState => ({
+  ...run,
+  balls: addBalls(run.balls, tier, Math.max(0, amount)),
 });
 
 export const isRunWon = (run: RunState, badgesToWin: number): boolean => run.badges >= badgesToWin;
@@ -111,6 +134,60 @@ export function reorderLineUp(run: RunState, instanceId: string, toIndex: number
   const [mon] = next.splice(from, 1);
   next.splice(Math.max(0, Math.min(next.length, toIndex)), 0, mon!);
   return { ...run, lineUp: next };
+}
+
+/**
+ * Drops a mon on a line-up slot — the one move a drag makes.
+ *
+ * Four cases, and they are all the same sentence: *the mon you dragged ends up in the slot you
+ * dropped it on*.
+ *
+ * - A line-up mon onto an occupied slot: the two **swap**. Not an insert — inserting has to
+ *   answer "before or after?", which a drop on a card cannot, and a target that guesses puts mons
+ *   a slot away from where they were aimed.
+ * - A line-up mon onto an empty slot: it moves to the end. The line-up is dense — slot 0 leads,
+ *   slot 1 supports, and the rest queue — so there is no such thing as a hole in the middle of it.
+ * - A Box mon onto an occupied slot: they **exchange**. The Box mon takes the slot and the mon it
+ *   displaced takes its place in the Box, which is also what makes a full line-up still swappable
+ *   instead of silently refusing the drop.
+ * - A Box mon onto an empty slot: it joins the line-up at the end.
+ *
+ * Returns the run unchanged when the id names nothing the run owns, so a stale drag is a no-op.
+ */
+export function placeInSlot(run: RunState, instanceId: string, slotIndex: number): RunState {
+  const target = Math.max(0, slotIndex);
+  const fromLineUp = run.lineUp.findIndex((m) => m.instanceId === instanceId);
+
+  if (fromLineUp >= 0) {
+    const occupant = run.lineUp[target];
+    if (occupant === undefined) return reorderLineUp(run, instanceId, run.lineUp.length - 1);
+    if (occupant.instanceId === instanceId) return run;
+
+    const lineUp = [...run.lineUp];
+    lineUp[fromLineUp] = occupant;
+    lineUp[target] = run.lineUp[fromLineUp]!;
+    return { ...run, lineUp };
+  }
+
+  const boxIndex = run.box.findIndex((m) => m.instanceId === instanceId);
+  if (boxIndex < 0) return run;
+  const mon = run.box[boxIndex]!;
+  const occupant = run.lineUp[target];
+
+  if (occupant === undefined) {
+    if (run.lineUp.length >= MAX_PARTY_SIZE) return run;
+    return {
+      ...run,
+      lineUp: [...run.lineUp, mon],
+      box: run.box.filter((_, i) => i !== boxIndex),
+    };
+  }
+
+  const lineUp = [...run.lineUp];
+  lineUp[target] = mon;
+  const box = [...run.box];
+  box[boxIndex] = occupant;
+  return { ...run, lineUp, box };
 }
 
 /** A mon the run owns, wherever it is kept. */
@@ -193,6 +270,17 @@ export function completeNode(run: RunState, nodeId: string): RunState {
   if (run.visited.includes(nodeId)) return { ...run, currentNodeId: null };
   return { ...run, visited: [...run.visited, nodeId], currentNodeId: null };
 }
+
+/**
+ * Steps off the current node **without** marking it resolved, so it is still on offer.
+ *
+ * This is what a lost fight does. Consuming the node on a loss meant a beaten player paid twice —
+ * the Morale and the node — and, worse, could be walked into a Location with no way forward: lose
+ * the only node a layer offered and the map is over for reasons that have nothing to do with the
+ * run's rules. The Morale is the price of a loss; the node stays, and the fight behind it is the
+ * same fight, so a retry has to be paid for by changing the team rather than by rolling again.
+ */
+export const leaveNode = (run: RunState): RunState => ({ ...run, currentNodeId: null });
 
 /**
  * Restores everything after a battle.

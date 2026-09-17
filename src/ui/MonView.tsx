@@ -13,7 +13,15 @@ import { CHARGE_THRESHOLD, type Combatant, type Side } from '../sim/index.js';
 import type { Species } from '../content/index.js';
 import { spriteUrl } from '../content/sprites.js';
 import type { MonFlash } from '../playback/display.js';
-import { CHARGE_ARC, NOMINAL_SPRITE, SHIELD_BUBBLE, spriteBox, type Slot } from './layout.js';
+import {
+  CHARGE_ARC,
+  FIGURES,
+  NOMINAL_SPRITE,
+  SHIELD_BUBBLE,
+  figuresLift,
+  spriteBox,
+  type Slot,
+} from './layout.js';
 
 interface MonViewProps {
   combatant: Combatant;
@@ -150,8 +158,8 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
   // right-hand side is occupied by its own Lead.
   const figureStyle: React.CSSProperties =
     slot.readout === 'right'
-      ? { left: box.left + box.width + 8, top: box.top + box.height - 62 }
-      : { left: box.left + box.width / 2 - 46, top: box.top + box.height + 6 };
+      ? { left: box.left + box.width + 8, top: box.top + box.height - figuresLift() }
+      : { left: box.left + box.width / 2 - FIGURES.bar.width / 2, top: box.top + box.height + 6 };
 
   return (
     <div
@@ -213,11 +221,12 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
         </div>
       )}
 
-      {/* Attack in a burst, HP beside it, and a thin bar underneath so "how hurt is it" stays a
-          glance rather than arithmetic. The name is on hover: with 183 species nobody recognises
-          every sprite, but four permanent labels is a lot of text over the art. */}
-      <div className="figures" style={figureStyle}>
-        <div className="figures-row">
+      {/* Attack in a burst, HP beside it, and the bar underneath so "how hurt is it" stays a
+          glance rather than arithmetic. Its size comes from layout.ts, because the block above is
+          positioned from it. The name is on hover: with 183 species nobody recognises every
+          sprite, but four permanent labels is a lot of text over the art. */}
+      <div className="figures" style={{ ...figureStyle, gap: FIGURES.gap }}>
+        <div className="figures-row" style={{ height: FIGURES.rowHeight }}>
           <span className="figure-attack">
             <svg viewBox="0 0 46 46" width="46" height="46" aria-hidden="true">
               <path d={burstPath(23, 23, 22, 14.5)} fill="#14161a" stroke="#05070a" strokeWidth="1.5" />
@@ -226,7 +235,15 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
           </span>
           <span className="figure-hp">{hp}</span>
         </div>
-        <div className="hp-track">
+        <div
+          className="hp-track"
+          style={{ width: FIGURES.bar.width, height: FIGURES.bar.height }}
+          role="progressbar"
+          aria-label={`${species.name} health`}
+          aria-valuenow={hp}
+          aria-valuemin={0}
+          aria-valuemax={maxHP}
+        >
           <div className={`hp-fill ${hpClass}`} style={{ width: `${hpFraction * 100}%` }} />
         </div>
         <MonBadges combatant={combatant} />

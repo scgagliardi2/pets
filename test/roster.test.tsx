@@ -120,21 +120,88 @@ describe('the team builder', () => {
     expect(button.disabled).toBe(true);
   });
 
-  it('reorders by dropping into a gap between slots', () => {
+  it('swaps two mons when one is dropped on the other', () => {
+    // A drop on a slot is a swap, not an insert. Inserting has to answer "before or after?", and a
+    // drop on a card cannot — which is what used to land mons a slot away from where they were
+    // aimed, and only ever when they were dragged rightwards.
     const { container } = render(<TeamBuilder />);
-    const gaps = container.querySelectorAll('.slot-gap');
+    const slots = container.querySelectorAll('.roster-slot');
 
-    // Drop the third mon into the first gap — it should land at the front.
-    fireEvent.drop(gaps[0]!, { dataTransfer: payloadFor('c', 'lineUp') });
+    fireEvent.drop(slots[2]!, { dataTransfer: payloadFor('a', 'lineUp') });
 
-    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'a', 'b']);
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('swaps the same way in either direction', () => {
+    const { container } = render(<TeamBuilder />);
+    const slots = container.querySelectorAll('.roster-slot');
+
+    fireEvent.drop(slots[0]!, { dataTransfer: payloadFor('c', 'lineUp') });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('draws every slot the line-up could hold, not only the filled ones', () => {
+    const { container } = render(<TeamBuilder />);
+    expect(container.querySelectorAll('.roster-slot')).toHaveLength(MAX_PARTY_SIZE);
+    expect(container.querySelectorAll('.roster-slot.empty')).toHaveLength(MAX_PARTY_SIZE - 3);
+  });
+
+  it('moves a mon to the end when it is dropped on an empty slot', () => {
+    // The line-up is dense — there is no hole to leave in the middle of it — so an empty slot
+    // means "last", whichever empty slot it was.
+    const { container } = render(<TeamBuilder />);
+    const empty = container.querySelectorAll('.roster-slot.empty');
+
+    fireEvent.drop(empty[1]!, { dataTransfer: payloadFor('a', 'lineUp') });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('brings a Box mon into the empty slot it was dropped on', () => {
+    useRunStore.setState({
+      run: {
+        ...useRunStore.getState().run,
+        box: [createInstance('Oddish', { instanceId: 'boxed' })],
+      },
+    });
+    const { container } = render(<TeamBuilder />);
+
+    fireEvent.drop(container.querySelector('.roster-slot.empty')!, {
+      dataTransfer: payloadFor('boxed', 'box'),
+    });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual([
+      'a',
+      'b',
+      'c',
+      'boxed',
+    ]);
+    expect(useRunStore.getState().run.box).toHaveLength(0);
+  });
+
+  it('exchanges a Box mon with whoever is in the slot it was dropped on', () => {
+    useRunStore.setState({
+      run: {
+        ...useRunStore.getState().run,
+        box: [createInstance('Oddish', { instanceId: 'boxed' })],
+      },
+    });
+    const { container } = render(<TeamBuilder />);
+    const slots = container.querySelectorAll('.roster-slot');
+
+    fireEvent.drop(slots[1]!, { dataTransfer: payloadFor('boxed', 'box') });
+
+    const run = useRunStore.getState().run;
+    expect(run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'boxed', 'c']);
+    expect(run.box.map((m) => m.instanceId)).toEqual(['b']);
   });
 
   it('ignores a ball dropped on the roster', () => {
     const { container } = render(<TeamBuilder />);
     const before = useRunStore.getState().run.lineUp.map((m) => m.instanceId);
 
-    fireEvent.drop(container.querySelector('.slot-gap')!, {
+    fireEvent.drop(container.querySelector('.roster-slot')!, {
       dataTransfer: fakeDataTransfer({
         [DRAG_MIME]: JSON.stringify({ kind: 'ball', tier: 'Poke' }),
       }),
@@ -184,11 +251,12 @@ describe('the Box screen', () => {
     expect(run.box.map((m) => m.instanceId)).not.toContain('x');
   });
 
-  it('moves a mon by dragging it from the Box onto the line-up', () => {
+  it('moves a mon by dragging it from the Box onto a line-up slot', () => {
     const { container } = render(<BoxScreen />);
     const lineUpGrid = container.querySelectorAll('.box-grid')[0]!;
+    const empty = lineUpGrid.querySelectorAll('.roster-slot.empty');
 
-    fireEvent.drop(lineUpGrid, { dataTransfer: payloadFor('y', 'box') });
+    fireEvent.drop(empty[0]!, { dataTransfer: payloadFor('y', 'box') });
 
     expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'y']);
   });
@@ -211,7 +279,7 @@ describe('the Box screen', () => {
     expect(useRunStore.getState().run.box.map((m) => m.instanceId)).toContain('b');
   });
 
-  it('refuses to overfill the line-up', () => {
+  it('will not add past a full line-up, and says what to do instead', () => {
     useRunStore.setState({
       run: {
         ...useRunStore.getState().run,
@@ -222,14 +290,39 @@ describe('the Box screen', () => {
     });
     render(<BoxScreen />);
 
-    const add = screen.getAllByTitle('Line-up is full')[0] as HTMLButtonElement;
+    const add = screen.getAllByTitle(/Line-up is full/)[0] as HTMLButtonElement;
     expect(add.disabled).toBe(true);
   });
 
-  it('says so when the Box is empty rather than showing a blank panel', () => {
+  it('still lets a full line-up be traded into, by dropping onto one of its slots', () => {
+    // The old behaviour was a drop that silently did nothing, which is indistinguishable from a
+    // broken drag. An exchange always has somewhere to put the mon it displaced.
+    useRunStore.setState({
+      run: {
+        ...useRunStore.getState().run,
+        lineUp: Array.from({ length: MAX_PARTY_SIZE }, (_, i) =>
+          createInstance('Charmander', { instanceId: `m${i}` }),
+        ),
+      },
+    });
+    const { container } = render(<BoxScreen />);
+    const slots = container.querySelectorAll('.box-grid')[0]!.querySelectorAll('.roster-slot');
+
+    fireEvent.drop(slots[2]!, { dataTransfer: payloadFor('x', 'box') });
+
+    const run = useRunStore.getState().run;
+    expect(run.lineUp).toHaveLength(MAX_PARTY_SIZE);
+    expect(run.lineUp[2]!.instanceId).toBe('x');
+    expect(run.box.map((m) => m.instanceId)).toContain('m2');
+  });
+
+  it('shows empty slots in the Box rather than a blank panel', () => {
     useRunStore.setState({ run: { ...useRunStore.getState().run, box: [] } });
-    render(<BoxScreen />);
-    expect(screen.getByText(/Nothing stored/)).toBeDefined();
+    const { container } = render(<BoxScreen />);
+
+    const store = container.querySelector('.box-store')!;
+    expect(store.querySelectorAll('.roster-slot.empty').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/store a mon here/).length).toBeGreaterThan(0);
   });
 });
 
@@ -338,30 +431,50 @@ describe('combining two of a family', () => {
     expect(useRunStore.getState().run.lineUp).toHaveLength(3);
   });
 
-  it('merges by dragging one mon onto another of its family', () => {
+  it('does NOT merge on a plain drag onto family — that is a swap', () => {
+    // The regression this guards is the worst one the roster had: a drag was treated as arming a
+    // combine, so dragging a Charmander past a Charmeleon to change the batting order destroyed
+    // one of them. A drag moves a mon. Only ⊕ combines.
     const { container } = render(<TeamBuilder />);
-    const cards = container.querySelectorAll('.team-card');
+    const slots = container.querySelectorAll('.roster-slot');
 
-    // The drag has to start for the target to become a drop target at all — that is what tells
-    // the card whether this particular mon would merge into it.
-    fireEvent.dragStart(cards[0]!, { dataTransfer: payloadFor('a', 'lineUp') });
-    fireEvent.drop(container.querySelectorAll('.team-card')[1]!, {
+    fireEvent.dragStart(container.querySelectorAll('.team-card')[0]!, {
+      dataTransfer: payloadFor('a', 'lineUp'),
+    });
+    fireEvent.drop(slots[1]!, { dataTransfer: payloadFor('a', 'lineUp') });
+
+    const lineUp = useRunStore.getState().run.lineUp;
+    expect(lineUp).toHaveLength(3);
+    expect(lineUp.map((m) => m.instanceId)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('merges by dropping an armed mon onto its family', () => {
+    const { container } = render(<TeamBuilder />);
+
+    // Armed with the button first — which is the only thing that turns a drop into a merge.
+    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
+    fireEvent.dragStart(container.querySelectorAll('.team-card')[0]!, {
+      dataTransfer: payloadFor('a', 'lineUp'),
+    });
+    fireEvent.drop(container.querySelectorAll('.roster-slot')[1]!, {
       dataTransfer: payloadFor('a', 'lineUp'),
     });
 
     expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'c']);
   });
 
-  it('will not merge a mon onto something outside its family', () => {
+  it('will not merge an armed mon onto something outside its family', () => {
     const { container } = render(<TeamBuilder />);
-    const cards = container.querySelectorAll('.team-card');
 
-    fireEvent.dragStart(cards[0]!, { dataTransfer: payloadFor('a', 'lineUp') });
-    fireEvent.drop(container.querySelectorAll('.team-card')[2]!, {
+    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
+    fireEvent.dragStart(container.querySelectorAll('.team-card')[0]!, {
+      dataTransfer: payloadFor('a', 'lineUp'),
+    });
+    fireEvent.drop(container.querySelectorAll('.roster-slot')[2]!, {
       dataTransfer: payloadFor('a', 'lineUp'),
     });
 
-    // Both are still there: a drop on a mon of another family is not a merge.
+    // Three still there: a drop on a mon of another family is a swap, never a merge.
     expect(useRunStore.getState().run.lineUp).toHaveLength(3);
   });
 

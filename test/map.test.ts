@@ -18,10 +18,19 @@ import {
   nodeById,
   reachableFrom,
 } from '../src/meta/mapGenerator.js';
-import { LOCATIONS, locationFor } from '../src/meta/locations.js';
+import { LOCATIONS, REGION_ART_DIR, locationFor } from '../src/meta/locations.js';
 import { SHOP_STOCK, buy, canAfford, describeInventory } from '../src/meta/shop.js';
 import { STARTING_BALLS, emptyInventory, totalBalls } from '../src/meta/balls.js';
-import { BADGES_TO_WIN } from '../src/meta/progression.js';
+import {
+  BADGES_TO_WIN,
+  MONEY_PER_GYM_WIN,
+  MONEY_PER_TRAINER_WIN,
+  MONEY_PER_WILD_WIN,
+  moneyForWin,
+  trainerTeamSize,
+  wildEncounterSize,
+} from '../src/meta/progression.js';
+import type { NodeType } from '../src/meta/runState.js';
 import { POKEMON_TYPES } from '../src/sim/index.js';
 
 const SEEDS = Array.from({ length: 60 }, (_, i) => i + 1);
@@ -93,6 +102,56 @@ describe('map generation', () => {
         expect(count, `seed ${seed} layer ${layer}`).toBeLessThanOrEqual(1);
       }
     }
+  });
+
+  it('uses only node kinds the run layer can resolve', () => {
+    const known = new Set<NodeType>(['Wild', 'Trainer', 'Encounter', 'Center', 'Gym']);
+    for (const seed of SEEDS) {
+      for (const node of generateLocationMap(seed, seed % 8).nodes) {
+        expect(known.has(node.type), `seed ${seed}: ${node.type}`).toBe(true);
+      }
+    }
+  });
+
+  it('always puts at least one Encounter on the map', () => {
+    // Trades, free levels and the Legendary all live behind an Encounter. A Location that rolled
+    // none of them reads as a bug rather than as variance, so generation guarantees one.
+    for (const seed of SEEDS) {
+      const map = generateLocationMap(seed, seed % 8);
+      expect(map.nodes.some((n) => n.type === 'Encounter'), `seed ${seed}`).toBe(true);
+    }
+  });
+
+  it('keeps the entry layer to fights, so a run opens on a decision about a fight', () => {
+    for (const seed of SEEDS) {
+      const map = generateLocationMap(seed, seed % 8);
+      const entry = map.entryIds.map((id) => nodeById(map, id)!);
+      expect(
+        entry.every((n) => n.type === 'Wild' || n.type === 'Trainer'),
+        `seed ${seed}: ${entry.map((n) => n.type).join()}`,
+      ).toBe(true);
+    }
+  });
+
+  it('never fills a layer with Encounters, which would be a layer with no fight in it', () => {
+    for (const seed of SEEDS) {
+      const map = generateLocationMap(seed, seed % 8);
+      const perLayer = new Map<number, number>();
+      for (const node of map.nodes) {
+        if (node.type === 'Encounter') perLayer.set(node.layer, (perLayer.get(node.layer) ?? 0) + 1);
+      }
+      for (const [layer, count] of perLayer) {
+        expect(count, `seed ${seed} layer ${layer}`).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it('offers Mystery Trainers somewhere across a run', () => {
+    const kinds = new Set(
+      SEEDS.flatMap((seed) => generateLocationMap(seed, seed % 8).nodes.map((n) => n.type)),
+    );
+    expect(kinds.has('Trainer')).toBe(true);
+    expect(kinds.has('Center')).toBe(true);
   });
 });
 
@@ -172,6 +231,39 @@ describe('the Locations', () => {
   it('clamps out-of-range badge counts rather than failing a run', () => {
     expect(locationFor(-3)).toBe(LOCATIONS[0]);
     expect(locationFor(99)).toBe(LOCATIONS.at(-1));
+  });
+
+  it('gives each its own backdrop and its own slug', () => {
+    // The art is what makes the eight read as eight places; two Locations sharing a backdrop would
+    // undo that quietly, without anything else in the game noticing.
+    expect(new Set(LOCATIONS.map((l) => l.slug)).size).toBe(LOCATIONS.length);
+    expect(new Set(LOCATIONS.map((l) => l.art)).size).toBe(LOCATIONS.length);
+
+    for (const loc of LOCATIONS) {
+      expect(loc.slug, loc.name).toMatch(/^[a-z0-9-]+$/);
+      expect(loc.art, loc.name).toMatch(new RegExp(`^${REGION_ART_DIR}/[a-z-]+\\.png$`));
+      expect(loc.tint, loc.name).toMatch(/^#[0-9a-f]{6}$/);
+    }
+  });
+});
+
+describe('what a node pays', () => {
+  it('pays a Gym best, a Mystery Trainer next, and the grass least', () => {
+    expect(moneyForWin('Gym')).toBe(MONEY_PER_GYM_WIN);
+    expect(moneyForWin('Trainer')).toBe(MONEY_PER_TRAINER_WIN);
+    expect(moneyForWin('Wild')).toBe(MONEY_PER_WILD_WIN);
+    expect(MONEY_PER_GYM_WIN).toBeGreaterThan(MONEY_PER_TRAINER_WIN);
+    expect(MONEY_PER_TRAINER_WIN).toBeGreaterThan(MONEY_PER_WILD_WIN);
+  });
+
+  it('pays nothing for a fight an Encounter started, which pays its own bounty', () => {
+    expect(moneyForWin('Encounter')).toBe(0);
+  });
+
+  it('gives a Mystery Trainer more bodies than the grass at the same point in the run', () => {
+    for (let badges = 0; badges < BADGES_TO_WIN; badges++) {
+      expect(trainerTeamSize(badges), `badge ${badges}`).toBeGreaterThan(wildEncounterSize(badges));
+    }
   });
 });
 

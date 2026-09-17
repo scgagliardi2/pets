@@ -12,6 +12,8 @@
  * dodges fights should feel it.
  */
 
+import type { NodeType } from './runState.js';
+
 /** Badges to win the run. Beating the eighth Gym ends it as a victory. */
 export const BADGES_TO_WIN = 8;
 
@@ -49,6 +51,12 @@ export const STARTING_MORALE = 3;
 export const STARTING_MONEY = 5;
 
 export const MONEY_PER_WILD_WIN = 2;
+/**
+ * A Mystery Trainer pays better than the grass, because it *is* worse than the grass: a trainer
+ * fields a full themed team where a wild node fields one to three mons, and you don't see which
+ * until you have committed to the node.
+ */
+export const MONEY_PER_TRAINER_WIN = 4;
 export const MONEY_PER_GYM_WIN = 5;
 
 /** The EXP a Location is pitched at: nothing for the first, rising per badge already earned. */
@@ -80,5 +88,24 @@ export function maxTier(badges: number): number | null {
   return FIRST_LOCATION_MAX_TIER + MAX_TIER_INCREASE_PER_BADGE * Math.max(0, badges);
 }
 
-export const moneyForWin = (isGym: boolean): number =>
-  isGym ? MONEY_PER_GYM_WIN : MONEY_PER_WILD_WIN;
+export const moneyForWin = (type: NodeType): number => {
+  if (type === 'Gym') return MONEY_PER_GYM_WIN;
+  if (type === 'Trainer') return MONEY_PER_TRAINER_WIN;
+  // A fight an Encounter started pays its own bounty instead; stacking the wild rate on top would
+  // pay a player twice for the same node.
+  if (type === 'Encounter' || type === 'Center') return 0;
+  return MONEY_PER_WILD_WIN;
+};
+
+/**
+ * How many mons a Mystery Trainer fields: one more than a wild node at the same point, capped at
+ * the party size. The extra body is most of what makes it the harder node.
+ */
+export const trainerTeamSize = (badges: number): number =>
+  Math.min(MAX_PARTY_SIZE, wildEncounterSize(badges) + 1);
+
+/** How much EXP a Mystery Trainer's team carries above the wild encounter it replaces. */
+export const TRAINER_EXP_ABOVE_WILD = 1;
+
+export const trainerExp = (badges: number, layer: number): number =>
+  wildExp(badges, layer) + TRAINER_EXP_ABOVE_WILD;

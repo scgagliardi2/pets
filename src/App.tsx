@@ -11,6 +11,7 @@ import { useMemo } from 'react';
 import { BattleScreen } from './ui/BattleScreen.js';
 import {
   BoxScreen,
+  EncounterPanel,
   LocationMap,
   ResultPanel,
   RunHeader,
@@ -18,8 +19,18 @@ import {
   ShopPanel,
   TeamBuilder,
 } from './ui/RunScreen.js';
+import { SEED_SALT, nodeSeed } from './meta/encounters.js';
+import type { MapNode } from './meta/runState.js';
 import { useRunStore } from './state/runStore.js';
 import './ui/theme.css';
+
+/** What the battle screen calls this fight. The node kind, where the kind is the interesting part. */
+const battleNote = (node: MapNode): string => {
+  if (node.type === 'Gym') return 'Gym Leader';
+  if (node.type === 'Trainer') return 'Mystery Trainer';
+  if (node.type === 'Encounter') return 'Encounter';
+  return node.label;
+};
 
 export default function App() {
   const phase = useRunStore((s) => s.phase);
@@ -42,8 +53,8 @@ export default function App() {
         <BattleScreen
           own={[...run.lineUp]}
           foe={opponents}
-          seed={run.seed + activeNode.layer}
-          scenarioNote={activeNode.type === 'Gym' ? 'Gym Leader' : activeNode.label}
+          seed={nodeSeed(run.seed, run.badges, activeNode, SEED_SALT.battle)}
+          scenarioNote={battleNote(activeNode)}
           runKey={runKey}
           onFinished={finishBattle}
         />
@@ -72,6 +83,8 @@ export default function App() {
           <ResultPanel />
         ) : phase === 'shop' ? (
           <ShopPanel />
+        ) : phase === 'encounter' ? (
+          <EncounterPanel />
         ) : (
           <LocationMap />
         )}

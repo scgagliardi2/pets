@@ -130,6 +130,56 @@ export function grantWinExp(run: RunState, points: number): { run: RunState; rep
   return { run: { ...run, lineUp }, report: { gained, evolutions } };
 }
 
+/**
+ * Raises one named mon to a lifetime EXP total, wherever the run keeps it.
+ *
+ * Encounters need this and a win does not: a win pays the whole line-up, but a Day Care raises the
+ * one mon you left there, and a shrine blesses the one in front. No catch-up pass runs — catch-up
+ * is what a *win* does for the mons that were not the reason for it, and applying it here would
+ * quietly hand the rest of the team the reward the player spent a node choosing for one mon.
+ */
+export function raiseMonToExp(
+  run: RunState,
+  instanceId: string,
+  targetExp: number,
+): { run: RunState; report: GrowthReport } {
+  const gained: Record<string, number> = {};
+  const evolutions: Evolution[] = [];
+
+  const raise = (mon: PokemonInstance): PokemonInstance => {
+    if (mon.instanceId !== instanceId) return mon;
+    const result = raiseToExp(mon, Math.max(mon.exp, targetExp));
+    if (result.gained > 0) gained[mon.instanceId] = result.gained;
+    evolutions.push(...result.evolutions);
+    return result.mon;
+  };
+
+  return {
+    run: { ...run, lineUp: run.lineUp.map(raise), box: run.box.map(raise) },
+    report: { gained, evolutions },
+  };
+}
+
+/** Points onto one mon's lifetime total. The additive form of `raiseMonToExp`. */
+export function grantExpTo(
+  run: RunState,
+  instanceId: string,
+  points: number,
+): { run: RunState; report: GrowthReport } {
+  const mon = [...run.lineUp, ...run.box].find((m) => m.instanceId === instanceId);
+  if (mon === undefined || points <= 0) return { run, report: emptyReport() };
+  return raiseMonToExp(run, instanceId, mon.exp + points);
+}
+
+/** Merges two growth reports, so a screen can narrate one list for a choice that grew several mons. */
+export function mergeReports(a: GrowthReport, b: GrowthReport): GrowthReport {
+  const gained: Record<string, number> = { ...a.gained };
+  for (const [id, points] of Object.entries(b.gained)) {
+    gained[id] = (gained[id] ?? 0) + points;
+  }
+  return { gained, evolutions: [...a.evolutions, ...b.evolutions] };
+}
+
 /** What a mon is now, for a results screen that wants to name it. */
 export const nameOf = (mon: PokemonInstance): string =>
   mon.nickname ?? speciesOfInstance(mon).name;

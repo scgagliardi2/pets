@@ -5,17 +5,20 @@
  * node sits — and never from the player's own team. Rubber-banding would make EXP worthless: a
  * player who fights more should be ahead, and one who dodges fights should feel it.
  *
- * The Location itself is hand-authored. Map *generation* is a later stage; one fixed path is
- * enough to play a run end to end and is much easier to reason about while the rest settles.
+ * `FIRST_LOCATION` below is the hand-authored linear path the run layer was first built against.
+ * The generated branching maps replaced it in play; it is kept because the scaling tests read
+ * better against a fixed shape than a rolled one.
  */
 
 import { baseForms, speciesOf, type Species } from '../content/index.js';
 import { createInstance, type PokemonInstance } from '../content/factory.js';
-import { createRandom, type PokemonType } from '../sim/index.js';
+import { createRandom, hashString, type PokemonType, type Rng } from '../sim/index.js';
 import {
   gymExp,
   gymTeamSize,
   maxTier,
+  trainerExp,
+  trainerTeamSize,
   wildEncounterSize,
   wildExp,
 } from './progression.js';
@@ -38,6 +41,42 @@ export const FIRST_LOCATION: { name: string; nodes: MapNode[] } = {
     { id: 'n5', type: 'Gym', layer: 5, label: 'Gym Leader' },
   ],
 };
+
+/**
+ * The seed a node's opposition is drawn from.
+ *
+ * The node's **id** is in here, not just its depth. Seeding from the position alone gave every
+ * node in a layer the same team — all three entry nodes fielding the same Eevee — because the
+ * position is exactly what the nodes in a layer have in common. The `salt` separates the
+ * different questions asked about one node, so a node's wild encounter and its Encounter roll
+ * aren't drawn from the same stream.
+ */
+export const nodeSeed = (runSeed: number, badges: number, node: MapNode, salt: number): number =>
+  (runSeed + badges * 104729 + node.layer * 7919 + hashString(node.id) + salt) | 0;
+
+/** Salts, so each thing asked of a node gets its own stream. Values are arbitrary but fixed. */
+export const SEED_SALT = { wild: 0, trainer: 4409, gym: 31337, battle: 90001 } as const;
+
+/**
+ * `count` species drawn from `pool`, avoiding repeats while the pool is big enough to.
+ *
+ * Drawing with replacement is what made a three-mon team come up as the same species three times
+ * often enough to read as a bug rather than as luck — at a pool of seventeen and a team of three
+ * that is about one encounter in four. A team is still allowed to repeat a species once the pool
+ * is smaller than the team, because the alternative is an encounter that can't be generated.
+ */
+export function drawTeam(rng: Rng, pool: readonly Species[], count: number): Species[] {
+  const drawn: Species[] = [];
+  let remaining = [...pool];
+
+  for (let i = 0; i < count; i++) {
+    if (remaining.length === 0) remaining = [...pool];
+    const index = rng.nextInt(remaining.length);
+    drawn.push(remaining[index]!);
+    remaining.splice(index, 1);
+  }
+  return drawn;
+}
 
 /**
  * The species a node may draw from: base forms only, at or under the tier cap for this badge
@@ -68,17 +107,15 @@ export function generateWildEncounter(
   node: MapNode,
   typeBias?: readonly PokemonType[],
 ): PokemonInstance[] {
-  // Seeded per node, so re-entering the same node gives the same encounter and the map can be
-  // previewed without committing to it.
-  const rng = createRandom(seed + node.layer * 7919 + badges * 104729);
+  // Seeded per node — by its id, not just its depth — so each node on a layer is its own
+  // encounter, and re-entering one gives the same fight rather than a re-roll.
+  const rng = createRandom(nodeSeed(seed, badges, node, SEED_SALT.wild));
   const pool = encounterPool(badges, typeBias);
-  const size = wildEncounterSize(badges);
   const exp = wildExp(badges, node.layer);
 
-  return Array.from({ length: size }, (_, i) => {
-    const species = pool[rng.nextInt(pool.length)]!;
-    return createInstance(species, { exp, instanceId: `wild-${node.id}-${i}` });
-  });
+  return drawTeam(rng, pool, wildEncounterSize(badges)).map((species, i) =>
+    createInstance(species, { exp, instanceId: `wild-${node.id}-${i}` }),
+  );
 }
 
 /**
@@ -91,15 +128,65 @@ export function generateGymTeam(
   playerLineUpSize: number,
   typeBias: readonly PokemonType[],
 ): PokemonInstance[] {
-  const rng = createRandom(seed + 31337 + badges * 65537);
+  const rng = createRandom((seed + SEED_SALT.gym + badges * 65537) | 0);
   const pool = encounterPool(badges, typeBias);
-  const size = gymTeamSize(badges, playerLineUpSize);
   const exp = gymExp(badges);
 
-  return Array.from({ length: size }, (_, i) => {
-    const species = pool[rng.nextInt(pool.length)]!;
-    return createInstance(species, { exp, instanceId: `gym-${badges}-${i}` });
-  });
+  // Drawn without repeats: a Bug Leader fielding four Caterpie is not a themed line-up, it is the
+  // same fight four times over.
+  return drawTeam(rng, pool, gymTeamSize(badges, playerLineUpSize)).map((species, i) =>
+    createInstance(species, { exp, instanceId: `gym-${badges}-${i}` }),
+  );
+}
+
+/**
+ * The names a Mystery Trainer can turn out to be.
+ *
+ * A class rather than a person: the point of the node is that you don't know what is coming, and a
+ * class ("Hiker", "Bug Catcher") tells you just enough to guess wrong. The name is drawn from the
+ * node's own seed, so it is the same trainer every time you look at that node.
+ */
+export const TRAINER_CLASSES: readonly string[] = [
+  'Hiker',
+  'Bug Catcher',
+  'Lass',
+  'Youngster',
+  'Picnicker',
+  'Fisherman',
+  'Ace Trainer',
+  'Bird Keeper',
+  'Hex Maniac',
+  'Blackbelt',
+  'Ranger',
+  'Sailor',
+];
+
+/** Who a Mystery Trainer node turns out to be. Stable for the node. */
+export function trainerNameFor(seed: number, node: MapNode): string {
+  const rng = createRandom(nodeSeed(seed, 0, node, SEED_SALT.trainer + 1));
+  return TRAINER_CLASSES[rng.nextInt(TRAINER_CLASSES.length)]!;
+}
+
+/**
+ * A Mystery Trainer's team.
+ *
+ * Themed to the Location like a wild encounter, but a body larger and a point of EXP ahead — a
+ * trainer is the node you take when you want the money and the EXP and can afford the fight, and
+ * it has to actually be the harder of the two to be that.
+ */
+export function generateTrainerTeam(
+  seed: number,
+  badges: number,
+  node: MapNode,
+  typeBias?: readonly PokemonType[],
+): PokemonInstance[] {
+  const rng = createRandom(nodeSeed(seed, badges, node, SEED_SALT.trainer));
+  const pool = encounterPool(badges, typeBias);
+  const exp = trainerExp(badges, node.layer);
+
+  return drawTeam(rng, pool, trainerTeamSize(badges)).map((species, i) =>
+    createInstance(species, { exp, instanceId: `trainer-${node.id}-${i}` }),
+  );
 }
 
 /** The Gym's type theme for a Location. One entry per badge; the first Location is Bug. */
@@ -131,10 +218,15 @@ export function opponentsFor(
   playerLineUpSize: number,
   location?: Location,
 ): PokemonInstance[] {
-  if (node.type === 'Center') return [];
+  // A Center is a shop and an Encounter is a scene; neither fields anybody, and both are resolved
+  // on the map layer rather than by opening the battle screen.
+  if (node.type === 'Center' || node.type === 'Encounter') return [];
   if (node.type === 'Gym') {
     const theme = location?.gymTheme ?? gymThemeFor(badges);
     return generateGymTeam(seed, badges, playerLineUpSize, theme);
+  }
+  if (node.type === 'Trainer') {
+    return generateTrainerTeam(seed, badges, node, location?.typeBias);
   }
   return generateWildEncounter(seed, badges, node, location?.typeBias);
 }

@@ -23,7 +23,7 @@ understanding. No monetisation, no wide distribution.
 | Battle screen | playable — `npm run dev` |
 | Run layer | playable loop — map, fights, EXP, evolution, morale |
 | Catching | live — odds, ball tiers, Step-boundary throws |
-| Rest of the loop | branching maps, 8 Locations, the Center shop |
+| Rest of the loop | branching maps, 8 Locations, the Center shop, Encounter nodes |
 | Breadth | traveller map, drag-and-drop, Box screen |
 
 There is **no UI yet**. The sim is exercised through the test suite and the text harness.
@@ -64,10 +64,20 @@ before you commit it. Odds rise sharply as the target weakens, so the loop is fi
 throw. Throws resolve only between Steps.
 
 Your traveller sits on the last node taken and slides to the next. The team builder runs along the
-bottom: drag mons between slots to reorder, drag them out to the Box, and open the Box for a full
-view of everything you own. Balls can be clicked or dragged straight onto the enemy.
+bottom: every slot the line-up could hold is drawn, filled or empty, and **a drag is always a
+move** — drop a mon on another and the two swap, drop it on an empty slot and it takes the end of
+the queue, drop it on the Box and it is benched. A Box mon dropped on an occupied slot exchanges
+with whoever was there, so a full line-up is still something you can trade into. The slot says what
+it is about to do before you let go. Balls can be clicked or dragged straight onto the enemy.
 
-Opens on the Location map. Pick a node to fight it; the battle screen opens **paused** with the
+**⊕ is the only thing that combines.** A drag used to arm a merge as well, which meant dragging a
+Charmander past a Charmeleon to change the batting order could destroy one of them. One gesture,
+one verb.
+
+Opens on the Location map — a fresh one every time the app loads, since a run with no seed rolls
+its own — drawn over the Location's own art with its branches drawn in: the moves on offer from
+where you stand are lit gold, the path behind you is dimmed. Pick a node to
+fight it; the battle screen opens **paused** with the
 synergy opening already applied, so you can read the board before anything moves. Press Play, or
 One Step to walk a Step at a time. Reorder your line-up in the panel on the right — position 0
 leads, position 1 supports, the rest wait.
@@ -99,8 +109,9 @@ src/
     sprites.ts        sprite URLs and scaling rules
   meta/             run rules, pure
     balls.ts          ball tiers, what each is worth, inventory
-    locations.ts      the eight Locations and their themes
+    locations.ts      the eight Locations, their themes, and their map art
     mapGenerator.ts   branching paths, with reachability invariants
+    roadEvents.ts     the nine Encounters an `?` node can roll, and what each branch does
     shop.ts           the Pokémon Center
     catching.ts       odds, the roll, what a catch produces
     progression.ts    how difficulty scales
@@ -119,7 +130,7 @@ src/
     theme.css
     MonView.tsx       sprite, charge arc, shield bubble, readout
     BattleScreen.tsx
-    RunScreen.tsx     map, team, results, combining
+    RunScreen.tsx     map, team, Encounters, results, combining
     TraitCounters.tsx the field's type counters
     TeamSynergies.tsx the same counts, on the screens where the team is edited
     EvolutionScene.tsx the ceremony played after a fight that grew something
@@ -215,11 +226,54 @@ HP damage actually dealt.
 ## The run, in one paragraph
 
 You start with two tier-1 mons and pick your way through a branching Location: an entry choice,
-four layers of forks, then the Gym. Some nodes are wild fights, some are a Pokémon Center. Eight
-Locations, each with its own type theme and Gym Leader. Every win gives one EXP to everyone who fought; twelve EXP is an evolution. A loss
-costs one Morale, and at zero Morale the run ends. **Damage does not carry between fights** —
+four layers of forks, then the Gym. Eight Locations, each with its own type theme, Gym Leader and
+backdrop. Every win gives one EXP to everyone who fought; twelve EXP is an evolution. A loss
+costs one Morale, and at zero Morale the run ends.
+
+**A win consumes its node; a loss does not.** Morale is already what makes a run finite, so taking
+the node as well charges twice — and can strand a player on a layer that offered them one way
+forward. A retry is not a re-roll: the opponents and the battle seed come from the node, so the
+same team fights the same fight and something in the line-up has to change. A draw does consume
+the node, because it costs no Morale and would otherwise be an unlimited number of identical
+re-runs for free. **Damage does not carry between fights** —
 everyone is restored after every battle, fainted included — so the pressure is Morale, not
 attrition, and a run is decided by the team you build rather than the health you nursed.
+
+### The five kinds of node
+
+| | | |
+|---|---|---|
+| **Battle** | wild fight | EXP, $2, and something you can throw a ball at |
+| **Mystery Trainer** | a themed team, one body larger and a point of EXP ahead | EXP, $4 |
+| **Encounter** | a scene and a choice | see below |
+| **Pokémon Center** | a shop | restocks balls; pays no EXP and no money |
+| **Gym** | the Leader | the badge, $5, and the next Location |
+
+The entry layer is fights only, so a run opens on a decision about a fight. Generation guarantees
+at least one Encounter per Location, never two Centers in one layer, and never more than two
+Encounters.
+
+### Encounters
+
+Slay the Spire's `?` room: a short scene, two or three choices, each stating its trade in full
+before it is clicked. Nine of them — a Legendary you can fight for a bounty, a trader who swaps
+your least-grown mon for one a tier up at the same EXP, a professor who levels the line-up, a
+stray that joins you, the Day Care, a shrine, an abandoned pack, the Game Corner, and a Rocket
+shakedown.
+
+**They are skewed positive on purpose.** Taking one already costs the EXP and money the fight in
+that slot would have paid, and that is the price; charging twice would make it a node nobody
+takes. Every encounter therefore has at least one branch that cannot leave the run worse off, and
+a test in `test/roadEvents.test.ts` checks that across all nine — it fails the moment a new
+encounter is written without a safe branch. A branch that starts a fight hands the battle screen
+its opponents and pays its bounty on the win, not on the click.
+
+### Region art
+
+Each Location names a backdrop in `locations.ts`; the files live in `public/art/regions/` and that
+folder's README says which name goes with which Location. The map draws the art under a scrim so
+node labels stay readable over a pale tundra or a black volcano, and falls back to the Location's
+`tint` for any file that isn't there — a missing backdrop degrades rather than breaks.
 
 Between fights you can also **combine two mons of one family** — a Charmander into a Charmeleon,
 or two Charmanders — anywhere you can edit the team. The one furthest along the chain survives
@@ -241,6 +295,13 @@ current behaviour so it changes deliberately.
   longest real fight at 17 Steps, and `SUDDEN_DEATH_STEP` (30) was chosen against that. A Grass
   stack with EXP runs 37. Sudden death can now decide a fight that was resolving on its own. In a
   4,000-fight random sweep it fired once, so it's rare rather than routine.
+- **The second Location's themed pool is almost all tier 1.** At one badge the tier cap allows
+  tier 2, but the Water/Rock base forms it can draw are twelve tier-1 species and a single tier-2
+  one — so a starter that won every fight in Location 1 out-budgets most of what Location 2
+  fields. The cap makes a stronger mon *available*, not common. This surfaced when per-node
+  seeding changed which species get drawn: the test asserting "still behind a second-Location
+  wild" had been passing on one seed that happened to draw the one tier-2 entry. It is now two
+  tests over the pool rather than one over a draw, and both state what is actually true.
 - **Catching is what keeps you on the curve, and it is now measured.** Before it existed, 0 of
   200 simulated runs were winnable: the tier cap rises one per badge and a tier is worth far more
   than a Location's EXP — tier 1 spends 8 stat points, tier 2 spends 18, while winning every fight
