@@ -1,0 +1,1367 @@
+/*
+ * Visual direction.
+ *
+ * The sprites are Gen 5 Black/White battle sprites, so the screen is built in that vernacular
+ * rather than as a generic dark dashboard: a dusk route at the hour those games liked best, warm
+ * olive ground against a cold sky, and UI chrome that sits back like a handheld's bezel.
+ *
+ * Boldness is spent in exactly one place — the gold charge arc over each mon's head. Charge is
+ * the game's clock: Speed does nothing except fill it, and a passive fires when it's full. It is
+ * the thing a player should be watching, so it is the only saturated colour on the field.
+ *
+ * Type is two families with clearly different jobs. M PLUS Rounded 1c is a Japanese rounded
+ * gothic and is the closest available face to the Pokemon UI lineage; Silkscreen is a true pixel
+ * face, used *only* for hard numeric readouts so the game-data layer reads as diegetic.
+ */
+
+:root {
+  --dusk-high: #1e2c40;
+  --dusk-low: #46586c;
+  --ground-far: #8b976f;
+  --ground-near: #6c7a56;
+
+  --chrome: #12161d;
+  --chrome-raised: #1e2633;
+  --chrome-edge: #2c3746;
+
+  --ink: #ece7db;
+  --ink-dim: #8d99a8;
+
+  --charge: #f0b429;
+  --shield: #6fd3e8;
+  --hurt: #d95f52;
+  --heal: #7fc98a;
+  --ward: #c9a0dc;
+
+  --own: #7fb2e8;
+  --foe: #e0906f;
+
+  --field-w: 1280;
+  --field-h: 720;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--chrome);
+  color: var(--ink);
+  font-family: 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* --- the field ------------------------------------------------------------------------------
+ * One coordinate space. The field is intrinsically 1280x720 and is scaled as a whole to fit;
+ * everything inside is positioned in field pixels by src/ui/layout.ts. Nothing on the field is
+ * positioned against a viewport edge, which is what stopped sprites and their readouts drifting
+ * apart on a non-16:9 window.
+ */
+
+.field-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.field {
+  position: relative;
+  width: calc(var(--field-w) * 1px);
+  height: calc(var(--field-h) * 1px);
+  transform-origin: center center;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1a2b1c;
+  box-shadow: 0 0 0 1px var(--chrome-edge), 0 18px 48px rgb(0 0 0 / 0.5);
+}
+
+/* The painted backdrop at its delivered resolution, cropped to the field's 16:9 and scaled by
+   the browser. Smooth filtering rather than `pixelated`, because this is a slight *downscale*
+   (1590 wide into 1280) and nearest-neighbour on a downscale drops source pixels, which shows up
+   as broken edges through the foliage. The sprites keep `pixelated`; they are upscaled. */
+.field-art {
+  position: absolute;
+  inset: 0;
+  background-image: url('/art/battle-forest.png');
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+
+
+.mon {
+  position: absolute;
+  pointer-events: none;
+}
+
+.mon-sprite {
+  position: absolute;
+  image-rendering: pixelated;
+  /* Feet-anchored: mons of very different heights stand on one ground line. */
+  object-fit: contain;
+  object-position: bottom;
+  transition: transform 140ms ease-out, opacity 320ms ease-in;
+}
+
+.mon-sprite.attacking-own {
+  transform: translate(18px, -14px);
+}
+.mon-sprite.attacking-foe {
+  transform: translate(-18px, 14px);
+}
+.mon-sprite.fainting {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+.mon-shadow {
+  position: absolute;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.28);
+  filter: blur(3px);
+}
+
+/* --- on-field figures ------------------------------------------------------------------------
+ * The mockup puts a mon's numbers straight on the grass: attack in a spiky burst, HP beside it.
+ * A thin HP bar is kept underneath so "how hurt is it" is a glance rather than arithmetic, and
+ * the name moves to hover — with 183 species nobody recognises every sprite, but four permanent
+ * name labels is a lot of text over the art.
+ */
+
+.figures {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.figures-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.figure-attack {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+}
+
+.figure-attack svg {
+  position: absolute;
+  inset: 0;
+}
+
+.figure-attack em {
+  position: relative;
+  font-style: normal;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.figure-hp {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 25px;
+  font-weight: 700;
+  color: #ff5d6c;
+  -webkit-text-stroke: 3px #14161a;
+  paint-order: stroke fill;
+}
+
+.hp-track {
+  width: 92px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgb(10 14 12 / 0.65);
+  border: 1px solid rgb(0 0 0 / 0.5);
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  background: #56c95f;
+  transition: width 260ms ease-out, background-color 260ms linear;
+}
+
+.hp-fill.hurt {
+  background: var(--charge);
+}
+.hp-fill.critical {
+  background: var(--hurt);
+}
+
+.shield-amount {
+  position: absolute;
+  width: 32px;
+  text-align: center;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--shield);
+  text-shadow: 0 0 4px #04202a, 0 1px 3px #000;
+  pointer-events: none;
+}
+
+/* Name and detail on hover. */
+.mon-name {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: rgb(8 12 16 / 0.93);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.mon-name strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.mon-name-passive {
+  color: var(--charge);
+}
+
+/* --- badges ---------------------------------------------------------------------------------
+ * Text, never borrowed type icons. A badge row that showed lifesteal with a Grass leaf and damage
+ * reduction with a Steel icon read, next to a mon, as that mon's typing — and was simply wrong.
+ * If a mark looks like a type badge it has to mean a type.
+ */
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.10);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.badge.status {
+  background: rgb(217 95 82 / 0.28);
+  color: #ffc9c1;
+}
+.badge.shield {
+  background: rgb(111 211 232 / 0.22);
+  color: var(--shield);
+}
+.badge.ward {
+  background: rgb(201 160 220 / 0.22);
+  color: var(--ward);
+}
+.badge.drain {
+  background: rgb(127 201 138 / 0.20);
+  color: var(--heal);
+}
+.badge.block {
+  background: rgb(255 255 255 / 0.13);
+  color: var(--ink-dim);
+}
+
+/* Type chips are the *only* thing allowed to look like a type. */
+.type-chip {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.13);
+  color: var(--ink);
+}
+
+/* --- floating numbers ----------------------------------------------------------------------- */
+
+.float {
+  position: absolute;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 19px;
+  font-weight: 700;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.6);
+  animation: rise 700ms ease-out forwards;
+  pointer-events: none;
+}
+
+.float.damage {
+  color: var(--hurt);
+}
+.float.heal {
+  color: var(--heal);
+}
+.float.absorbed {
+  color: var(--shield);
+  font-size: 15px;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  22% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+}
+
+/* --- trait counters ---------------------------------------------------------------------------
+ * A type icon and a count, per side, in the top corners. The one legitimate use of a type icon:
+ * it means a type, because the count is a count of that type.
+ */
+
+.trait-slot {
+  position: absolute;
+  z-index: 50;
+}
+
+.traits {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  max-width: 420px;
+}
+
+.traits-right {
+  justify-content: flex-end;
+}
+
+.trait {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+}
+
+.trait-count {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 5px rgb(0 0 0 / 0.9), 0 2px 0 rgb(0 0 0 / 0.75);
+}
+
+.trait-icon {
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.6));
+}
+
+.trait-tip {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  width: 230px;
+  border-radius: 7px;
+  background: rgb(8 12 16 / 0.95);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  z-index: 70;
+}
+
+.traits-right .trait-tip {
+  left: auto;
+  right: 0;
+}
+
+.trait:hover .trait-tip {
+  display: flex;
+}
+
+.trait-tip strong {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+/* --- foe roster across the top ---------------------------------------------------------------- */
+
+.foe-roster {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  z-index: 45;
+}
+
+/* --- roster cards (both strips) ---------------------------------------------------------------- */
+
+.roster-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px 4px;
+  border-radius: 7px;
+  background: rgb(10 16 14 / 0.78);
+  border: 2px solid rgb(255 255 255 / 0.14);
+  min-width: 76px;
+  cursor: help;
+}
+
+.roster-card.active {
+  border-color: #5aa9e6;
+}
+
+.roster-card.fainted {
+  opacity: 0.35;
+  filter: grayscale(0.7);
+}
+
+.roster-card img {
+  image-rendering: pixelated;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  object-position: bottom;
+}
+
+.roster-card.compact img {
+  width: 28px;
+  height: 28px;
+}
+
+.roster-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.roster-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgb(8 12 16 / 0.95);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  z-index: 80;
+}
+
+.roster-card:hover .roster-tip {
+  display: flex;
+}
+
+.roster-tip strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.roster-tip-types {
+  display: flex;
+  gap: 3px;
+}
+
+.roster-tip-types img {
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+}
+
+.roster-tip-passive {
+  color: var(--charge);
+}
+
+/* --- control stack ------------------------------------------------------------------------------ */
+
+.control-stack {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+}
+
+.stack-button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 9px;
+  background: rgb(14 20 26 / 0.86);
+  border: 2px solid rgb(255 255 255 / 0.2);
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 14px;
+}
+
+.stack-button img {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+
+.stack-button:hover:not(:disabled) {
+  background: rgb(30 44 56 / 0.92);
+  border-color: rgb(255 255 255 / 0.36);
+}
+
+.stack-button.on {
+  border-color: var(--charge);
+}
+
+/* --- step badge and caption ----------------------------------------------------------------------- */
+
+.step-badge {
+  position: absolute;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgb(8 12 16 / 0.7);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 5px;
+  padding: 4px 9px;
+  z-index: 40;
+}
+
+.caption {
+  position: absolute;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 6px rgb(0 0 0 / 0.95), 0 0 14px rgb(0 0 0 / 0.8);
+  pointer-events: none;
+  z-index: 40;
+}
+
+.caption .verdict {
+  font-size: 30px;
+  color: var(--charge);
+}
+
+/* --- chrome ---------------------------------------------------------------------------------- */
+
+.panel {
+  background: var(--chrome-raised);
+  border: 1px solid var(--chrome-edge);
+  border-radius: 9px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  background: #2b3644;
+  border: 1px solid #3b4a5c;
+  border-radius: 7px;
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: background-color 120ms linear, border-color 120ms linear;
+}
+
+button:hover:not(:disabled) {
+  background: #364456;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--charge);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--charge);
+  border-color: #c98f14;
+  color: #23190a;
+  min-width: 104px;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #f7c65a;
+}
+
+button.on {
+  background: #3d5068;
+  border-color: var(--own);
+}
+
+.control-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.control-label {
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-right: 2px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.scenario-select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #2b3644;
+  border: 1px solid #3b4a5c;
+  border-radius: 7px;
+  padding: 7px 10px;
+}
+
+/* --- bottom row ------------------------------------------------------------------------------- */
+
+.lower {
+  display: grid;
+  grid-template-columns: 1fr 230px 320px;
+  gap: 10px;
+  height: 152px;
+}
+
+.party {
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.party-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.party .roster-card {
+  background: #182029;
+  border-color: var(--chrome-edge);
+}
+
+.party .roster-card.active {
+  border-color: #5aa9e6;
+}
+
+/* Tips on the bottom strip open upward; there is no room below. */
+.party .roster-tip,
+.throw-panel .roster-tip {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* --- throw panel ------------------------------------------------------------------------------- */
+
+.throw-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+.throw-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.ball-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ball-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: #182029;
+  border: 1px solid var(--chrome-edge);
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  text-align: left;
+}
+
+.ball-row:hover:not(:disabled) {
+  background: #22303c;
+  border-color: var(--charge);
+}
+
+.ball-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #14161a;
+  flex: 0 0 auto;
+  /* Top half coloured, bottom half pale: a Pokeball, not a status dot. */
+  background: linear-gradient(to bottom, var(--ball-top) 0 50%, #f2f2f2 50% 100%);
+}
+
+.ball-dot.poke {
+  --ball-top: #e0453c;
+}
+.ball-dot.great {
+  --ball-top: #4a7fd4;
+}
+.ball-dot.ultra {
+  --ball-top: #e0b03a;
+}
+
+.ball-odds {
+  flex: 1 1 auto;
+  color: var(--ink);
+}
+
+.ball-count {
+  color: var(--ink-dim);
+}
+
+.throw-note {
+  font-size: 10px;
+  color: var(--ink-dim);
+  line-height: 1.3;
+}
+
+.throw-note.good {
+  color: var(--heal);
+}
+.throw-note.bad {
+  color: var(--hurt);
+}
+
+/* --- event log --------------------------------------------------------------------------------- */
+
+.log {
+  padding: 10px 12px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+
+.log-step {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ink-dim);
+  margin: 8px 0 3px;
+  border-top: 1px solid var(--chrome-edge);
+  padding-top: 5px;
+}
+
+.log > div:first-child .log-step {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+.log-line {
+  padding: 1px 0;
+  color: var(--ink);
+}
+
+.log-line.faint {
+  color: var(--hurt);
+  font-weight: 700;
+}
+.log-line.fire {
+  color: var(--charge);
+}
+.log-line.quiet {
+  color: var(--ink-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mon-sprite,
+  .hp-fill {
+    transition: none;
+  }
+  .float {
+    animation-duration: 1ms;
+  }
+}
+
+/* --- run layer ---------------------------------------------------------------------------------
+ * The chrome around a fight: where you are in the Location, what your team looks like, and what
+ * the last fight cost or paid.
+ */
+
+.run-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+}
+
+.run-location {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.run-stat {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.run-stat.morale {
+  color: var(--hurt);
+  letter-spacing: 2px;
+}
+
+.run-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- the Location path --------------------------------------------------------------------- */
+
+.location-map {
+  flex: 1 1 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  overflow: auto;
+}
+
+/* Layers as columns, entry on the left and the Gym on the right, so the branching reads as a
+   path forward rather than as a grid of options. */
+.layer-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.layer {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.map-node {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 9px 11px;
+  min-width: 132px;
+  text-align: left;
+  border-radius: 9px;
+  background: #1b2330;
+  border: 2px solid var(--chrome-edge);
+}
+
+.map-node .node-kind {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+
+.map-node .node-label {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.map-node.center.available {
+  border-color: var(--shield);
+}
+
+.map-node .node-tick {
+  font-size: 10.5px;
+  color: var(--heal);
+}
+
+.map-node.available {
+  border-color: var(--charge);
+  background: #26303f;
+}
+
+.map-node.gym.available {
+  border-color: var(--hurt);
+}
+
+.map-node.done {
+  opacity: 0.45;
+}
+
+.map-note {
+  color: var(--ink-dim);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* --- team --------------------------------------------------------------------------------- */
+
+.team-panel {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.team-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  margin: 4px 0 8px;
+}
+
+.team-hint {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.team-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: #182029;
+  border: 1px solid var(--chrome-edge);
+}
+
+.team-card.lead {
+  border-color: #5aa9e6;
+}
+
+.team-card.support {
+  border-color: #3d6f96;
+}
+
+.team-card img {
+  image-rendering: pixelated;
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  object-position: bottom;
+  flex: 0 0 auto;
+}
+
+.team-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.team-name {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.team-name em {
+  font-style: normal;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 9px;
+  color: #5aa9e6;
+}
+
+.team-figures,
+.team-exp {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--ink-dim);
+}
+
+.team-exp {
+  color: var(--charge);
+}
+
+.team-types {
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.team-types img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
+.team-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.team-actions button {
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: 5px;
+}
+
+/* --- result ------------------------------------------------------------------------------- */
+
+.result-panel {
+  flex: 1 1 auto;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+}
+
+.result-panel h2 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.result-panel h2.won {
+  color: var(--heal);
+}
+
+.result-panel h2.lost {
+  color: var(--hurt);
+}
+
+.result-panel p {
+  margin: 0;
+  color: var(--ink-dim);
+}
+
+.result-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.result-list .good {
+  color: var(--charge);
+}
+.result-list .bad {
+  color: var(--hurt);
+}
+.result-list .quiet {
+  color: var(--ink-dim);
+}
+
+
+/* --- the shop ------------------------------------------------------------------------------- */
+
+.shop-panel {
+  flex: 1 1 auto;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.shop-panel h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.shop-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.shop-sub.quiet {
+  max-width: 54ch;
+  opacity: 0.8;
+}
+
+.shop-stock {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 12px 14px;
+  width: 230px;
+  text-align: left;
+  border-radius: 9px;
+  background: #1b2330;
+  border: 2px solid var(--chrome-edge);
+}
+
+.shop-item:hover:not(:disabled) {
+  border-color: var(--charge);
+}
+
+.shop-item-name {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.shop-item-cost {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--charge);
+}
+
+.shop-item-blurb {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-dim);
+  white-space: normal;
+}
+
+
+/* --- the traveller on the map ---------------------------------------------------------------- */
+
+.layer-row {
+  position: relative;
+}
+
+.map-node.here {
+  border-color: var(--own);
+  background: #2c3a4c;
+}
+
+.traveller {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  transition: left 420ms cubic-bezier(0.34, 1.2, 0.64, 1), top 420ms cubic-bezier(0.34, 1.2, 0.64, 1);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.traveller-dot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--charge);
+  border: 2px solid #23190a;
+  box-shadow: 0 3px 6px rgb(0 0 0 / 0.5);
+}
+
+/* --- the horizontal team builder --------------------------------------------------------------- */
+
+.team-builder {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+}
+
+.builder-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.builder-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.slot-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+/* Drop targets are the gaps between cards, not the cards: "onto a card" is ambiguous about
+   whether you meant before it or after it, and the ambiguity lands mons a slot off. */
+.slot-gap {
+  flex: 0 0 auto;
+  width: 14px;
+  align-self: stretch;
+  border-radius: 4px;
+  transition: background-color 120ms linear;
+}
+
+.slot-gap.over {
+  background: var(--charge);
+}
+
+.slot-number {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 9px;
+  color: var(--ink-dim);
+}
+
+.team-builder .team-card,
+.box-grid .team-card {
+  position: relative;
+  flex: 0 0 auto;
+  width: 194px;
+  cursor: grab;
+}
+
+.team-builder .team-card:active,
+.box-grid .team-card:active {
+  cursor: grabbing;
+}
+
+.slot-empty {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  width: 140px;
+  border: 2px dashed var(--chrome-edge);
+  border-radius: 8px;
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+
+.team-actions {
+  flex-direction: row;
+}
+
+/* --- the Box screen ------------------------------------------------------------------------------ */
+
+.box-screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.box-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  margin-top: 6px;
+}
+
+.box-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  min-height: 92px;
+  border: 2px dashed transparent;
+  border-radius: 9px;
+  transition: border-color 120ms linear, background-color 120ms linear;
+}
+
+.box-grid.over {
+  border-color: var(--charge);
+  background: rgb(240 180 41 / 0.07);
+}
+
+/* --- the ball drop zone on the field --------------------------------------------------------- */
+
+.foe-drop {
+  position: absolute;
+  z-index: 40;
+  border-radius: 14px;
+  border: 2px dashed transparent;
+  display: grid;
+  place-items: end center;
+  padding-bottom: 8px;
+  transition: border-color 120ms linear, background-color 120ms linear;
+}
+
+.foe-drop.over {
+  border-color: var(--charge);
+  background: rgb(240 180 41 / 0.10);
+}
+
+.foe-drop-hint {
+  opacity: 0;
+  font-size: 11px;
+  color: var(--ink);
+  background: rgb(8 12 16 / 0.85);
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+
+.foe-drop.over .foe-drop-hint {
+  opacity: 1;
+}
+
+.ball-row[draggable='true'] {
+  cursor: grab;
+}

@@ -1,0 +1,337 @@
+[
+ {
+  "id": "abra-quick-focus",
+  "displayName": "Quick Focus",
+  "description": "Sharpens focus, charging up faster for the rest of the battle.",
+  "typeFlavor": "Psychic",
+  "effects": [
+   {
+    "type": "ModifyChargeRate",
+    "target": "Self",
+    "amount": 20
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "aron-iron-hide",
+  "displayName": "Iron Hide",
+  "description": "Sets its steel plating, blunting every incoming hit from here on.",
+  "typeFlavor": "Steel",
+  "effects": [
+   {
+    "type": "DamageReduction",
+    "target": "Self",
+    "amount": 4
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "bulbasaur-vine-drain",
+  "displayName": "Vine Drain",
+  "description": "Drains life from every hit landed, for the rest of the battle.",
+  "typeFlavor": "Grass",
+  "effects": [
+   {
+    "type": "Lifesteal",
+    "target": "Self",
+    "amount": 30
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "caterpie-swarm-scurry",
+  "displayName": "Swarm Scurry",
+  "description": "A burst of Speed from sheer nervous energy.",
+  "typeFlavor": "Bug",
+  "effects": [
+   {
+    "type": "BuffSpeed",
+    "target": "Self",
+    "amount": 5
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "charmander-ember-burst",
+  "displayName": "Ember Burst",
+  "description": "Burns the enemy Lead, dealing damage each Step it stays active.",
+  "typeFlavor": "Fire",
+  "effects": [
+   {
+    "type": "ApplyStatus",
+    "target": "EnemyLead",
+    "amount": 3,
+    "status": "Burned"
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "clefairy-moonlight-glow",
+  "displayName": "Moonlight Glow",
+  "description": "Bathes itself in soft light, healing a little HP.",
+  "typeFlavor": "Fairy",
+  "effects": [
+   {
+    "type": "Heal",
+    "target": "Self",
+    "amount": 6
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "dratini-coil-up",
+  "displayName": "Coil Up",
+  "description": "Coils tightly, toughening its hide against incoming hits.",
+  "typeFlavor": "Dragon",
+  "effects": [
+   {
+    "type": "DamageReduction",
+    "target": "Self",
+    "amount": 3
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "eevee-adaptability",
+  "displayName": "Adaptability",
+  "description": "A steady, unconditional boost to its own Attack.",
+  "typeFlavor": "Normal",
+  "effects": [
+   {
+    "type": "BuffAttack",
+    "target": "Self",
+    "amount": 3
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "gastly-cursed-touch",
+  "displayName": "Cursed Touch",
+  "description": "Drains a sliver of the enemy Lead's HP to heal itself.",
+  "typeFlavor": "Ghost",
+  "effects": [
+   {
+    "type": "Lifesteal",
+    "target": "EnemyLead",
+    "amount": 4
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "geodude-stone-guard",
+  "displayName": "Stone Guard",
+  "description": "Hardens its rocky hide into a shield.",
+  "typeFlavor": "Rock",
+  "effects": [
+   {
+    "type": "Shield",
+    "target": "Self",
+    "amount": 8
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "houndour-night-ambush",
+  "displayName": "Night Ambush",
+  "description": "Strikes from the dark, and the hit leaves it hungrier for the next one.",
+  "typeFlavor": "Dark",
+  "effects": [
+   {
+    "type": "DealDamage",
+    "target": "EnemyLead",
+    "amount": 3
+   },
+   {
+    "type": "BuffAttack",
+    "target": "Self",
+    "amount": 2
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "machop-power-surge",
+  "displayName": "Power Surge",
+  "description": "Musters raw strength into a lasting Attack boost.",
+  "typeFlavor": "Fighting",
+  "effects": [
+   {
+    "type": "BuffAttack",
+    "target": "Self",
+    "amount": 4
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "oddish-spore-cloud",
+  "displayName": "Spore Cloud",
+  "description": "Poisons the enemy Lead; poison damage worsens the longer it lasts.",
+  "typeFlavor": "Grass",
+  "effects": [
+   {
+    "type": "ApplyStatus",
+    "target": "EnemyLead",
+    "amount": 2,
+    "status": "Poisoned"
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "pidgey-tailwind",
+  "displayName": "Tailwind",
+  "description": "A gust of wind sharpens this mon's own Attack.",
+  "typeFlavor": "Flying",
+  "effects": [
+   {
+    "type": "BuffAttack",
+    "target": "Self",
+    "amount": 2
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "pikachu-static-shock",
+  "displayName": "Static Shock",
+  "description": "Paralyzes the enemy Lead and quickens its own reflexes.",
+  "typeFlavor": "Electric",
+  "effects": [
+   {
+    "type": "ApplyStatus",
+    "target": "EnemyLead",
+    "amount": 0,
+    "status": "Paralyzed"
+   },
+   {
+    "type": "BuffSpeed",
+    "target": "Self",
+    "amount": 5
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "squirtle-shell-guard",
+  "displayName": "Shell Guard",
+  "description": "Raises a shield that absorbs incoming damage.",
+  "typeFlavor": "Water",
+  "effects": [
+   {
+    "type": "Shield",
+    "target": "Self",
+    "amount": 6
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "swinub-permafrost",
+  "displayName": "Permafrost",
+  "description": "Chills the enemy Lead to a standstill.",
+  "typeFlavor": "Ice",
+  "effects": [
+   {
+    "type": "ApplyStatus",
+    "target": "EnemyLead",
+    "amount": 0,
+    "status": "Asleep"
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "trapinch-sand-tomb",
+  "displayName": "Sand Tomb",
+  "description": "Drags the enemy Lead into grinding sand, hurting it on the spot.",
+  "typeFlavor": "Ground",
+  "effects": [
+   {
+    "type": "DealDamage",
+    "target": "EnemyLead",
+    "amount": 4
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "weedle-poison-sting",
+  "displayName": "Poison Sting",
+  "description": "A light poison jab on the enemy Lead.",
+  "typeFlavor": "Bug",
+  "effects": [
+   {
+    "type": "ApplyStatus",
+    "target": "EnemyLead",
+    "amount": 1,
+    "status": "Poisoned"
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ },
+ {
+  "id": "zubat-bite",
+  "displayName": "Bite",
+  "description": "A quick bite on the enemy Lead.",
+  "typeFlavor": "Poison",
+  "effects": [
+   {
+    "type": "DealDamage",
+    "target": "EnemyLead",
+    "amount": 3
+   }
+  ],
+  "magnitudeByStage": [
+   1
+  ]
+ }
+]
