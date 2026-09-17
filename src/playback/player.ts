@@ -20,7 +20,17 @@ import {
 import type { BallTier } from '../meta/balls.js';
 import { chanceAgainst, rollCatch, type ThrowResult } from '../meta/catching.js';
 import { PlaybackCancelled, PlaybackClock } from './clock.js';
-import { applyEvent, initialDisplay, syncTo, type DisplayState } from './display.js';
+import {
+  applyEvent,
+  chargeAt,
+  chargePlan,
+  initialDisplay,
+  syncTo,
+  withCharges,
+  type ChargePlan,
+  type DisplayState,
+  type MonFlash,
+} from './display.js';
 
 /** How long each kind of beat holds the screen, in virtual milliseconds at 1x. */
 export const BEAT_MS: Readonly<Record<string, number>> = {
@@ -47,6 +57,36 @@ const beatLength = (event: StepEvent): number => BEAT_MS[event.kind] ?? BEAT_MS.
 
 /** A pause between Steps, so Step boundaries read as boundaries. */
 export const STEP_GAP_MS = 320;
+
+/**
+ * The beats the arcs fill across: the Step's opening attack exchange, and nothing after it.
+ *
+ * A passive's own damage raises a `Damage` event too, but it comes after the `PassiveTriggered`
+ * that introduces it, so it is never part of this leading run.
+ */
+const EXCHANGE_KINDS: ReadonlySet<string> = new Set(['Damage', 'ShieldAbsorbed', 'LifestealHeal']);
+
+/**
+ * The least time a Step's charge fill is given.
+ *
+ * The fill normally rides along with the exchange — the arcs creep up while the Leads trade blows,
+ * which is where the charge came from — so it costs nothing. This floor only matters for a Step
+ * with no exchange to ride along with, such as one where a side has no Lead left to swing: without
+ * it the arcs would snap to their new marks with no travel to read.
+ */
+export const CHARGE_FILL_MS = 420;
+
+/** How often the fill republishes. Small enough to read as movement rather than as ticks. */
+const CHARGE_TICK_MS = 40;
+
+/**
+ * The board's hold on a full arc, before the passive that filled it fires.
+ *
+ * The beat the whole arc exists for: the bar lands full, everything stops, *then* the passive goes
+ * off. Without it the arc's last pixel and the passive's flash land on the same frame and the
+ * player sees a passive fire for no visible reason.
+ */
+export const CHARGE_FULL_HOLD_MS = 380;
 
 /**
  * How long the finished board is held before the fight reports itself over.
@@ -249,6 +289,68 @@ export class BattlePlayer {
 
   // --- the loop ------------------------------------------------------------------------------
 
+  /**
+   * Plays a run of beats in order, filling the charge arcs across the whole run when given a plan.
+   *
+   * The fill rides along with the beats rather than taking a slot of its own, so the arcs move
+   * while the Leads are trading blows — which is where the charge is coming from — instead of
+   * adding a lull to every Step.
+   */
+  async #playBeats(events: StepEvent[], fill: ChargePlan | null): Promise<void> {
+    const beats = events.reduce((total, event) => total + beatLength(event), 0);
+    const window = fill === null ? 0 : Math.max(CHARGE_FILL_MS, beats);
+    let elapsed = 0;
+
+    for (const event of events) {
+      this.#history = [...this.#history, event];
+      this.#display = applyEvent(this.#display, event);
+      this.#publish();
+      elapsed = await this.#waitFilling(beatLength(event), fill, elapsed, window);
+    }
+
+    // Whatever of the window the beats didn't cover — the CHARGE_FILL_MS floor, on a Step whose
+    // exchange was short or absent.
+    await this.#waitFilling(window - elapsed, fill, elapsed, window);
+  }
+
+  /** Waits `ms`, republishing the arcs partway through their fill as it goes. */
+  async #waitFilling(
+    ms: number,
+    fill: ChargePlan | null,
+    elapsed: number,
+    window: number,
+  ): Promise<number> {
+    if (fill === null || window <= 0) {
+      await this.#clock.wait(ms);
+      return elapsed;
+    }
+
+    let remaining = ms;
+    while (remaining > 0) {
+      const tick = Math.min(CHARGE_TICK_MS, remaining);
+      await this.#clock.wait(tick);
+      remaining -= tick;
+      elapsed += tick;
+      this.#display = withCharges(this.#display, chargeAt(fill, elapsed / window));
+      this.#publish();
+    }
+    return elapsed;
+  }
+
+  /** Everything stops on a full arc, so the passive about to fire has a visible cause. */
+  async #holdOnFull(plan: ChargePlan): Promise<void> {
+    if (plan.full.length === 0) return;
+
+    const flashes: Record<string, MonFlash> = {};
+    for (const id of plan.full) flashes[id] = { charged: true };
+    // Snapped to the targets rather than left wherever the fill got to: a Step whose beats ran
+    // short must still show the arc full before the passive empties it.
+    this.#display = withCharges(this.#display, chargeAt(plan, 1), flashes);
+    this.#publish();
+
+    await this.#clock.wait(CHARGE_FULL_HOLD_MS);
+  }
+
   async #loop(): Promise<void> {
     if (this.#loopRunning) return;
     this.#loopRunning = true;
@@ -258,15 +360,20 @@ export class BattlePlayer {
         const events = this.#runner.nextStep();
         this.#playingStep = true;
 
-        for (const event of events) {
-          this.#history = [...this.#history, event];
-          this.#display = applyEvent(this.#display, event);
-          this.#publish();
-          await this.#clock.wait(beatLength(event));
-        }
+        // A Step opens with the attack exchange and accrues its charge out of it, so the arcs
+        // fill across exactly those beats and no further. Everything after — passives, status
+        // ticks, faints — plays with the arcs already at their new marks, which is what stops a
+        // bar creeping upward behind a faint or a verdict.
+        let split = 0;
+        while (split < events.length && EXCHANGE_KINDS.has(events[split]!.kind)) split++;
+        const plan = chargePlan(this.#display.board, this.#runner.state, events);
 
-        // Resync to the authoritative board: charge accrual raises no event, so the arcs only
-        // move here, and anything the per-event walk missed is corrected at the boundary.
+        await this.#playBeats(events.slice(0, split), plan);
+        await this.#holdOnFull(plan);
+        await this.#playBeats(events.slice(split), null);
+
+        // Resync to the authoritative board: the fill leaves the arcs at fractions of a charge
+        // point, and anything the per-event walk missed is corrected at the boundary too.
         this.#display = syncTo(this.#runner.state);
         this.#playingStep = false;
         this.#publish();

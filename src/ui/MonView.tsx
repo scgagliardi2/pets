@@ -32,8 +32,21 @@ interface MonViewProps {
  * It can read below empty. Ice and Ground synergies open the enemy Lead in charge *debt*, and
  * that has to be visible or a Lead that seems inexplicably slow is just confusing. Debt shows as
  * a red stub at the leading edge rather than as an empty track.
+ *
+ * `ready` is the beat between the arc landing full and the passive firing, when the board is held
+ * still: the arc pulses so the pause has an obvious subject.
  */
-function ChargeArc({ charge, cx, cy }: { charge: number; cx: number; cy: number }) {
+function ChargeArc({
+  charge,
+  cx,
+  cy,
+  ready = false,
+}: {
+  charge: number;
+  cx: number;
+  cy: number;
+  ready?: boolean;
+}) {
   const { radius, thickness, sweepDegrees } = CHARGE_ARC;
   const half = (sweepDegrees / 2) * (Math.PI / 180);
 
@@ -61,6 +74,16 @@ function ChargeArc({ charge, cx, cy }: { charge: number; cx: number; cy: number 
         strokeLinecap="round"
       />
       <path d={arcPath(0, 1)} fill="none" stroke="#e9eee6" strokeWidth={thickness} strokeLinecap="round" />
+      {ready && (
+        <path
+          className="charge-ready"
+          d={arcPath(0, 1)}
+          fill="none"
+          stroke="#8ff06a"
+          strokeWidth={thickness + 10}
+          strokeLinecap="round"
+        />
+      )}
       {filled > 0.001 && (
         <path
           d={arcPath(0, filled)}
@@ -176,7 +199,12 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
             strokeWidth={SHIELD_BUBBLE.strokeWidth}
           />
         )}
-        <ChargeArc charge={combatant.charge} cx={localCX} cy={arcCY} />
+        <ChargeArc
+          charge={combatant.charge}
+          cx={localCX}
+          cy={arcCY}
+          ready={flash?.charged === true}
+        />
       </svg>
 
       {combatant.shield > 0 && (

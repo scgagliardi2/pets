@@ -13,8 +13,21 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { StrictMode } from 'react';
 
 import { PlaybackCancelled, PlaybackClock } from '../src/playback/clock.js';
-import { applyEvent, initialDisplay, syncTo } from '../src/playback/display.js';
-import { makeBattleState, makeCombatant } from '../src/sim/index.js';
+import {
+  applyEvent,
+  chargeAt,
+  chargePlan,
+  initialDisplay,
+  syncTo,
+  withCharges,
+} from '../src/playback/display.js';
+import { BattlePlayer } from '../src/playback/player.js';
+import {
+  CHARGE_THRESHOLD,
+  makeBattleState,
+  makeCombatant,
+  type PassiveDefinition,
+} from '../src/sim/index.js';
 import { createInstance } from '../src/content/factory.js';
 import { useRunStore } from '../src/state/runStore.js';
 import { BattleScreen } from '../src/ui/BattleScreen.js';
@@ -184,6 +197,133 @@ describe('display state', () => {
     expect(synced.fainting).toEqual([]);
     expect(synced.board.stepNumber).toBe(4);
   });
+});
+
+describe('the charge plan', () => {
+  const at = (id: string, charge: number) => {
+    const c = makeCombatant({ instanceId: id, attack: 3, health: 10, speed: 1 });
+    c.charge = charge;
+    return c;
+  };
+
+  it('fills from the pre-Step charge to the post-Step charge', () => {
+    const plan = chargePlan(
+      makeBattleState([at('a', 0)], [at('b', 1)]),
+      makeBattleState([at('a', 1)], [at('b', 2)]),
+      [],
+    );
+
+    expect(plan.from).toEqual({ a: 0, b: 1 });
+    expect(plan.to).toEqual({ a: 1, b: 2 });
+    expect(plan.full).toEqual([]);
+  });
+
+  it('fills a triggering mon to full, not to the zero it is left at', () => {
+    // The Step resets a fired passive's charge to 0, so the post-Step board says 0 and playing
+    // that back would drain the arc instead of filling it — the arc has to land full first.
+    const plan = chargePlan(
+      makeBattleState([at('a', 2)], [at('b', 0)]),
+      makeBattleState([at('a', 0)], [at('b', 1)]),
+      [{ step: 1, kind: 'PassiveTriggered', sourceSide: 'A', sourceInstanceId: 'a' }],
+    );
+
+    expect(plan.to['a']).toBe(CHARGE_THRESHOLD);
+    expect(plan.full).toEqual(['a']);
+  });
+
+  it('leaves a mon that left the field out of the fill', () => {
+    const plan = chargePlan(
+      makeBattleState([at('a', 1)], [at('b', 1)]),
+      makeBattleState([at('a', 2)], []),
+      [],
+    );
+
+    expect(plan.to['b']).toBeUndefined();
+  });
+
+  it('interpolates fractionally, so a three-point meter does not move in thirds', () => {
+    const plan = chargePlan(
+      makeBattleState([at('a', 1)], []),
+      makeBattleState([at('a', 2)], []),
+      [],
+    );
+
+    expect(chargeAt(plan, 0)['a']).toBe(1);
+    expect(chargeAt(plan, 0.5)['a']).toBe(1.5);
+    expect(chargeAt(plan, 1)['a']).toBe(2);
+    // Clamped: a fill can be asked to land past its window.
+    expect(chargeAt(plan, 1.4)['a']).toBe(2);
+  });
+
+  it('writes charges onto a copy of the board, never the one it was given', () => {
+    const display = initialDisplay(makeBattleState([at('a', 0)], [at('b', 0)]));
+    const after = withCharges(display, { a: 1.5 });
+
+    expect(display.board.lineUpA[0]!.charge).toBe(0);
+    expect(after.board.lineUpA[0]!.charge).toBe(1.5);
+  });
+});
+
+describe('the arcs move while a Step is playing', () => {
+  /** Watches every snapshot a player publishes, since the point is what happens mid-Step. */
+  const watch = (player: BattlePlayer) => {
+    const snapshots: ReturnType<BattlePlayer['getSnapshot']>[] = [];
+    player.subscribe(() => snapshots.push(player.getSnapshot()));
+    return snapshots;
+  };
+
+  it('fills the arc partway during the Step rather than jumping at its end', async () => {
+    const own = makeCombatant({ instanceId: 'fill-a', attack: 1, health: 90, speed: 1 });
+    const foe = makeCombatant({ instanceId: 'fill-b', attack: 1, health: 90, speed: 1 });
+    const player = new BattlePlayer([own], [foe], 1);
+    const snapshots = watch(player);
+
+    player.stepOnce();
+    await waitFor(() => expect(player.getSnapshot().stepNumber).toBe(1), { timeout: 4000 });
+
+    const charges = snapshots.map((s) => s.display.board.lineUpA[0]?.charge ?? 0);
+    // Speed 1 against a threshold of 3: the arc goes 0 to 1 over the Step, and the whole point is
+    // that it was seen somewhere in between.
+    expect(charges.some((c) => c > 0 && c < 1)).toBe(true);
+    expect(charges[charges.length - 1]).toBe(1);
+
+    player.dispose();
+  }, 10_000);
+
+  it('holds on the full arc before the passive fires', async () => {
+    const passive: PassiveDefinition = {
+      id: 'test-guard',
+      displayName: 'Test Guard',
+      effects: [{ type: 'Shield', target: 'Self', amount: 2 }],
+    };
+    // Speed 3 fills the meter in a single Step, so the passive fires on Step 1.
+    const own = makeCombatant({
+      instanceId: 'hold-a',
+      attack: 1,
+      health: 90,
+      speed: 3,
+      passive,
+    });
+    const foe = makeCombatant({ instanceId: 'hold-b', attack: 1, health: 90, speed: 1 });
+    const player = new BattlePlayer([own], [foe], 1);
+    const snapshots = watch(player);
+
+    player.stepOnce();
+    await waitFor(() => expect(player.getSnapshot().stepNumber).toBe(1), { timeout: 4000 });
+
+    const held = snapshots.findIndex((s) => s.display.flashes['hold-a']?.charged === true);
+    const fired = snapshots.findIndex((s) =>
+      s.history.some((e) => e.kind === 'PassiveTriggered'),
+    );
+
+    expect(held, 'the board held on a full arc').toBeGreaterThan(-1);
+    expect(fired, 'the passive fired').toBeGreaterThan(-1);
+    expect(held, 'held before firing').toBeLessThan(fired);
+    // And it was actually full while held, not still on its way up.
+    expect(snapshots[held]!.display.board.lineUpA[0]!.charge).toBe(CHARGE_THRESHOLD);
+
+    player.dispose();
+  }, 10_000);
 });
 
 describe('layout', () => {

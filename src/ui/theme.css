@@ -135,6 +135,20 @@ body {
   transform: translateY(16px);
 }
 
+/* The halo behind a full charge arc, during the beat the board holds before the passive fires. */
+.charge-ready {
+  animation: charge-pulse 460ms ease-in-out infinite alternate;
+}
+
+@keyframes charge-pulse {
+  from {
+    opacity: 0.15;
+  }
+  to {
+    opacity: 0.7;
+  }
+}
+
 .mon-shadow {
   position: absolute;
   border-radius: 50%;
@@ -833,6 +847,10 @@ button.on {
   }
   .float {
     animation-duration: 1ms;
+  }
+  .charge-ready {
+    animation: none;
+    opacity: 0.5;
   }
 }
 
