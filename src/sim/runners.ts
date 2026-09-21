@@ -13,7 +13,12 @@ import {
   determineOutcome,
   removeCaught as removeCaughtFrom,
 } from './advanceStep.js';
-import { EVENT_CAP, STEP_CAP } from './config.js';
+import {
+  DEFAULT_CHARGE_CONFIG,
+  EVENT_CAP,
+  STEP_CAP,
+  type ChargeConfig,
+} from './config.js';
 import { createRandom, type Rng } from './rng.js';
 import { applyOpeningMutable } from './synergy.js';
 import {
@@ -38,6 +43,7 @@ export function runPrecomputed(
   lineUpA: Combatant[],
   lineUpB: Combatant[],
   seed: number,
+  charge: ChargeConfig = DEFAULT_CHARGE_CONFIG,
 ): StepLog {
   const state = makeBattleState(
     lineUpA.map((c) => ({ ...c, currentStats: { ...c.currentStats } })),
@@ -47,7 +53,7 @@ export function runPrecomputed(
   const events: StepEvent[] = [];
 
   // The opening. A no-op for combatants without types.
-  events.push(...applyOpeningMutable(state));
+  events.push(...applyOpeningMutable(state, charge));
 
   while (state.lineUpA.length > 0 && state.lineUpB.length > 0) {
     if (state.stepNumber >= STEP_CAP || events.length >= EVENT_CAP) {
@@ -56,7 +62,7 @@ export function runPrecomputed(
       events.push({ step: state.stepNumber, kind: 'BattleEnd', outcome: 'Draw' });
       return { events, outcome: 'Draw', finalState: state };
     }
-    events.push(...advanceStepMutable(state, rng));
+    events.push(...advanceStepMutable(state, rng, charge));
   }
 
   const outcome = determineOutcome(state);
@@ -79,7 +85,15 @@ export class OnDemandRunner {
   readonly #rng: Rng;
   #openingApplied = false;
 
-  constructor(lineUpA: Combatant[], lineUpB: Combatant[], seed: number) {
+  readonly #charge: ChargeConfig;
+
+  constructor(
+    lineUpA: Combatant[],
+    lineUpB: Combatant[],
+    seed: number,
+    charge: ChargeConfig = DEFAULT_CHARGE_CONFIG,
+  ) {
+    this.#charge = charge;
     this.#state = makeBattleState(
       lineUpA.map((c) => ({ ...c, currentStats: { ...c.currentStats } })),
       lineUpB.map((c) => ({ ...c, currentStats: { ...c.currentStats } })),
@@ -127,7 +141,7 @@ export class OnDemandRunner {
   applyOpening(): StepEvent[] {
     if (this.#openingApplied) return [];
     this.#openingApplied = true;
-    return applyOpeningMutable(this.#state);
+    return applyOpeningMutable(this.#state, this.#charge);
   }
 
   /**
@@ -141,7 +155,7 @@ export class OnDemandRunner {
     // An opening that emptied a side ends the fight before Step 1 is ever taken.
     if (this.isBattleOver) return events;
 
-    events.push(...advanceStepMutable(this.#state, this.#rng));
+    events.push(...advanceStepMutable(this.#state, this.#rng, this.#charge));
     return events;
   }
 

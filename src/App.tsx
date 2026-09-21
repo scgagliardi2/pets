@@ -9,9 +9,15 @@
 import { useMemo } from 'react';
 
 import { BattleScreen } from './ui/BattleScreen.js';
+import { BagPopup } from './ui/BagPopup.js';
+import { EvolutionPopup } from './ui/EvolutionPopup.js';
+import { PokemonDetailModal } from './ui/PokemonDetailModal.js';
 import {
   BoxScreen,
+  BuffPanel,
+  CelebrationPanel,
   EncounterPanel,
+  GrowthPanel,
   LocationMap,
   ResultPanel,
   RunHeader,
@@ -19,18 +25,8 @@ import {
   ShopPanel,
   TeamBuilder,
 } from './ui/RunScreen.js';
-import { SEED_SALT, nodeSeed } from './meta/encounters.js';
-import type { MapNode } from './meta/runState.js';
 import { useRunStore } from './state/runStore.js';
 import './ui/theme.css';
-
-/** What the battle screen calls this fight. The node kind, where the kind is the interesting part. */
-const battleNote = (node: MapNode): string => {
-  if (node.type === 'Gym') return 'Gym Leader';
-  if (node.type === 'Trainer') return 'Mystery Trainer';
-  if (node.type === 'Encounter') return 'Encounter';
-  return node.label;
-};
 
 export default function App() {
   const phase = useRunStore((s) => s.phase);
@@ -38,6 +34,12 @@ export default function App() {
   const opponents = useRunStore((s) => s.opponents);
   const activeNode = useRunStore((s) => s.activeNode);
   const finishBattle = useRunStore((s) => s.finishBattle);
+  const detailInstanceId = useRunStore((s) => s.detailInstanceId);
+  const evolutionQueue = useRunStore((s) => s.evolutionQueue);
+  const bagOpen = useRunStore((s) => s.bagOpen);
+  // Sits above every other screen, including the battle: an evolution can land on the result
+  // overlay, and it should be the thing in front when it does.
+  const evolving = evolutionQueue[0];
 
   // The line-up is copied at the moment the fight starts, so reordering the team mid-battle
   // cannot change the fight already in progress.
@@ -46,18 +48,29 @@ export default function App() {
     [run.seed, run.badges, activeNode],
   );
 
-  if (phase === 'battle' && activeNode !== null) {
+  // The result is an overlay on the finished battle, not a screen that replaces it. The board is
+  // what the player wants to read at that moment, and cutting to the map throws it away.
+  if ((phase === 'battle' || phase === 'result') && activeNode !== null) {
     return (
       <div className="app">
         <RunHeader />
         <BattleScreen
           own={[...run.lineUp]}
           foe={opponents}
-          seed={nodeSeed(run.seed, run.badges, activeNode, SEED_SALT.battle)}
-          scenarioNote={battleNote(activeNode)}
+          seed={run.seed + activeNode.layer}
+          scenarioNote={activeNode.type === 'Gym' ? 'Gym Leader' : activeNode.label}
           runKey={runKey}
           onFinished={finishBattle}
         />
+        {phase === 'result' && (
+          <div className="result-overlay">
+            <div className="result-stack">
+              <ResultPanel />
+              <GrowthPanel />
+            </div>
+          </div>
+        )}
+        {evolving !== undefined && <EvolutionPopup evolution={evolving} />}
       </div>
     );
   }
@@ -79,17 +92,22 @@ export default function App() {
       <div className="run-main">
         {phase === 'over' ? (
           <RunOverPanel />
-        ) : phase === 'result' ? (
-          <ResultPanel />
         ) : phase === 'shop' ? (
           <ShopPanel />
         ) : phase === 'encounter' ? (
           <EncounterPanel />
+        ) : phase === 'celebration' ? (
+          <CelebrationPanel />
+        ) : phase === 'buff' ? (
+          <BuffPanel />
         ) : (
           <LocationMap />
         )}
       </div>
       <TeamBuilder />
+      {bagOpen && <BagPopup />}
+      {detailInstanceId !== null && <PokemonDetailModal instanceId={detailInstanceId} />}
+      {evolving !== undefined && <EvolutionPopup evolution={evolving} />}
     </div>
   );
 }

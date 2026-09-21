@@ -6,7 +6,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  CHARGE_THRESHOLD,
+
+  LEGACY_CHARGE_CONFIG,
   SUDDEN_DEATH_STEP,
   advanceStep,
   advanceStepMutable,
@@ -29,13 +30,19 @@ const withPassive = (
   effects: EffectDefinition[],
   spec: Partial<CombatantSpec> = {},
 ): Combatant =>
-  mon({ instanceId, speed: CHARGE_THRESHOLD, ...spec, passive: { id: `${instanceId}-p`, effects } });
+  mon({ instanceId, speed: LEGACY_CHARGE_CONFIG.threshold, ...spec, passive: { id: `${instanceId}-p`, effects } });
 
 const rng = () => createRandom(1);
 
+/**
+ * These tests describe the Step loop's *mechanics* — ordering, gating, promotion, what resets
+ * when — which are independent of the charge scale. They were written against Speed 1-3 and a
+ * threshold of 3, so they run on LEGACY_CHARGE_CONFIG rather than being rewritten in hundreds.
+ * The game's own scale is covered separately, below.
+ */
 const step = (a: Combatant[], b: Combatant[]) => {
   const state = makeBattleState(a, b);
-  const events = advanceStepMutable(state, rng());
+  const events = advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
   return { state, events };
 };
 
@@ -129,7 +136,7 @@ describe('beat 2 — charge accumulation', () => {
     expect(state.lineUpA[0]!.charge).toBe(1);
   });
 
-  it('a mon with no passive still resets its charge at the threshold', () => {
+  it('a mon with no passive still spends its charge at the threshold', () => {
     // Surprising but deliberate, and matching the Unity implementation: the trigger set is built
     // from charge alone, and the meter empties whether or not there was anything to spend it on.
     // A UI reading charge as "progress toward something" must not assume a passive exists.
@@ -138,20 +145,36 @@ describe('beat 2 — charge accumulation', () => {
 
     expect(kinds(events)).toContain('PassiveTriggered');
     expect(state.lineUpA[0]!.charge).toBe(0);
+    expect(state.lineUpA[0]!.currentStats.speed).toBe(3);
   });
 });
 
 describe('beat 3 — passive resolution', () => {
-  it('fires at the threshold and resets charge to zero, discarding overshoot', () => {
-    // Speed 4 overshoots a threshold of 3; the meter still resets to 0, not to 1.
+  it('fires at the threshold and carries the overshoot rather than discarding it', () => {
+    // Speed 4 overshoots a threshold of 3, so the meter keeps the remaining 1. Discarding it
+    // would silently cap a fast mon at one activation and make Speed above the threshold
+    // worthless — which is exactly what the new charge scale depends on not happening.
     const a = withPassive('a', [{ type: 'Shield', target: 'Self', amount: 1 }], {
       attack: 0,
       speed: 4,
     });
     const { state } = step([a], [mon({ instanceId: 'x', attack: 0 })]);
 
-    expect(state.lineUpA[0]!.charge).toBe(0);
+    expect(state.lineUpA[0]!.charge).toBe(1);
     expect(state.lineUpA[0]!.shield).toBe(1);
+  });
+
+  it('fires once per whole threshold banked, not once per Step', () => {
+    // Speed 7 against a threshold of 3 banks two full activations plus a remainder of 1.
+    const a = withPassive('a', [{ type: 'Shield', target: 'Self', amount: 1 }], {
+      attack: 0,
+      speed: 7,
+    });
+    const { state, events } = step([a], [mon({ instanceId: 'x', attack: 0 })]);
+
+    expect(events.filter((e) => e.kind === 'PassiveTriggered')).toHaveLength(2);
+    expect(state.lineUpA[0]!.shield).toBe(2);
+    expect(state.lineUpA[0]!.charge).toBe(1);
   });
 
   it('does not fire below the threshold', () => {
@@ -267,7 +290,10 @@ describe('beat 3 — passive resolution', () => {
       .filter((e) => e.kind === 'PassiveTriggered')
       .map((e) => e.sourceInstanceId);
 
-    expect(triggered).toEqual(['fast', 'slow']);
+    // Speed 6 banks two whole thresholds and so fires twice; the ordering claim is that the
+    // faster mon resolves before the slower one, which holds regardless of the count.
+    expect(triggered[0]).toBe('fast');
+    expect(triggered.at(-1)).toBe('slow');
   });
 
   it('breaks a full tie by side, A first', () => {
@@ -298,9 +324,9 @@ describe('beat 3.5 — status ticks', () => {
 
     const state = makeBattleState([victim], [mon({ instanceId: 'x', attack: 0 })]);
     const r = rng();
-    advanceStepMutable(state, r); // 2 * 1
-    advanceStepMutable(state, r); // 2 * 2
-    advanceStepMutable(state, r); // 2 * 3
+    advanceStepMutable(state, r, LEGACY_CHARGE_CONFIG); // 2 * 1
+    advanceStepMutable(state, r, LEGACY_CHARGE_CONFIG); // 2 * 2
+    advanceStepMutable(state, r, LEGACY_CHARGE_CONFIG); // 2 * 3
 
     expect(state.lineUpA[0]!.currentHP).toBe(100 - (2 + 4 + 6));
   });
@@ -312,8 +338,8 @@ describe('beat 3.5 — status ticks', () => {
 
     const state = makeBattleState([victim], [mon({ instanceId: 'x', attack: 0 })]);
     const r = rng();
-    advanceStepMutable(state, r);
-    advanceStepMutable(state, r);
+    advanceStepMutable(state, r, LEGACY_CHARGE_CONFIG);
+    advanceStepMutable(state, r, LEGACY_CHARGE_CONFIG);
 
     expect(state.lineUpA[0]!.currentHP).toBe(94);
   });
@@ -374,7 +400,7 @@ describe('beat 3.6 — sudden death', () => {
       [mon({ instanceId: 'leadB', attack: 0, health: 999 })],
     );
     state.stepNumber = SUDDEN_DEATH_STEP - 1;
-    const events = advanceStepMutable(state, rng());
+    const events = advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
 
     const hit = events.filter((e) => e.kind === 'SuddenDeath').map((e) => e.targetInstanceId);
     expect(hit).toEqual(['leadA', 'leadB']);
@@ -389,7 +415,7 @@ describe('beat 3.6 — sudden death', () => {
 
     const state = makeBattleState([tank], [mon({ instanceId: 'x', attack: 0, health: 100 })]);
     state.stepNumber = SUDDEN_DEATH_STEP - 1;
-    advanceStepMutable(state, rng());
+    advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
 
     expect(state.lineUpA[0]!.shield).toBe(50);
     expect(state.lineUpA[0]!.currentHP).toBe(99);
@@ -406,7 +432,7 @@ describe('beat 4 — faints and promotion', () => {
       ],
       [mon({ instanceId: 'killer', attack: 5, health: 50 })],
     );
-    const events = advanceStepMutable(state, rng());
+    const events = advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
 
     expect(state.lineUpA.map((c) => c.instanceId)).toEqual(['s', 'd']);
     const promoted = events
@@ -422,7 +448,7 @@ describe('beat 4 — faints and promotion', () => {
     doomedSupport.statusTickDamage = 99;
 
     const state = makeBattleState([lead, doomedSupport], [mon({ instanceId: 'x', attack: 0 })]);
-    advanceStepMutable(state, rng());
+    advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
 
     expect(state.lineUpA.map((c) => c.instanceId)).toEqual(['l']);
   });
@@ -444,7 +470,7 @@ describe('immutability of the public entry point', () => {
     const b = mon({ instanceId: 'b', attack: 3, health: 10 });
     const before = makeBattleState([a], [b]);
 
-    const { state: after } = advanceStep(before, rng());
+    const { state: after } = advanceStep(before, rng(), LEGACY_CHARGE_CONFIG);
 
     expect(before.stepNumber).toBe(0);
     expect(before.lineUpA[0]!.currentHP).toBe(10);
@@ -470,5 +496,62 @@ describe('removeCaught', () => {
     const { events } = removeCaught(state, 'B', 'ghost');
 
     expect(events).toHaveLength(0);
+  });
+});
+
+describe('abilities that scale with Special', () => {
+  it('reads the magnitude off the acting mon, ignoring the authored amount', () => {
+    const striker = withPassive(
+      'striker',
+      [{ type: 'DealDamage', target: 'EnemyLead', amount: 999, scalesWithSpecial: true }],
+      { attack: 0, special: 7, speed: 3 },
+    );
+    const victim = mon({ instanceId: 'victim', attack: 0, health: 50 });
+
+    const { state } = step([striker], [victim]);
+
+    expect(state.lineUpB[0]!.currentHP).toBe(43);
+  });
+
+  it('reads Special at the moment it fires, so a mid-battle buff counts next time', () => {
+    const striker = withPassive(
+      'striker',
+      [{ type: 'DealDamage', target: 'EnemyLead', amount: 0, scalesWithSpecial: true }],
+      { attack: 0, special: 5, speed: 3 },
+    );
+    const victim = mon({ instanceId: 'victim', attack: 0, health: 99 });
+
+    const state = makeBattleState([striker], [victim]);
+    advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
+    state.lineUpA[0]!.currentStats.special = 20;
+    advanceStepMutable(state, rng(), LEGACY_CHARGE_CONFIG);
+
+    expect(state.lineUpB[0]!.currentHP).toBe(99 - 5 - 20);
+  });
+
+  it('leaves an authored amount alone when the effect does not scale', () => {
+    // A shield, heal or status is an override: it keeps its own number and forgoes the damage.
+    const guard = withPassive('guard', [{ type: 'Shield', target: 'Self', amount: 4 }], {
+      attack: 0,
+      special: 30,
+      speed: 3,
+    });
+
+    const { state } = step([guard], [mon({ instanceId: 'x', attack: 0 })]);
+
+    expect(state.lineUpA[0]!.shield).toBe(4);
+  });
+
+  it('deals nothing when the mon has no Special', () => {
+    const striker = withPassive(
+      'striker',
+      [{ type: 'DealDamage', target: 'EnemyLead', amount: 50, scalesWithSpecial: true }],
+      { attack: 0, speed: 3 },
+    );
+    const victim = mon({ instanceId: 'victim', attack: 0, health: 40 });
+
+    const { state } = step([striker], [victim]);
+
+    expect(state.lineUpB[0]!.currentHP).toBe(40);
   });
 });

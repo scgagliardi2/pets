@@ -135,20 +135,6 @@ body {
   transform: translateY(16px);
 }
 
-/* The halo behind a full charge arc, during the beat the board holds before the passive fires. */
-.charge-ready {
-  animation: charge-pulse 460ms ease-in-out infinite alternate;
-}
-
-@keyframes charge-pulse {
-  from {
-    opacity: 0.15;
-  }
-  to {
-    opacity: 0.7;
-  }
-}
-
 .mon-shadow {
   position: absolute;
   border-radius: 50%;
@@ -168,6 +154,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  gap: 3px;
   pointer-events: none;
 }
 
@@ -199,6 +186,17 @@ body {
   color: #fff;
 }
 
+/* Special sits beside HP but reads as the ability's number, not a health number. */
+.figure-special {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: #8ff06a;
+  -webkit-text-stroke: 3px #14161a;
+  paint-order: stroke fill;
+  align-self: flex-start;
+}
+
 .figure-hp {
   font-family: 'Silkscreen', ui-monospace, monospace;
   font-size: 25px;
@@ -208,23 +206,18 @@ body {
   paint-order: stroke fill;
 }
 
-/* Width and height come from layout.ts, because the numbers block above the bar is positioned
-   from its size. Everything here is colour and edge treatment only. */
 .hp-track {
-  border-radius: 8px;
-  background: rgb(10 14 12 / 0.78);
-  border: 2px solid rgb(0 0 0 / 0.72);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
+  width: 92px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgb(10 14 12 / 0.65);
+  border: 1px solid rgb(0 0 0 / 0.5);
   overflow: hidden;
 }
 
 .hp-fill {
   height: 100%;
-  border-radius: 6px 0 0 6px;
   background: #56c95f;
-  /* A highlight along the top edge, so a 14px bar reads as a filled tube rather than a slab and
-     stays legible against a bright backdrop. */
-  box-shadow: inset 0 3px 0 rgb(255 255 255 / 0.28), inset 0 -3px 0 rgb(0 0 0 / 0.2);
   transition: width 260ms ease-out, background-color 260ms linear;
 }
 
@@ -852,10 +845,6 @@ button.on {
   .float {
     animation-duration: 1ms;
   }
-  .charge-ready {
-    animation: none;
-    opacity: 0.5;
-  }
 }
 
 /* --- run layer ---------------------------------------------------------------------------------
@@ -893,244 +882,361 @@ button.on {
   flex-direction: column;
 }
 
-/* --- the Location path ---------------------------------------------------------------------
- * The map is drawn over the Location's own art, which is what makes the eight Locations read as
- * eight places rather than as one board with a different type bias. The art carries a scrim
- * (applied inline, with the Location's tint under it) so a pale tundra and a black volcano both
- * leave the node labels readable.
+/* --- the Location path -------------------------------------------------------------------------
+ * The map is drawn over the region's painted art. Nodes sit in layer columns; the edges between
+ * them are real lines, so the branching is something to plan against rather than infer.
  */
 
 .location-map {
   flex: 1 1 auto;
-  padding: 24px 20px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 16px;
-  overflow: auto;
-  background-size: cover;
-  background-position: center;
-  image-rendering: pixelated;
+  overflow: hidden;
 }
 
-/* Layers as columns, entry on the left and the Gym on the right, so the branching reads as a
-   path forward rather than as a grid of options. */
+.map-board {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background-size: cover;
+  background-position: center;
+  overflow: auto;
+}
+
+/* The art is busy and the nodes have to stay readable on top of it. */
+.map-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgb(8 12 16 / 0.42), rgb(8 12 16 / 0.58));
+  pointer-events: none;
+}
+
+.map-edges {
+  position: absolute;
+  inset: 0;
+  /* Sized by inset rather than 100%, so it spans the row's full content width rather than the
+     visible width of the board scrolling it. */
+  pointer-events: none;
+  overflow: visible;
+}
+
+.map-edge {
+  stroke: rgb(255 255 255 / 0.28);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.map-edge.walked {
+  stroke: rgb(240 180 41 / 0.75);
+  stroke-width: 4;
+}
+
+.map-edge.open {
+  stroke: #fff;
+  stroke-width: 4;
+}
+
 .layer-row {
+  position: relative;
   display: flex;
-  gap: 42px;
+  gap: 22px;
+  width: max-content;
+  min-width: 100%;
   align-items: center;
   justify-content: space-between;
-  min-width: max-content;
-  overflow-x: auto;
-  padding: 10px 4px;
+  min-height: 100%;
+  padding: 20px 22px;
 }
 
 .layer {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
   flex: 0 0 auto;
   justify-content: center;
-  /* Above the edges, which are painted across the whole board underneath. */
-  position: relative;
-  z-index: 1;
-}
-
-/* The wiring, drawn rather than implied: a branching map whose branches are invisible is a column
-   of buttons. Painted under the nodes so a line runs into a token rather than over it. */
-.map-edges {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: visible;
-}
-
-.map-edge {
-  stroke: rgb(236 231 219 / 0.3);
-  stroke-width: 3;
-  stroke-linecap: round;
-}
-
-.map-edge.spent {
-  stroke: rgb(236 231 219 / 0.12);
-}
-
-/* The moves actually on offer. The only saturated thing on the board, for the same reason the
-   charge arc is the only saturated thing on the field. */
-.map-edge.open {
-  stroke: var(--charge);
-  stroke-width: 4;
-  opacity: 0.85;
 }
 
 .map-node {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 8px 10px 9px;
-  width: 124px;
-  text-align: center;
-  border-radius: 12px;
-  background: rgb(14 18 25 / 0.74);
-  border: 2px solid rgb(236 231 219 / 0.16);
-  backdrop-filter: blur(2px);
+  gap: 1px;
+  width: 74px;
+  padding: 6px 3px 4px;
+  border-radius: 10px;
+  background: rgb(10 16 14 / 0.82);
+  border: 2px solid rgb(255 255 255 / 0.22);
 }
 
-/* The icon is the signal; the two lines under it are the fallback. Rendered nearest-neighbour
-   because these are pixel art and any smoothing reads as a smudge at this size. */
-.map-node .node-icon {
-  width: 46px;
-  height: 46px;
-  object-fit: contain;
+.node-icon {
+  width: 38px;
+  height: 38px;
   image-rendering: pixelated;
-  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.6));
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.7));
 }
 
 .map-node .node-kind {
   font-family: 'Silkscreen', ui-monospace, monospace;
-  font-size: 9px;
-  color: var(--ink);
-  letter-spacing: 0.3px;
-}
-
-.map-node .node-label {
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 8px;
   color: var(--ink-dim);
-  line-height: 1.25;
-}
-
-.map-node.center.available {
-  border-color: var(--shield);
-}
-
-.map-node.encounter.available {
-  border-color: var(--ward);
-}
-
-.map-node .node-tick {
-  font-size: 10.5px;
-  color: var(--heal);
 }
 
 .map-node.available {
   border-color: var(--charge);
-  background: rgb(30 40 55 / 0.86);
+  background: rgb(36 30 12 / 0.9);
+  box-shadow: 0 0 14px rgb(240 180 41 / 0.4);
 }
 
 .map-node.gym.available {
   border-color: var(--hurt);
+  box-shadow: 0 0 14px rgb(217 95 82 / 0.45);
+}
+
+.map-node.mysterytrainer.available {
+  border-color: #b98ce0;
+  box-shadow: 0 0 14px rgb(185 140 224 / 0.4);
+}
+
+.map-node.center.available {
+  border-color: var(--shield);
+  box-shadow: 0 0 14px rgb(111 211 232 / 0.4);
+}
+
+.map-node.here {
+  border-color: var(--own);
 }
 
 .map-node.done {
   opacity: 0.4;
 }
 
-/* Nothing on offer is still worth looking at — it is the choice you are giving up. */
-.map-node:disabled:not(.done) {
-  opacity: 0.62;
+.map-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  border-top: 1px solid var(--chrome-edge);
+}
+
+.map-foot strong {
+  font-size: 14px;
+  color: var(--ink);
 }
 
 .map-note {
   color: var(--ink-dim);
   font-size: 13px;
   margin: 0;
+  padding: 8px 12px;
 }
 
-/* --- an Encounter's scene -------------------------------------------------------------------
- * A short scene and two or three choices, each of which states its trade in full. Laid out as a
- * narrow column rather than the full panel width, because it is prose and prose at 1400px is
- * unreadable.
- */
+/* The trainer token. Its transition is what the 'travelling' phase is waiting on. */
+.traveller {
+  position: absolute;
+  transform: translate(-50%, -140%);
+  transition: left 600ms cubic-bezier(0.4, 0.1, 0.3, 1), top 600ms cubic-bezier(0.4, 0.1, 0.3, 1);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.traveller-dot {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--charge);
+  border: 2px solid #23190a;
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.6);
+}
+
+.traveller.walking .traveller-dot {
+  animation: bob 300ms ease-in-out infinite alternate;
+}
+
+@keyframes bob {
+  from {
+    transform: rotate(-45deg) translateY(0);
+  }
+  to {
+    transform: rotate(-45deg) translateY(-4px);
+  }
+}
+
+/* --- encounters ---------------------------------------------------------------------------- */
 
 .encounter-panel {
   flex: 1 1 auto;
-  padding: 26px 24px;
+  padding: 26px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  gap: 8px;
-  text-align: center;
+  gap: 14px;
   overflow-y: auto;
 }
 
-.encounter-mark {
-  width: 56px;
-  height: 56px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  filter: drop-shadow(0 3px 5px rgb(0 0 0 / 0.5));
-}
-
 .encounter-panel h2 {
-  margin: 2px 0 0;
-  font-size: 21px;
-}
-
-.encounter-speaker {
   margin: 0;
-  font-family: 'Silkscreen', ui-monospace, monospace;
-  font-size: 10px;
-  color: var(--charge);
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-size: 26px;
 }
 
-.encounter-body,
-.encounter-result {
-  margin: 6px 0 4px;
-  max-width: 54ch;
-  color: var(--ink);
-  line-height: 1.55;
-}
-
-.encounter-result {
-  color: var(--heal);
+.encounter-body {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 15px;
+  color: var(--ink-dim);
 }
 
 .encounter-choices {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(100%, 54ch);
-  margin-top: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .encounter-choice {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
-  padding: 11px 14px;
+  gap: 4px;
+  padding: 14px 16px;
+  width: 270px;
   text-align: left;
-  border-radius: 10px;
-  background: var(--chrome-raised);
+  border-radius: 9px;
+  background: #1b2330;
   border: 2px solid var(--chrome-edge);
 }
 
-.encounter-choice:enabled:hover {
+.encounter-choice:hover {
   border-color: var(--charge);
-  background: #26303f;
 }
 
-.encounter-choice .choice-label {
+.choice-label {
   font-size: 14px;
   font-weight: 700;
 }
 
-/* The cost, the odds, and what lands in the run — before the click, never after it. */
-.encounter-choice .choice-detail {
+.choice-detail {
   font-size: 12px;
+  font-weight: 400;
   color: var(--ink-dim);
-  line-height: 1.4;
+  white-space: normal;
 }
 
-.encounter-choice:disabled .choice-detail {
+.encounter-outcome {
+  margin: 0;
+  font-size: 16px;
+  color: var(--charge);
+}
+
+/* --- spending EXP ----------------------------------------------------------------------------- */
+
+.growth-panel {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-color: var(--charge);
+}
+
+.growth-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.growth-row img {
+  image-rendering: pixelated;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  object-position: bottom;
+}
+
+.growth-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+}
+
+.growth-left {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 15px;
+  color: var(--charge);
+  min-width: 22px;
+  text-align: center;
+}
+
+.growth-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.growth-button {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  padding: 6px 9px;
+}
+
+.growth-button.speed {
+  border-color: #7a5ea8;
+}
+
+/* --- the verdict popup -------------------------------------------------------------------------
+ * Over the finished board rather than a cut away from it: the board is what a player wants to
+ * read at that moment.
+ */
+
+.verdict-popup {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%) scale(0.8);
+  opacity: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 18px 46px;
+  border-radius: 14px;
+  background: rgb(8 12 16 / 0.88);
+  border: 2px solid rgb(255 255 255 / 0.2);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.6);
+  z-index: 70;
+  pointer-events: none;
+  animation: verdict-in 420ms cubic-bezier(0.2, 1.3, 0.5, 1) forwards;
+}
+
+@keyframes verdict-in {
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.verdict-word {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.verdict-word.win {
+  color: var(--charge);
+}
+.verdict-word.lose {
   color: var(--hurt);
+}
+.verdict-word.draw {
+  color: var(--ink-dim);
+}
+
+.verdict-sub {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-dim);
 }
 
 /* --- team --------------------------------------------------------------------------------- */
@@ -1179,8 +1285,8 @@ button.on {
 
 .team-card img {
   image-rendering: pixelated;
-  width: 46px;
-  height: 46px;
+  width: 58px;
+  height: 58px;
   object-fit: contain;
   object-position: bottom;
   flex: 0 0 auto;
@@ -1195,7 +1301,7 @@ button.on {
 }
 
 .team-name {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   display: flex;
   align-items: baseline;
@@ -1204,7 +1310,6 @@ button.on {
 
 .team-name em {
   font-style: normal;
-  white-space: nowrap;
   font-family: 'Silkscreen', ui-monospace, monospace;
   font-size: 9px;
   color: #5aa9e6;
@@ -1219,6 +1324,49 @@ button.on {
 
 .team-exp {
   color: var(--charge);
+  font-size: 10px;
+}
+
+.team-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 10px;
+  margin: 3px 0 4px;
+}
+
+.team-stat-grid span {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.team-stat-grid em {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--ink-dim);
+  margin-right: 3px;
+}
+
+.evo-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.1);
+  overflow: hidden;
+  margin: 2px 0 4px;
+}
+
+.evo-bar-fill {
+  height: 100%;
+  background: linear-gradient(to right, #4fbb3f, #8ff06a);
+  transition: width 260ms ease-out;
+}
+
+.evo-bar.large {
+  height: 10px;
+  border-radius: 5px;
 }
 
 .team-types {
@@ -1374,13 +1522,12 @@ button.on {
 
 .map-node.here {
   border-color: var(--own);
-  background: rgb(44 58 76 / 0.9);
+  background: #2c3a4c;
 }
 
 .traveller {
   position: absolute;
-  /* Centred on the node it stands on, and above both the edges and the tokens. */
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -100%);
   transition: left 420ms cubic-bezier(0.34, 1.2, 0.64, 1), top 420ms cubic-bezier(0.34, 1.2, 0.64, 1);
   pointer-events: none;
   z-index: 5;
@@ -1419,74 +1566,51 @@ button.on {
 .slot-row {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: 0;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
-/* --- roster slots ----------------------------------------------------------------------------
- * A slot is the drop target, filled or empty, and it owns the whole drop — the card inside only
- * starts drags. While the card was also a target, the same gesture did different things a few
- * pixels apart, which is what made reordering feel unpredictable.
- *
- * Every slot the line-up could hold is drawn, not only the occupied ones: how much room is left
- * is a decision the player makes every turn, and an invisible slot is a decision you can't see.
- */
+/* Used in the Box screen, where the line-up doesn't need horizontal scrolling — it can just
+   wrap, the same way the Box grid below it does. */
+.slot-row.wrap {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
 
-.roster-slot {
-  position: relative;
+/* Drop targets are the gaps between cards, not the cards: "onto a card" is ambiguous about
+   whether you meant before it or after it, and the ambiguity lands mons a slot off. */
+.slot-gap {
   flex: 0 0 auto;
-  width: 226px;
-  border-radius: 10px;
-  border: 2px dashed transparent;
-  transition: border-color 120ms linear, background-color 120ms linear;
+  width: 30px;
+  align-self: stretch;
+  border-radius: 6px;
+  transition: background-color 120ms linear, box-shadow 120ms linear;
+  position: relative;
 }
 
-.roster-slot.empty {
-  width: 132px;
-}
-
-/* Every slot a drag could land in, marked the moment it starts — so the options are visible
-   before the pointer goes looking for them. */
-.roster-slot.targetable {
-  border-color: rgb(240 180 41 / 0.3);
-}
-
-.roster-slot.over {
-  border-color: var(--charge);
-  background: rgb(240 180 41 / 0.12);
-}
-
-/* A merge is destructive, so it never wears the same colour as a move. */
-.roster-slot.merging.over {
-  border-color: var(--ward);
-  background: rgb(201 160 220 / 0.14);
-}
-
-/* What this slot will do, said before the drop rather than discovered after it.
-   Centred *inside* the slot rather than tucked above it: the row scrolls horizontally, and
-   anything drawn outside the slot's own box is clipped by that scroll container. */
-.slot-verb {
+/* A thin rest-state marker so the gap is visible before anything is being dragged, not just
+   discoverable by accident — this is the thing that was too small and easy to miss entirely. */
+.slot-gap::after {
+  content: '';
   position: absolute;
-  top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 3px 10px;
-  border-radius: 10px;
-  font-family: 'Silkscreen', ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  color: #17130a;
-  background: var(--charge);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.55);
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 3;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: rgb(255 255 255 / 0.14);
+  border-radius: 2px;
 }
 
-.roster-slot.merging .slot-verb {
-  background: var(--ward);
-  color: #1c1226;
+.slot-gap.over {
+  background: rgb(240 180 41 / 0.22);
+  box-shadow: inset 0 0 0 2px var(--charge);
+}
+
+.slot-gap.over::after {
+  background: var(--charge);
+  width: 3px;
 }
 
 .slot-number {
@@ -1501,8 +1625,38 @@ button.on {
 .team-builder .team-card,
 .box-grid .team-card {
   position: relative;
-  height: 100%;
+  flex: 0 0 auto;
+  width: 230px;
   cursor: grab;
+}
+
+.team-card.clickable {
+  cursor: pointer;
+}
+
+.pending-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--charge);
+  color: #23190a;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
+  z-index: 2;
+  animation: badge-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
 }
 
 .team-builder .team-card:active,
@@ -1510,36 +1664,12 @@ button.on {
   cursor: grabbing;
 }
 
-.slot-empty {
-  position: relative;
-  height: 100%;
-  min-height: 74px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 2px;
-  padding: 6px;
-  border: 2px dashed var(--chrome-edge);
-  border-radius: 8px;
-  color: var(--ink-dim);
-  font-size: 11px;
-  text-align: center;
+.slot-hint {
+  margin: 4px 2px 0;
 }
 
-.slot-empty-hint {
-  line-height: 1.3;
-  opacity: 0.8;
-}
-
-/* Two by two rather than a single row. Combining added a fourth control, and a row of four ate
-   the width the stat line needs — the numbers were wrapping a character to a line. */
 .team-actions {
   flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  flex: 0 0 auto;
-  width: 52px;
 }
 
 /* --- the Box screen ------------------------------------------------------------------------------ */
@@ -1572,8 +1702,6 @@ button.on {
   transition: border-color 120ms linear, background-color 120ms linear;
 }
 
-/* The Box as a whole still takes a drop — dropping anywhere in it benches the mon — so it marks
-   itself the same way one of its slots does. */
 .box-grid.over {
   border-color: var(--charge);
   background: rgb(240 180 41 / 0.07);
@@ -1614,273 +1742,836 @@ button.on {
   cursor: grab;
 }
 
-/* --- type buffs outside battle ----------------------------------------------------------------
- * The same counts the field's corners show, on the screens where they can still be changed. Sized
- * down and set on a strip rather than floated over art: here they are a readout you scan while
- * deciding, not a thing that has to survive being read over a battlefield.
- */
 
-.team-synergies {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-bottom: 10px;
+/* The ability bar fills rather than snapping. The path itself never changes; only how much of it
+   is revealed, which is a number and so can be transitioned. */
+.charge-fill {
+  /* Fallback only: the player overrides this per-mon so the fill runs continuously across a
+     Step's beats and the inter-Step pause rather than reaching its target in a fixed burst. */
+  transition: stroke-dashoffset 280ms linear, stroke 160ms linear;
 }
 
-.synergy-label,
-.synergy-empty {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
+.charge-fill.full {
+  filter: drop-shadow(0 0 6px rgb(143 240 106 / 0.8));
 }
 
-.synergy-empty {
-  text-transform: none;
-  letter-spacing: 0;
-  font-style: italic;
+@media (prefers-reduced-motion: reduce) {
+  /* !important: the player sets an inline transition per mon, which otherwise outranks this. */
+  .charge-fill {
+    transition: none !important;
+  }
 }
 
-.synergy-chip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px 3px 4px;
-  border-radius: 999px;
-  background: #182029;
-  border: 1px solid var(--chrome-edge);
-  cursor: help;
+
+/* --- the result, over the battle ---------------------------------------------------------------- */
+
+.result-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(6 9 13 / 0.72);
+  z-index: 200;
+  animation: fade-in 220ms ease-out;
+  padding: 20px;
 }
 
-.synergy-icon {
-  width: 18px;
-  height: 18px;
-  image-rendering: pixelated;
-}
-
-.synergy-name {
-  font-family: 'Silkscreen', ui-monospace, monospace;
-  font-size: 9.5px;
-  color: var(--ink);
-}
-
-.synergy-effect {
-  font-size: 11.5px;
-  color: var(--ink-dim);
-}
-
-/* Spelled out in full, so the chips stack rather than run along a line. */
-.team-synergies.detailed {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-}
-
-.team-synergies.detailed .synergy-chip {
-  border-radius: 8px;
+.result-overlay .result-panel {
+  flex: 0 0 auto;
+  max-width: 560px;
   width: 100%;
-  cursor: default;
+  animation: pop-in 320ms cubic-bezier(0.2, 1.3, 0.5, 1);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.6);
 }
 
-/* --- combining --------------------------------------------------------------------------------
- * A merge destroys a Pokémon, so the card that would be eaten and the card that would survive are
- * both marked, and the survivor's new stat line replaces its EXP readout while the choice is live.
- * Nothing is promised that wouldn't happen: only cards that really would merge light up.
- */
-
-.team-card.combining {
-  border-color: var(--charge);
-  box-shadow: 0 0 0 1px var(--charge) inset;
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
-.team-card.combine-candidate {
-  border-color: var(--heal);
-  background: #1a2620;
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(12px);
+  }
 }
 
-.team-preview {
-  font-family: 'Silkscreen', ui-monospace, monospace;
-  font-size: 9.5px;
-  color: var(--heal);
+
+/* --- gym celebration ---------------------------------------------------------------------------- */
+
+.celebration-panel {
+  flex: 1 1 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  animation: pop-in 380ms cubic-bezier(0.2, 1.3, 0.5, 1);
 }
 
-.team-actions button.combine-on {
-  border-color: var(--charge);
+.badge-award {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.badge-glyph {
+  font-size: 54px;
+  line-height: 1;
+  filter: drop-shadow(0 0 16px rgb(240 180 41 / 0.6));
+  animation: badge-in 700ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes badge-in {
+  from {
+    transform: scale(0.2) rotate(-40deg);
+    opacity: 0;
+  }
+}
+
+.celebration-panel h2 {
+  margin: 0;
+  font-size: 26px;
   color: var(--charge);
 }
 
-.team-actions button.combine-go {
-  border-color: var(--heal);
-  color: var(--heal);
-}
-
-.combine-hint,
-.fusion-note {
-  margin: 8px 0 0;
-  font-size: 12px;
+.badge-leader {
+  margin: 2px 0 0;
+  font-size: 13px;
   color: var(--ink-dim);
 }
 
-.fusion-note {
-  color: var(--heal);
+.badge-quote {
+  margin: 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--chrome-edge);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--ink);
+  max-width: 62ch;
 }
 
-/* --- the evolution ceremony -------------------------------------------------------------------
- * Three beats: the glow builds over the old mon while it washes to a white silhouette, a flash
- * covers the swap, and the new mon arrives. The flash is the functional part — it is what hides
- * one sprite being exchanged for another, which is why the handheld games do it too.
- *
- * Every animation is keyed off a stage class, so the component can jump straight to `revealed`
- * for a player who has asked for reduced motion and nothing moves at all.
- */
+.badge-count {
+  margin: 0;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
 
-.evolution-scene {
+.region-choices {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.region-choice {
+  position: relative;
+  width: 268px;
+  min-height: 132px;
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid var(--chrome-edge);
+  background-size: cover;
+  background-position: center;
+  text-align: left;
+}
+
+.region-choice:hover {
+  border-color: var(--charge);
+}
+
+.region-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgb(6 9 13 / 0.94) 20%, rgb(6 9 13 / 0.35));
+}
+
+.region-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  justify-content: flex-end;
+  min-height: 132px;
+}
+
+.region-body strong {
+  font-size: 15px;
+}
+
+.region-body em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-dim);
+  white-space: normal;
+}
+
+.region-types {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.region-types img {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+
+/* --- trainer buffs ------------------------------------------------------------------------------ */
+
+.buff-panel {
   flex: 1 1 auto;
   padding: 26px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 12px;
   justify-content: center;
-  gap: 16px;
-  position: relative;
-  overflow: hidden;
 }
 
-.evolution-stage {
-  position: relative;
-  width: 260px;
-  height: 200px;
-  display: grid;
-  place-items: center;
+.buff-panel h2 {
+  margin: 0;
+  font-size: 26px;
 }
 
-.evolution-glow {
-  position: absolute;
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgb(240 180 41 / 0.6), rgb(240 180 41 / 0) 70%);
-  opacity: 0;
+.buff-choices {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.evolution-sprite {
-  position: absolute;
-  bottom: 8px;
-  width: 170px;
-  height: 170px;
+.buff-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 14px 16px;
+  width: 262px;
+  text-align: left;
+  border-radius: 9px;
+  background: #1b2330;
+  border: 2px solid var(--chrome-edge);
+}
+
+.buff-choice:hover {
+  border-color: var(--charge);
+}
+
+.buff-choice strong {
+  font-size: 14.5px;
+}
+
+.buff-choice span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-dim);
+  white-space: normal;
+}
+
+
+/* --- adoption --------------------------------------------------------------------------------- */
+
+.adopt-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.adopt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 124px;
+  padding: 8px 6px;
+  border-radius: 9px;
+  background: #182029;
+  border: 2px solid var(--chrome-edge);
+}
+
+.adopt-card:hover:not(:disabled) {
+  border-color: var(--charge);
+}
+
+.adopt-card img {
   image-rendering: pixelated;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
   object-position: bottom;
 }
 
-.evolution-sprite.to {
-  opacity: 0;
+.adopt-name {
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.evolution-flash {
-  position: absolute;
+.adopt-figures {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 8.5px;
+  color: var(--ink-dim);
+}
+
+.adopt-types {
+  display: flex;
+  gap: 3px;
+  margin: 2px 0;
+}
+
+.adopt-types img {
+  width: 16px;
+  height: 16px;
+}
+
+.adopt-cost {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--charge);
+}
+
+.shop-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* --- the single result popup -------------------------------------------------------------------- */
+
+.result-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 620px;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  animation: pop-in 320ms cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+.result-stack .result-panel {
+  animation: none;
+  padding: 20px 24px;
+}
+
+.result-stack .growth-panel {
+  flex: 0 0 auto;
+}
+
+
+/* --- the Pokémon detail modal ------------------------------------------------------------------- */
+
+.modal-scrim {
+  position: fixed;
   inset: 0;
-  background: radial-gradient(circle at center, #fff 35%, rgb(255 255 255 / 0.75) 100%);
+  background: rgb(6 9 13 / 0.72);
+  display: grid;
+  place-items: center;
+  z-index: 300;
+  animation: fade-in 180ms ease-out;
+  padding: 20px;
+}
+
+.detail-modal {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: pop-in 260ms cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.detail-head img {
+  image-rendering: pixelated;
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  object-position: bottom;
+}
+
+.detail-head h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.detail-types {
+  display: flex;
+  gap: 4px;
+}
+
+.detail-types img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.detail-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: #182029;
+  border: 1px solid var(--chrome-edge);
+}
+
+.detail-stat-label {
+  font-size: 9.5px;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.detail-stat-value {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.detail-ability {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #182029;
+  border: 1px solid var(--chrome-edge);
+}
+
+.detail-ability-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--charge);
+}
+
+.detail-ability-desc {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+.detail-evo {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.detail-evo-label {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--ink-dim);
+}
+
+.detail-points {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.growth-buttons.large {
+  display: flex;
+  gap: 6px;
+}
+
+.growth-buttons.large .growth-button {
+  flex: 1 1 0;
+  font-size: 12px;
+  padding: 9px 0;
+}
+
+.detail-combine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.combine-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.combine-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #182029;
+  border: 1px solid var(--chrome-edge);
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.combine-row:hover {
+  border-color: var(--charge);
+}
+
+.combine-row img {
+  width: 26px;
+  height: 26px;
+  image-rendering: pixelated;
+}
+
+.combine-plus {
+  color: var(--charge);
+  font-weight: 700;
+}
+
+
+/* --- the stats a battle node pays --------------------------------------------------------------
+ * Shown before the node is taken, so the route choice carries the strategy that used to live in
+ * assigning points after every fight.
+ */
+
+.node-stats {
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.node-stat {
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 7.5px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.node-stat.attack {
+  background: rgb(217 95 82 / 0.42);
+}
+.node-stat.health {
+  background: rgb(86 201 95 / 0.38);
+}
+.node-stat.special {
+  background: rgb(143 240 106 / 0.32);
+}
+.node-stat.speed {
+  background: rgb(122 94 168 / 0.5);
+}
+
+/* --- the evolution popup -------------------------------------------------------------------------
+ * The flicker-between-forms sequence. Phase is driven from React (the swap has to accelerate,
+ * which CSS keyframes cannot do on their own); everything here is the look of each phase.
+ */
+
+.evolution-scrim {
+  background: rgb(4 6 10 / 0.93);
+  z-index: 400;
+}
+
+.evolution-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 30px 40px;
+  min-width: 340px;
+}
+
+.evolution-sprite {
+  position: relative;
+  z-index: 2;
+  width: 176px;
+  height: 176px;
+  object-fit: contain;
+  object-position: center;
+  image-rendering: pixelated;
+  transition: filter 160ms linear, transform 160ms ease-out;
+}
+
+/* Whiting out is what sells the swap: both forms read as the same silhouette mid-flicker, so the
+   eye can't tell which one it is looking at until the reveal. */
+.evolution-stage.charging .evolution-sprite {
+  filter: brightness(2.6) saturate(0.25) drop-shadow(0 0 22px rgb(255 255 255 / 0.85));
+  transform: scale(1.04);
+}
+
+.evolution-stage.flickering .evolution-sprite {
+  filter: brightness(3.4) saturate(0) drop-shadow(0 0 28px rgb(255 255 255 / 0.95));
+}
+
+.evolution-stage.bursting .evolution-sprite {
+  filter: brightness(4) saturate(0);
+  transform: scale(1.14);
+}
+
+.evolution-stage.revealed .evolution-sprite {
+  filter: none;
+  transform: scale(1);
+  animation: evolution-settle 520ms cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+
+@keyframes evolution-settle {
+  from {
+    transform: scale(1.22);
+    filter: brightness(3) saturate(0);
+  }
+}
+
+/* Rays behind the sprite, spinning slowly through the charge and flicker. */
+.evolution-rays {
+  position: absolute;
+  top: 30px;
+  width: 300px;
+  height: 300px;
+  opacity: 0;
+  /* Purely decorative, and it overlaps the caption/reward/button below it — the Continue button
+     is a plain static-flow element, so this absolutely-positioned layer paints above it and, at
+     opacity 0, would silently eat every click meant for that button. `.evolution-burst` already
+     gets this; this rule was missing it. */
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    rgb(255 255 255 / 0.3) 0deg 6deg,
+    transparent 6deg 24deg
+  );
+  border-radius: 50%;
+  mask-image: radial-gradient(circle, transparent 28%, #000 62%, transparent 78%);
+  transition: opacity 400ms linear;
+  animation: rays-spin 7s linear infinite;
+}
+
+.evolution-stage.charging .evolution-rays,
+.evolution-stage.flickering .evolution-rays {
+  opacity: 1;
+}
+
+.evolution-stage.bursting .evolution-rays {
+  opacity: 0.4;
+}
+
+@keyframes rays-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The white flash at the moment the new form locks in. */
+.evolution-burst {
+  position: absolute;
+  top: 30px;
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, rgb(255 255 255 / 0.6) 40%, transparent 70%);
   opacity: 0;
   pointer-events: none;
 }
 
-.stage-charging .evolution-glow {
-  animation: evo-glow 1.3s ease-in forwards;
+.evolution-stage.bursting .evolution-burst {
+  animation: evolution-flash 520ms ease-out;
 }
 
-.stage-charging .evolution-sprite.from {
-  animation: evo-pulse 0.42s ease-in-out infinite alternate;
-}
-
-.stage-flash .evolution-sprite.from,
-.stage-revealed .evolution-sprite.from {
-  opacity: 0;
-}
-
-.stage-flash .evolution-flash {
-  animation: evo-flash 0.42s ease-out forwards;
-}
-
-.stage-revealed .evolution-sprite.to {
-  opacity: 1;
-  animation: evo-arrive 0.6s cubic-bezier(0.2, 1.4, 0.4, 1);
-}
-
-.stage-revealed .evolution-glow {
-  opacity: 0.35;
-}
-
-@keyframes evo-glow {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-  to {
-    opacity: 0.9;
-    transform: scale(1.15);
-  }
-}
-
-@keyframes evo-pulse {
-  from {
-    filter: none;
-    transform: scale(1);
-  }
-  to {
-    filter: brightness(0) invert(1);
-    transform: scale(1.06);
-  }
-}
-
-@keyframes evo-flash {
+@keyframes evolution-flash {
   0% {
     opacity: 0;
+    transform: scale(0.5);
   }
-  35% {
+  30% {
     opacity: 1;
+    transform: scale(2.4);
   }
   100% {
     opacity: 0;
-  }
-}
-
-@keyframes evo-arrive {
-  from {
-    transform: scale(0.72);
-  }
-  to {
-    transform: scale(1);
+    transform: scale(3.4);
   }
 }
 
 .evolution-caption {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   text-align: center;
+  color: var(--ink);
+  z-index: 2;
 }
 
-.evolution-caption strong {
+.evolution-new {
   color: var(--charge);
 }
 
-.evolution-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.evolution-reward {
+  margin: 0;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--heal);
+  z-index: 2;
 }
 
-.evolution-progress {
-  font-family: 'Silkscreen', ui-monospace, monospace;
-  font-size: 10px;
+/* The flicker is the entire point of the animation, so reduced-motion gets the reveal only. */
+@media (prefers-reduced-motion: reduce) {
+  .evolution-sprite,
+  .evolution-rays,
+  .evolution-burst {
+    animation: none !important;
+    transition: none !important;
+  }
+  .evolution-rays {
+    opacity: 0 !important;
+  }
+}
+
+/* --- held items ---------------------------------------------------------------------------------
+ * Colour-coded by what the item does, so a glance at a line-up says which mon is carrying
+ * sustain, which is carrying typing, and which is being trained.
+ */
+
+.held-item {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: grab;
+  background: rgb(255 255 255 / 0.12);
+  color: var(--ink);
+  border: 1px solid rgb(255 255 255 / 0.18);
+  white-space: nowrap;
+}
+
+.held-item:active {
+  cursor: grabbing;
+}
+
+.held-item.kind-setType {
+  background: rgb(185 140 224 / 0.3);
+  border-color: #b98ce0;
+}
+.held-item.kind-regen,
+.held-item.kind-lastStand {
+  background: rgb(86 201 95 / 0.28);
+  border-color: #56c95f;
+}
+.held-item.kind-cureStatus {
+  background: rgb(111 211 232 / 0.26);
+  border-color: var(--shield);
+}
+.held-item.kind-flatStat,
+.held-item.kind-training {
+  background: rgb(240 180 41 / 0.26);
+  border-color: var(--charge);
+}
+.held-item.kind-exp {
+  background: rgb(127 178 232 / 0.28);
+  border-color: var(--own);
+}
+
+/* --- the bag ------------------------------------------------------------------------------------ */
+
+.bag-modal {
+  /* Fixed and corner-anchored rather than centred over a full-screen scrim, so the team builder
+     stays visible and reachable behind it — see the comment in BagPopup.tsx. */
+  position: fixed;
+  top: 76px;
+  right: 16px;
+  width: 100%;
+  max-width: 360px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 20px 22px;
+  z-index: 250;
+  box-shadow: 0 18px 48px rgb(6 9 13 / 0.55);
+  animation: pop-in 240ms cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+.bag-modal h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.bag-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.bag-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #182029;
+  border: 1px solid var(--chrome-edge);
+  cursor: grab;
+}
+
+.bag-item:hover {
+  border-color: var(--charge);
+}
+
+.bag-item:active {
+  cursor: grabbing;
+}
+
+.bag-item-name {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.bag-item-blurb {
+  font-size: 11.5px;
   color: var(--ink-dim);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .evolution-glow,
-  .evolution-sprite,
-  .evolution-flash {
-    animation: none !important;
-  }
+.bag-item-count {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--charge);
+}
+
+/* Matches the held-item colour coding, as a left edge. */
+.bag-item.kind-setType {
+  border-left: 3px solid #b98ce0;
+}
+.bag-item.kind-regen,
+.bag-item.kind-lastStand {
+  border-left: 3px solid #56c95f;
+}
+.bag-item.kind-cureStatus {
+  border-left: 3px solid var(--shield);
+}
+.bag-item.kind-flatStat,
+.bag-item.kind-training {
+  border-left: 3px solid var(--charge);
+}
+.bag-item.kind-exp {
+  border-left: 3px solid var(--own);
 }

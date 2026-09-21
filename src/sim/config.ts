@@ -13,7 +13,20 @@
  * on the second, Speed 3 every Step. Against the old threshold of 100, a Speed-1 mon needed a
  * hundred-Step fight to use its passive once.
  */
-export const CHARGE_THRESHOLD = 3;
+export const CHARGE_THRESHOLD = 100;
+
+/**
+ * Charge a mon accrues per point of Speed, per Step.
+ *
+ * Calibrated so **100 Speed means three ability activations per attack**: at 3 per point, a
+ * 100-Speed mon banks 300 a Step against a threshold of 100. A 10-Speed starter banks 30, so it
+ * fires roughly once every three and a half attacks.
+ *
+ * The old scale was Speed 1-3 against a threshold of 3, which made a single point of Speed worth
+ * doubling or tripling a mon's entire ability output. Spreading the same relationship over a
+ * hundred points is what makes Speed a stat you can invest in gradually rather than a switch.
+ */
+export const CHARGE_PER_SPEED_POINT = 3;
 
 /**
  * Fixed pacing window per Step. Named for milliseconds to match the spec's charge formula
@@ -65,3 +78,29 @@ export const EVENT_CAP = 10000;
 
 /** Charge accrual multiplier while Paralyzed. */
 export const PARALYZED_CHARGE_MULTIPLIER = 0.5;
+
+/** The charge numbers a simulation runs on. Defaults to the game's; fixtures override them. */
+export interface ChargeConfig {
+  threshold: number;
+  perSpeedPoint: number;
+}
+
+export const DEFAULT_CHARGE_CONFIG: ChargeConfig = {
+  threshold: CHARGE_THRESHOLD,
+  perSpeedPoint: CHARGE_PER_SPEED_POINT,
+};
+
+/**
+ * The charge model the Unity implementation uses: Speed 1-3 against a threshold of 3, one point
+ * of charge per point of Speed.
+ *
+ * The game has deliberately moved off this scale, but the shared golden fixtures were calibrated
+ * against it — four of the six assert exact charge values, and the threshold also decides when
+ * passives fire and therefore who wins. Running the fixtures under these numbers keeps them a
+ * real cross-implementation check of the Step loop, the damage pipeline, statuses and synergies,
+ * instead of six files that now only describe a game nobody is building.
+ */
+export const LEGACY_CHARGE_CONFIG: ChargeConfig = {
+  threshold: 3,
+  perSpeedPoint: 1,
+};

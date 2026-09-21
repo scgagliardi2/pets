@@ -16,7 +16,12 @@ export const DRAG_MIME = 'application/x-pets-drag';
 
 export type DragPayload =
   | { kind: 'ball'; tier: string }
-  | { kind: 'mon'; instanceId: string; from: 'lineUp' | 'box' };
+  | { kind: 'mon'; instanceId: string; from: 'lineUp' | 'box' }
+  /**
+   * A held item in flight. `from` is the mon it is currently on, or null if it came from the bag —
+   * which is what lets a drop decide between moving an item and equipping a fresh one.
+   */
+  | { kind: 'item'; itemId: string; from: string | null };
 
 export function setDragPayload(event: React.DragEvent, payload: DragPayload): void {
   event.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload));

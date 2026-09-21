@@ -22,16 +22,36 @@
  * nothing is ever ruined by being left there.
  */
 
-import { evolutionOf, speciesOf, type Species } from '../content/index.js';
+import { baseFormOf, evolutionOf, speciesOf, type Species } from '../content/index.js';
 import { EXP_PER_EVOLUTION } from '../content/statGrowth.js';
 import type { PokemonInstance } from '../content/factory.js';
-import { speciesOfInstance } from '../content/factory.js';
-import type { RunState } from './runState.js';
+import { speciesOfInstance, unspentPoints } from '../content/factory.js';
+import { itemById } from '../content/items.js';
+import { allocate, type GrowableStat } from '../content/statGrowth.js';
+import { allMons, type RunState } from './runState.js';
 
 export { EXP_PER_EVOLUTION };
 
 /** How far behind the run's most-experienced mon another may fall — about two fights. */
 export const CATCH_UP_EXP_GAP = 2;
+
+/**
+ * Stat points a mon receives each time it evolves.
+ *
+ * Evolution is now the *only* routine source of points the player assigns by hand. Battles award
+ * their two stats directly, so the assignment screen appears at a milestone rather than after
+ * every fight — a decision worth stopping for, instead of constant upkeep.
+ */
+export const STAT_POINTS_PER_EVOLUTION = 10;
+
+/**
+ * EXP one combine is worth, toward evolving.
+ *
+ * Four, so three sacrifices evolve a base-form mon: four Charmanders combine into one Charmeleon.
+ * A flat amount rather than the sacrifice's own progress, so a pile of low-tier catches can't be
+ * cashed in as a shortcut past the tier curve.
+ */
+export const EXP_PER_COMBINE = 4;
 
 /** A bound on the evolution loop, so a malformed chain that cycles can't hang the game. */
 const MAX_EVOLUTIONS_PER_GRANT = 8;
@@ -62,6 +82,10 @@ export const expForNextEvolution = (mon: PokemonInstance): number =>
 /**
  * Raises one mon to a lifetime EXP total, evolving it as many times as that crosses.
  *
+ * The points arrive *unspent*: `exp` rises but `allocation` does not, so the mon carries a
+ * pending choice until the player makes it. Evolution still keys off lifetime EXP, so a mon
+ * evolves on schedule whether or not its owner has got round to spending anything.
+ *
  * A mon at the end of its chain still banks the EXP — the points keep buying Attack or Health —
  * it just has nothing left to become, so `timesEvolved` stops rising and it stops collecting the
  * flat evolution bonus.
@@ -84,7 +108,13 @@ export function raiseToExp(
     const into = evolutionOf(current);
     if (into === null) break;
 
-    next = { ...next, speciesId: into.id, timesEvolved: next.timesEvolved + 1 };
+    next = {
+      ...next,
+      speciesId: into.id,
+      timesEvolved: next.timesEvolved + 1,
+      // Evolving is what hands the player stat points to assign.
+      statPoints: next.statPoints + STAT_POINTS_PER_EVOLUTION,
+    };
     evolutions.push({ instanceId: next.instanceId, from: current, to: into });
   }
 
@@ -104,14 +134,25 @@ export function catchUpFloor(run: RunState): number {
  * Order matters: the grant happens first, so the mon that earned it is ahead, and catch-up then
  * pulls the stragglers toward the new high-water mark rather than the old one.
  */
-export function grantWinExp(run: RunState, points: number): { run: RunState; report: GrowthReport } {
+export function grantWinExp(
+  run: RunState,
+  points: number,
+  /**
+   * Who fought. Omitted means the whole line-up — which is right for an encounter that trains
+   * everyone, and wrong for a battle, where a mon that never left the back of the train should
+   * not be paid for it.
+   */
+  participants?: readonly string[],
+): { run: RunState; report: GrowthReport } {
   if (points <= 0 && run.lineUp.length === 0) return { run, report: emptyReport() };
 
+  const fought = participants === undefined ? null : new Set(participants);
   const gained: Record<string, number> = {};
   const evolutions: Evolution[] = [];
 
   let lineUp = run.lineUp.map((mon) => {
-    const result = raiseToExp(mon, mon.exp + Math.max(0, points));
+    if (fought !== null && !fought.has(mon.instanceId)) return mon;
+    const result = raiseToExp(mon, mon.exp + Math.max(0, points) + itemExpBonus(mon));
     if (result.gained > 0) gained[mon.instanceId] = result.gained;
     evolutions.push(...result.evolutions);
     return result.mon;
@@ -119,6 +160,10 @@ export function grantWinExp(run: RunState, points: number): { run: RunState; rep
 
   const floor = catchUpFloor({ ...run, lineUp });
   lineUp = lineUp.map((mon) => {
+    // Gated by the same list as the grant. Catching up a mon that never left the back of the
+    // train is the same mistake as catching up the Box: it makes sitting a fight out free, and
+    // the line-up order stops being a decision.
+    if (fought !== null && !fought.has(mon.instanceId)) return mon;
     const result = raiseToExp(mon, Math.max(mon.exp, floor));
     if (result.gained > 0) {
       gained[mon.instanceId] = (gained[mon.instanceId] ?? 0) + result.gained;
@@ -130,56 +175,128 @@ export function grantWinExp(run: RunState, points: number): { run: RunState; rep
   return { run: { ...run, lineUp }, report: { gained, evolutions } };
 }
 
+/** Spends one pending stat point on a stat. No-op if the mon has nothing pending. */
+export function spendPoint(
+  run: RunState,
+  instanceId: string,
+  stat: GrowableStat,
+): RunState {
+  const apply = (mon: PokemonInstance): PokemonInstance =>
+    mon.instanceId === instanceId && unspentPoints(mon) > 0
+      ? {
+          ...mon,
+          // Both sides move: the point leaves the pool and lands in the allocation. When unspent
+          // was derived as `exp - totalAllocated` the decrement was implicit; now that stat
+          // points are their own counter it has to be explicit, or spending is free.
+          statPoints: mon.statPoints - 1,
+          allocation: allocate(mon.allocation, stat),
+        }
+      : mon;
+
+  return { ...run, lineUp: run.lineUp.map(apply), box: run.box.map(apply) };
+}
+
+/** Every mon with points waiting to be spent, line-up first. */
+export const monsAwaitingChoice = (run: RunState): PokemonInstance[] =>
+  [...run.lineUp, ...run.box].filter((m) => unspentPoints(m) > 0);
+
 /**
- * Raises one named mon to a lifetime EXP total, wherever the run keeps it.
+ * Applies a battle node's stat rewards directly to everyone who fought.
  *
- * Encounters need this and a win does not: a win pays the whole line-up, but a Day Care raises the
- * one mon you left there, and a shrine blesses the one in front. No catch-up pass runs — catch-up
- * is what a *win* does for the mons that were not the reason for it, and applying it here would
- * quietly hand the rest of the team the reward the player spent a node choosing for one mon.
+ * Straight into `allocation`, not into `statPoints`: the node already told the player which two
+ * stats it pays, so making them click the same two buttons afterwards would be upkeep without a
+ * decision. The decision was choosing the route.
  */
-export function raiseMonToExp(
+export function applyStatRewards(
   run: RunState,
-  instanceId: string,
-  targetExp: number,
-): { run: RunState; report: GrowthReport } {
-  const gained: Record<string, number> = {};
-  const evolutions: Evolution[] = [];
+  stats: readonly GrowableStat[],
+  participants: readonly string[],
+): RunState {
+  if (stats.length === 0 || participants.length === 0) return run;
+  const fought = new Set(participants);
 
-  const raise = (mon: PokemonInstance): PokemonInstance => {
-    if (mon.instanceId !== instanceId) return mon;
-    const result = raiseToExp(mon, Math.max(mon.exp, targetExp));
-    if (result.gained > 0) gained[mon.instanceId] = result.gained;
-    evolutions.push(...result.evolutions);
-    return result.mon;
+  const apply = (mon: PokemonInstance): PokemonInstance => {
+    if (!fought.has(mon.instanceId)) return mon;
+    let allocation = mon.allocation;
+    for (const stat of stats) allocation = allocate(allocation, stat);
+    return { ...mon, allocation };
   };
 
-  return {
-    run: { ...run, lineUp: run.lineUp.map(raise), box: run.box.map(raise) },
-    report: { gained, evolutions },
-  };
+  return { ...run, lineUp: run.lineUp.map(apply), box: run.box.map(apply) };
 }
 
-/** Points onto one mon's lifetime total. The additive form of `raiseMonToExp`. */
-export function grantExpTo(
+/**
+ * Extra EXP a mon earns from its held item, on top of the win's own.
+ *
+ * Per-mon rather than run-wide, unlike the Scholar buff: the item is held by one Pokémon and only
+ * that Pokémon benefits, which is the whole reason to choose who carries it.
+ */
+export function itemExpBonus(mon: PokemonInstance): number {
+  const item = itemById(mon.heldItemId);
+  return item !== null && item.kind === 'exp' ? (item.amount ?? 0) : 0;
+}
+
+/**
+ * Applies Power-item training to everyone who fought.
+ *
+ * Straight into the allocation, like a node's stat rewards — the item is the decision, and making
+ * the player confirm it afterwards would be upkeep. Only participants, for the same reason EXP is
+ * only for participants: an item cannot train a mon that never left the back of the train.
+ */
+export function applyItemTraining(
   run: RunState,
-  instanceId: string,
-  points: number,
-): { run: RunState; report: GrowthReport } {
-  const mon = [...run.lineUp, ...run.box].find((m) => m.instanceId === instanceId);
-  if (mon === undefined || points <= 0) return { run, report: emptyReport() };
-  return raiseMonToExp(run, instanceId, mon.exp + points);
-}
+  participants: readonly string[],
+): RunState {
+  const fought = new Set(participants);
 
-/** Merges two growth reports, so a screen can narrate one list for a choice that grew several mons. */
-export function mergeReports(a: GrowthReport, b: GrowthReport): GrowthReport {
-  const gained: Record<string, number> = { ...a.gained };
-  for (const [id, points] of Object.entries(b.gained)) {
-    gained[id] = (gained[id] ?? 0) + points;
-  }
-  return { gained, evolutions: [...a.evolutions, ...b.evolutions] };
+  const apply = (mon: PokemonInstance): PokemonInstance => {
+    if (!fought.has(mon.instanceId)) return mon;
+    const item = itemById(mon.heldItemId);
+    if (item === null || item.kind !== 'training' || item.stat === undefined) return mon;
+    return { ...mon, allocation: allocate(mon.allocation, item.stat, item.amount ?? 1) };
+  };
+
+  return { ...run, lineUp: run.lineUp.map(apply), box: run.box.map(apply) };
 }
 
 /** What a mon is now, for a results screen that wants to name it. */
 export const nameOf = (mon: PokemonInstance): string =>
   mon.nickname ?? speciesOfInstance(mon).name;
+
+/**
+ * Merges two Pokémon in the same evolution line into one.
+ *
+ * This is a rare-candy, not a pooling of two histories: `consumeId` contributes a flat
+ * `EXP_PER_COMBINE` toward `keepId`'s evolution — a third of the way there — rather than its own
+ * progress. Four base-form mons therefore combine into one evolved mon. Summing both totals
+ * instead would let a player grind a pile of low-tier catches and cash them in as a shortcut past
+ * the tier curve; a flat lump keeps combining worth the same regardless of what was sacrificed.
+ *
+ * Routed through `raiseToExp` rather than a bare `exp +=`, so a combine that crosses a threshold
+ * evolves the kept mon exactly as a battle win would — no separate evolution path to keep in
+ * sync with this one.
+ *
+ * Refuses two different evolution lines: a Charmander and a Squirtle are not the same premise at
+ * different points, and there is no single species for the result to become. `consumeId` is
+ * removed from wherever it was, line-up or Box; `keepId` stays exactly where it was.
+ */
+export function combineMons(run: RunState, keepId: string, consumeId: string): RunState {
+  if (keepId === consumeId) return run;
+
+  const all = allMons(run);
+  const keep = all.find((m) => m.instanceId === keepId);
+  const consume = all.find((m) => m.instanceId === consumeId);
+  if (keep === undefined || consume === undefined) return run;
+
+  const keepSpecies = speciesOf(keep.speciesId);
+  const consumeSpecies = speciesOf(consume.speciesId);
+  if (keepSpecies === null || consumeSpecies === null) return run;
+  if (baseFormOf(keepSpecies).id !== baseFormOf(consumeSpecies).id) return run;
+
+  const { mon: grown } = raiseToExp(keep, keep.exp + EXP_PER_COMBINE);
+
+  const apply = (list: readonly PokemonInstance[]): PokemonInstance[] =>
+    list.filter((m) => m.instanceId !== consumeId).map((m) => (m.instanceId === keepId ? grown : m));
+
+  return { ...run, lineUp: apply(run.lineUp), box: apply(run.box) };
+}

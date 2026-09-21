@@ -1,43 +1,89 @@
 /**
- * What a mon's stats are, given the species it started as, the EXP it has earned and the
- * evolutions behind it. Ported from Unity's `StatGrowth.cs` (ADR 0008, retuned by ADR 0009).
+ * What a mon's stats are, given the species it started as, the stats the player has poured into
+ * it, and the evolutions behind it.
  *
- * ## The rule that matters
+ * ## A point of EXP buys one stat, and the player picks which
  *
- * **A point of EXP buys +1 Attack *or* +1 Health, never both.**
+ * Earlier versions drew the stat automatically from a hash of the mon's id, weighted by the
+ * species' real Health share. That is gone: a point now goes wherever the player sends it, which
+ * turns EXP from a thing that happens to you into a decision about what a mon is for. The same
+ * Caterpie can become a wall or a glass cannon.
  *
- * This is load-bearing, not a detail. The first version added +1 to each, so a mon's Attack and
- * Health stayed locked together forever and two even mons always killed each other on the first
- * Step — for the whole run, whatever their EXP, leaving nothing for a passive or a Speed
- * advantage to decide. Splitting the point is what makes fights lengthen as a run progresses: a
- * Metapod banks 86% of its points into Health and pulls away from its own Attack.
+ * `healthGrowthPercent` survives on `Species` as a record of the old weighting and is no longer
+ * read by anything here. It would be the natural default if an auto-allocate button ever appears.
  *
- * Note that `docs/battle-sim-spec.md` §12 in the Unity repo still describes the old lockstep
- * behaviour and cites ADR 0008. ADR 0009 supersedes it; this follows 0009.
+ * ## Stats stay derived, never stored
  *
- * ## The draw is deterministic
- *
- * Not a dice roll. Stats are rebuilt from scratch on every EXP grant, so nothing about a mon's
- * history can be stored — the draw is a pure hash of the mon's instance id and which point of EXP
- * it is. It behaves like luck (a 70% mon really can take Attack three times running, and two
- * Charmanders in the same party grow into different stat lines) while a mon's whole stat line
- * stays rebuildable from its EXP count alone, in any order, forever.
- *
- * That is why this uses its own hash rather than the sim's PRNG: a stream answers "what is the
- * next draw", and this needs to answer "what was the draw for point 7" without replaying.
+ * A mon records only how many points went where. Its stat line is rebuilt from that on every
+ * read, so nothing can drift out of sync and a mon's whole history is four small numbers.
  *
  * ## Growth is measured from the base form
  *
  * A mon that evolves keeps growing from the species it started as and gains a flat bonus on top;
  * the species it became contributes nothing. A Charmeleon that was caught and one that was raised
- * are therefore the same mon. Speed never changes at all — not with EXP, and, since evolution
- * ignores the new species' stats, not with evolution either.
+ * are therefore the same mon.
  */
 
 import type { Stats } from '../sim/index.js';
-import { baseFormOf, baseStatsOf, type Species } from './index.js';
+import { BASE_SPEED, baseFormOf, baseStatsOf, type Species } from './index.js';
 
-/** Attack a point of EXP is worth, when the draw picks Attack. */
+/** The four things a point of EXP can buy. */
+export const GROWABLE_STATS = ['attack', 'health', 'special', 'speed'] as const;
+export type GrowableStat = (typeof GROWABLE_STATS)[number];
+
+/** How many points a mon has put into each stat. */
+export type Allocation = Readonly<Record<GrowableStat, number>>;
+
+export const emptyAllocation = (): Allocation => ({
+  attack: 0,
+  health: 0,
+  special: 0,
+  speed: 0,
+});
+
+export const totalAllocated = (a: Allocation): number =>
+  GROWABLE_STATS.reduce((sum, k) => sum + Math.max(0, a[k]), 0);
+
+export const allocate = (a: Allocation, stat: GrowableStat, points = 1): Allocation => ({
+  ...a,
+  [stat]: Math.max(0, a[stat] + points),
+});
+
+/**
+ * What one point buys, per stat.
+ *
+ * Speed is the odd one out and deliberately the weakest per point. It is the only stat that
+ * changes how *often* a mon acts rather than how hard: at the charge threshold of three, going
+ * from Speed 1 to Speed 2 halves the wait for every ability the mon will ever fire. A point of
+ * Attack is worth one point of Attack; a point of Speed can be worth doubling a mon's output. The
+ * cap is what stops "always pick Speed" being the only line of play.
+ */
+export const GAIN_PER_POINT: Readonly<Record<GrowableStat, number>> = {
+  attack: 1,
+  health: 1,
+  special: 1,
+  speed: 1,
+};
+
+/**
+ * Speed a mon may reach through growth.
+ *
+ * 100 is the calibration point of the charge scale — three ability activations per attack — so it
+ * is the natural ceiling rather than an arbitrary one.
+ */
+export const MAX_GROWN_SPEED = 100;
+
+/**
+ * Every mon's Health, multiplied.
+ *
+ * Applied to the *derived* value rather than baked into `species.json`, so the generated roster
+ * still validates against the Unity assets number for number and the tier budgets still hold.
+ * Scaling the whole derived figure rather than only the base keeps the Attack-to-Health ratio
+ * constant for a mon's whole life, which is what actually lengthens fights.
+ */
+export const HEALTH_MULTIPLIER = 3;
+
+/** Attack a point of EXP is worth. */
 export const ATTACK_PER_EXP = 1;
 /** Health a point of EXP is worth, when the draw picks Health. */
 export const HEALTH_PER_EXP = 1;
@@ -48,81 +94,38 @@ export const HEALTH_PER_EVOLUTION = 3;
 export const EXP_PER_EVOLUTION = 12;
 
 /**
- * A number in 0..99 from the mon and which point this is.
- *
- * FNV-1a with a final avalanche. The avalanche matters: the plain hash leaves adjacent point
- * indices correlated, and a mon's growth would come out in visible runs of one stat.
- */
-function draw(instanceId: string, pointIndex: number): number {
-  let hash = 2166136261 >>> 0;
-  for (let i = 0; i < instanceId.length; i++) {
-    hash = Math.imul(hash ^ instanceId.charCodeAt(i), 16777619) >>> 0;
-  }
-  hash = Math.imul(hash ^ pointIndex, 16777619) >>> 0;
-  hash ^= hash >>> 15;
-  hash = Math.imul(hash, 2246822519) >>> 0;
-  hash ^= hash >>> 13;
-  // The `>>> 0` is load-bearing, not tidiness. C# does this arithmetic on a uint; JavaScript's
-  // `^=` yields a *signed* 32-bit result, so without the coercion `hash` can be negative here and
-  // a negative modulo is less than any growth percentage — every draw would pick Health. That is
-  // exactly what happened before this line existed: Shedinja gained Health at 0%, and draws came
-  // out in runs of 29.
-  return (hash >>> 0) % 100;
-}
-
-/** Whether a mon's `pointIndex`-th point of EXP (0-based) goes to Health rather than Attack. */
-export function gainsHealth(
-  healthGrowthPercent: number,
-  instanceId: string,
-  pointIndex: number,
-): boolean {
-  return draw(instanceId, pointIndex) < healthGrowthPercent;
-}
-
-/** How many of a mon's first `points` EXP went into Health. */
-export function healthGainsIn(
-  healthGrowthPercent: number,
-  instanceId: string,
-  points: number,
-): number {
-  let health = 0;
-  for (let i = 0; i < points; i++) {
-    if (gainsHealth(healthGrowthPercent, instanceId, i)) health++;
-  }
-  return health;
-}
-
-/**
  * A mon's stats. `baseForm` is the species it *started* as — the root of its chain, not what it
- * is now. Use `statsFor` when you have the current species and would rather not resolve that
- * yourself.
+ * is now. Use `statsFor` when you have the current species and would rather not resolve that.
  */
-export function statsAtExp(
+export function statsFromAllocation(
   baseForm: Species,
-  instanceId: string,
-  exp: number,
+  allocation: Allocation,
   timesEvolved: number,
 ): Stats {
-  const points = Math.max(0, exp);
   const evolutions = Math.max(0, timesEvolved);
   const base = baseStatsOf(baseForm);
+  const put = (stat: GrowableStat): number => Math.max(0, allocation[stat]) * GAIN_PER_POINT[stat];
 
-  const health = healthGainsIn(baseForm.healthGrowthPercent, instanceId, points);
-  const attack = points - health;
+  const grownAttack = base.attack + put('attack') + ATTACK_PER_EVOLUTION * evolutions;
+  const grownHealth = base.health + put('health') + HEALTH_PER_EVOLUTION * evolutions;
 
+  // Special rises only when Special is chosen. An earlier version had it ride the Attack line so
+  // an un-invested mon's ability kept pace — but that meant picking Attack silently raised two
+  // stats, which makes the choice a lie. If a mon's ability is falling behind, the answer is to
+  // spend a point on it.
   return {
-    attack: base.attack + ATTACK_PER_EXP * attack + ATTACK_PER_EVOLUTION * evolutions,
-    health: base.health + HEALTH_PER_EXP * health + HEALTH_PER_EVOLUTION * evolutions,
-    speed: base.speed,
+    attack: grownAttack,
+    health: grownHealth * HEALTH_MULTIPLIER,
+    speed: Math.min(MAX_GROWN_SPEED, BASE_SPEED + put('speed')),
+    special: Math.max(1, base.special + put('special')),
   };
 }
 
 /** Stats for a mon currently of `species`, resolving its base form for you. */
 export function statsFor(
   species: Species,
-  instanceId: string,
-  exp: number,
+  allocation: Allocation,
   timesEvolved: number,
 ): Stats {
-  return statsAtExp(baseFormOf(species), instanceId, exp, timesEvolved);
+  return statsFromAllocation(baseFormOf(species), allocation, timesEvolved);
 }

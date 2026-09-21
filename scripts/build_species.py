@@ -20,6 +20,7 @@ Reads:
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -52,6 +53,12 @@ BASE_STAT_TOTAL_BANDS = [165, 205, 265, 295, 325]
 SPEED_2_THRESHOLD, SPEED_3_THRESHOLD = 80, 110
 MIN_TIER_FOR_SPEED = [1, 2, 3]
 MIN_HEALTH_GROWTH_PERCENT = 50
+
+# Special is scaled onto the tier line by the species' own special-to-physical ratio, so a mon
+# that is special-leaning in the real games is special-leaning here. Clamped, because an unclamped
+# ratio makes Alakazam's ability nearly lethal on its own at a tier where nothing else is.
+MIN_SPECIAL_RATIO = 0.5
+MAX_SPECIAL_RATIO = 2.0
 NO_HEALTH_GROWTH_MAX_REAL_HEALTH = 1
 
 
@@ -87,6 +94,18 @@ def health_growth_percent_for(real_attack, real_health):
     total = max(1, max(0, real_attack) + max(0, real_health))
     share = (200 * real_health + total) // (2 * total)
     return min(100, MIN_HEALTH_GROWTH_PERCENT + (share + 1) // 2)
+
+
+def special_for(base_attack, real_attack, real_special):
+    """Special on the tier line, from the species' real special-to-physical balance.
+
+    Rounds half away from zero rather than using Python's banker's rounding, matching the rest of
+    the codebase. It matters at the clamp: Beedrill's 13 Attack at the 0.5 floor is exactly 6.5,
+    which banker's rounding sends *down* to 6 and so below the floor the clamp promised.
+    """
+    ratio = real_special / max(1, real_attack)
+    ratio = max(MIN_SPECIAL_RATIO, min(MAX_SPECIAL_RATIO, ratio))
+    return max(1, math.floor(base_attack * ratio + 0.5))
 
 
 def distribute(real_attack, real_health, real_speed, tier):
@@ -223,6 +242,10 @@ def main():
         roster.append(row)
 
     # 3. Derive.
+    special_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
+                                "special-attack.json")
+    special_data = json.load(open(special_path, encoding="utf-8"))
+
     stuck = assign_tiers(roster)
     for row in roster:
         row["stats"] = distribute(
@@ -230,6 +253,11 @@ def main():
         )
         row["healthGrowthPercent"] = health_growth_percent_for(
             row["realAttack"], row["realHealth"]
+        )
+        row["baseSpecial"] = special_for(
+            row["stats"]["attack"],
+            special_data["realAttack"].get(str(row["id"]), row["realAttack"]),
+            special_data["values"].get(str(row["id"]), row["realAttack"]),
         )
 
     print(f"Derived {len(roster)} species.")
@@ -245,12 +273,19 @@ def main():
         a = parse_asset(os.path.join(passive_dir, fn))
         effects = []
         for e in a.get("_effects", []):
+            kind = EFFECT_TYPES[e["Type"]]
             eff = {
-                "type": EFFECT_TYPES[e["Type"]],
+                "type": kind,
                 "target": TARGET_SELECTORS[e["Target"]],
                 "amount": e.get("Amount", 0),
             }
-            if EFFECT_TYPES[e["Type"]] == "ApplyStatus":
+            # Damage aimed at an enemy IS the default ability -- "deal damage equal to your
+            # Special" -- so it takes its magnitude from the mon rather than from the authored
+            # number. Everything else (shield, heal, status, buffs) keeps its own amount, which is
+            # exactly what makes those abilities an override rather than an addition.
+            if kind == "DealDamage" and TARGET_SELECTORS[e["Target"]].startswith("Enemy"):
+                eff["scalesWithSpecial"] = True
+            if kind == "ApplyStatus":
                 eff["status"] = STATUS_TYPES[e.get("Status", 0)]
             effects.append(eff)
         pid = a["Id"]
@@ -332,6 +367,7 @@ def main():
             ("baseAttack", row["stats"]["attack"]),
             ("baseHealth", row["stats"]["health"]),
             ("baseSpeed", row["stats"]["speed"]),
+            ("baseSpecial", row["baseSpecial"]),
             ("healthGrowthPercent", row["healthGrowthPercent"]),
             ("passiveId", row.get("passiveId")),
             ("evolutionStage", row["stage"]),

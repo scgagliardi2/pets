@@ -10,42 +10,32 @@
  */
 
 import { createRandom, type Rng } from '../sim/index.js';
+import { GROWABLE_STATS, type GrowableStat } from '../content/statGrowth.js';
 import type { MapNode, NodeType } from './runState.js';
 
 /** How many entry nodes the player picks between. */
 export const ENTRY_NODE_COUNT = 3;
 
-/** Layers of choice between the entry and the Gym. */
-export const CHOICE_LAYERS = 4;
+/** Layers of choice between the entry and the Gym, making eight columns with entry and Gym. */
+export const CHOICE_LAYERS = 6;
 
+/**
+ * Nodes per choice layer. Three is the normal width — enough that the choice is real, few enough
+ * that the whole layer is readable at a glance — with the occasional two or four so a Location
+ * does not look like a grid.
+ */
+const TYPICAL_NODES_PER_LAYER = 3;
 const MIN_NODES_PER_LAYER = 2;
 const MAX_NODES_PER_LAYER = 4;
 
 /** At most one Center per layer — two side by side makes the layer a non-choice. */
 const MAX_CENTERS_PER_LAYER = 1;
 
+/** Same reasoning for encounters: a layer of nothing but "?" is not a decision either. */
+const MAX_ENCOUNTERS_PER_LAYER = 1;
+
 /** The earliest layer a Center may appear. A rest before any fight is worthless. */
 const EARLIEST_CENTER_LAYER = 2;
-
-/**
- * At most two Encounters per layer. A whole layer of them would be a layer with no fight in it,
- * and the choice an Encounter is interesting against is "the EXP I am giving up to take it".
- */
-const MAX_ENCOUNTERS_PER_LAYER = 2;
-
-/**
- * How often each kind turns up in an interior layer, out of 100, in the order they are tried.
- *
- * Fights still dominate, because EXP is the run's currency and a map that hands out three
- * Encounters and a Center leaves the player under-levelled at the Gym. Encounters are common
- * enough to be a real column on the map rather than a rarity.
- */
-const CENTER_PERCENT = 30;
-const ENCOUNTER_PERCENT = 26;
-const TRAINER_PERCENT = 22;
-
-/** A Mystery Trainer may open a Location; an Encounter or a Center may not. */
-const ENTRY_TRAINER_PERCENT = 30;
 
 export interface LocationMap {
   readonly nodes: readonly MapNode[];
@@ -65,11 +55,27 @@ export interface MapNodeWithEdges extends MapNode {
  * `next` is readonly on the published type so the rest of the app cannot edit a map out from
  * under the traversal; the generator needs it mutable for exactly as long as it takes to build.
  */
-type MutableMapNode = Omit<MapNode, 'type' | 'label'> & {
-  type: NodeType;
-  label: string;
-  next: string[];
-};
+type MutableMapNode = MapNode & { next: string[]; statRewards?: GrowableStat[] };
+
+/**
+ * The two stats a battle node awards.
+ *
+ * Always two distinct stats, so every battle is a genuine pairing rather than a double helping of
+ * one thing — and so the route choice is between *combinations*, which is where the strategy is.
+ * Only battle nodes get them; shops and encounters field nobody.
+ */
+function rollStatRewards(type: NodeType, rng: Rng): GrowableStat[] | undefined {
+  if (type !== 'Wild' && type !== 'MysteryTrainer' && type !== 'Gym') return undefined;
+
+  const first = GROWABLE_STATS[rng.nextInt(GROWABLE_STATS.length)]!;
+  let second = first;
+  // Drawn until it differs; four options make this a very short loop, and the guard keeps a
+  // pathological RNG from hanging map generation.
+  for (let guard = 0; guard < 20 && second === first; guard++) {
+    second = GROWABLE_STATS[rng.nextInt(GROWABLE_STATS.length)]!;
+  }
+  return second === first ? [first] : [first, second];
+}
 
 export const nodeById = (map: LocationMap, id: string): MapNodeWithEdges | null =>
   (map.nodes as MapNodeWithEdges[]).find((n) => n.id === id) ?? null;
@@ -88,31 +94,20 @@ export function reachableFrom(map: LocationMap, visited: readonly string[]): str
   return last.next.filter((id) => !visited.includes(id));
 }
 
-const WILD_FLAVOURS = [
-  'Tall grass',
-  'A narrow track',
-  'Rustling undergrowth',
-  'Open ground',
-  'A shaded hollow',
-  'Broken stones',
-  'The old road',
-];
-
-const ENCOUNTER_FLAVOURS = [
-  'Something off the path',
-  'A figure ahead',
-  'Smoke over the trees',
-  'An odd quiet',
-  'A light in the dark',
-];
-
 const labelFor = (type: NodeType, rng: Rng): string => {
   if (type === 'Gym') return 'Gym Leader';
   if (type === 'Center') return 'Pokémon Center';
-  // Deliberately vague. A Mystery Trainer's team is the thing you don't know, and an Encounter's
-  // label must not spoil which of the encounters it rolled.
-  if (type === 'Trainer') return 'Mystery Trainer';
-  const flavours = type === 'Encounter' ? ENCOUNTER_FLAVOURS : WILD_FLAVOURS;
+  if (type === 'Encounter') return 'Something off the path';
+  if (type === 'MysteryTrainer') return 'A trainer, waiting';
+  const flavours = [
+    'Tall grass',
+    'A narrow track',
+    'Rustling undergrowth',
+    'Open ground',
+    'A shaded hollow',
+    'Broken stones',
+    'The old road',
+  ];
   return flavours[rng.nextInt(flavours.length)]!;
 };
 
@@ -128,52 +123,59 @@ export function generateLocationMap(seed: number, badges: number): LocationMap {
   const rng = createRandom(seed * 7919 + badges * 104729 + 13);
   const layers: MutableMapNode[][] = [];
 
-  // The entry layer is fights only: the opening choice should be about which fight you take, and
-  // a run that opens on a shop or a narrative beat has not started yet.
-  const entry: MutableMapNode[] = Array.from({ length: ENTRY_NODE_COUNT }, (_, i) => {
-    const type: NodeType = rng.nextInt(100) < ENTRY_TRAINER_PERCENT ? 'Trainer' : 'Wild';
-    return {
-      id: `L${badges}-0-${i}`,
-      type,
-      layer: 1,
-      label: labelFor(type, rng),
-      next: [],
-    };
-  });
+  const entry: MutableMapNode[] = Array.from({ length: ENTRY_NODE_COUNT }, (_, i) => ({
+    id: `L${badges}-0-${i}`,
+    type: 'Wild' as NodeType,
+    layer: 1,
+    label: labelFor('Wild', rng),
+    statRewards: rollStatRewards('Wild', rng),
+    next: [],
+  }));
   layers.push(entry);
 
+  // Tracked across layers so a Center is never immediately followed by another. Two rests back to
+  // back means a stretch of the Location with no fight in it at all, which is neither a decision
+  // nor a difficulty curve.
+  let previousLayerHadCenter = false;
+
   for (let depth = 1; depth <= CHOICE_LAYERS; depth++) {
+    // Three most of the time, sometimes two or four.
+    const roll = rng.nextInt(100);
     const size =
-      MIN_NODES_PER_LAYER + rng.nextInt(MAX_NODES_PER_LAYER - MIN_NODES_PER_LAYER + 1);
+      roll < 62
+        ? TYPICAL_NODES_PER_LAYER
+        : roll < 81
+          ? MIN_NODES_PER_LAYER
+          : MAX_NODES_PER_LAYER;
+
     let centers = 0;
     let encounters = 0;
+    const centersAllowed = depth >= EARLIEST_CENTER_LAYER && !previousLayerHadCenter;
 
     const layer: MutableMapNode[] = Array.from({ length: size }, (_, i) => {
-      // One roll, read against the kinds in order, so the percentages above are the odds a reader
-      // would expect them to be rather than a chain of conditional re-rolls.
-      const roll = rng.nextInt(100);
       let type: NodeType = 'Wild';
-
       // A Center is a real alternative to a fight: it costs you the EXP and money that node would
       // have paid, and buys restocking instead.
-      if (depth >= EARLIEST_CENTER_LAYER && centers < MAX_CENTERS_PER_LAYER && roll < CENTER_PERCENT) {
+      if (centersAllowed && centers < MAX_CENTERS_PER_LAYER && rng.nextInt(100) < 34) {
         type = 'Center';
         centers++;
-      } else if (encounters < MAX_ENCOUNTERS_PER_LAYER && roll < CENTER_PERCENT + ENCOUNTER_PERCENT) {
+      } else if (encounters < MAX_ENCOUNTERS_PER_LAYER && rng.nextInt(100) < 30) {
         type = 'Encounter';
         encounters++;
-      } else if (roll < CENTER_PERCENT + ENCOUNTER_PERCENT + TRAINER_PERCENT) {
-        type = 'Trainer';
+      } else if (rng.nextInt(100) < 30) {
+        type = 'MysteryTrainer';
       }
-
       return {
         id: `L${badges}-${depth}-${i}`,
         type,
         layer: depth + 1,
         label: labelFor(type, rng),
+        statRewards: rollStatRewards(type, rng),
         next: [],
       };
     });
+
+    previousLayerHadCenter = centers > 0;
     layers.push(layer);
   }
 
@@ -182,11 +184,10 @@ export function generateLocationMap(seed: number, badges: number): LocationMap {
     type: 'Gym',
     layer: CHOICE_LAYERS + 2,
     label: 'Gym Leader',
+    statRewards: rollStatRewards('Gym', rng),
     next: [],
   };
   layers.push([gym]);
-
-  ensureAnEncounter(layers, rng);
 
   for (let i = 0; i < layers.length - 1; i++) {
     connect(layers[i]!, layers[i + 1]!, rng);
@@ -197,26 +198,6 @@ export function generateLocationMap(seed: number, badges: number): LocationMap {
     entryIds: entry.map((n) => n.id),
     gymId: gym.id,
   };
-}
-
-/**
- * Guarantees the map has at least one Encounter in it.
- *
- * Without this a seed can roll a Location with none, and an Encounter is where trades, free
- * levels, a Legendary and most of the run's character live — rolling a Location with none of that
- * reads as a bug rather than as variance. Converts one interior fight rather than adding a node,
- * so the layer shapes the wiring pass depends on are untouched.
- */
-function ensureAnEncounter(layers: MutableMapNode[][], rng: Rng): void {
-  if (layers.flat().some((n) => n.type === 'Encounter')) return;
-
-  // Interior layers only: never the entry, never the Gym.
-  const candidates = layers.slice(1, -1).flat().filter((n) => n.type !== 'Center');
-  if (candidates.length === 0) return;
-
-  const node = candidates[rng.nextInt(candidates.length)]!;
-  node.type = 'Encounter';
-  node.label = labelFor('Encounter', rng);
 }
 
 /**

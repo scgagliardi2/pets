@@ -8,7 +8,8 @@
  */
 
 import {
-  CHARGE_THRESHOLD,
+  DEFAULT_CHARGE_CONFIG,
+  type ChargeConfig,
   DEFAULT_STEP_DURATION_MS,
   PARALYZED_CHARGE_MULTIPLIER,
   SUDDEN_DEATH_DAMAGE_PER_STEP,
@@ -41,9 +42,10 @@ import {
 export function advanceStep(
   state: BattleState,
   rng: Rng,
+  charge: ChargeConfig = DEFAULT_CHARGE_CONFIG,
 ): { state: BattleState; events: StepEvent[] } {
   const next = cloneBattleState(state);
-  const events = advanceStepMutable(next, rng);
+  const events = advanceStepMutable(next, rng, charge);
   return { state: next, events };
 }
 
@@ -51,7 +53,11 @@ export function advanceStep(
  * The in-place Step. Mutates `state` exactly as the Unity implementation does, which is what
  * keeps the two byte-comparable against the shared golden fixtures.
  */
-export function advanceStepMutable(state: BattleState, _rng: Rng): StepEvent[] {
+export function advanceStepMutable(
+  state: BattleState,
+  _rng: Rng,
+  charge: ChargeConfig = DEFAULT_CHARGE_CONFIG,
+): StepEvent[] {
   state.stepNumber++;
   const step = state.stepNumber;
   const events: StepEvent[] = [];
@@ -75,33 +81,40 @@ export function advanceStepMutable(state: BattleState, _rng: Rng): StepEvent[] {
 
   // --- 2. Charge accumulation --------------------------------------------------------------
   // All currently-active mons, regardless of HP having dropped to 0 in beat 1.
-  accrueCharge(leadA);
-  accrueCharge(supportA);
-  accrueCharge(leadB);
-  accrueCharge(supportB);
+  accrueCharge(leadA, 'A', events, step, charge.perSpeedPoint);
+  accrueCharge(supportA, 'A', events, step, charge.perSpeedPoint);
+  accrueCharge(leadB, 'B', events, step, charge.perSpeedPoint);
+  accrueCharge(supportB, 'B', events, step, charge.perSpeedPoint);
 
   // --- 3. Passive resolution ---------------------------------------------------------------
   // The trigger set is fixed from this Step's charge values and does not grow mid-resolution,
   // even if an earlier passive speeds up a later mon's charge rate.
   const triggering: Triggerer[] = [];
-  addIfTriggering(leadA, 'A', 0, triggering);
-  addIfTriggering(supportA, 'A', 1, triggering);
-  addIfTriggering(leadB, 'B', 0, triggering);
-  addIfTriggering(supportB, 'B', 1, triggering);
+  addIfTriggering(leadA, 'A', 0, triggering, charge.threshold);
+  addIfTriggering(supportA, 'A', 1, triggering, charge.threshold);
+  addIfTriggering(leadB, 'B', 0, triggering, charge.threshold);
+  addIfTriggering(supportB, 'B', 1, triggering, charge.threshold);
   triggering.sort(compareTriggerOrder);
 
   for (const t of triggering) {
-    events.push({
-      step,
-      kind: 'PassiveTriggered',
-      sourceSide: t.side,
-      sourceInstanceId: t.combatant.instanceId,
-    });
-    // Resets to 0, not to (charge - threshold): overshoot is discarded, not carried over.
-    t.combatant.charge = 0;
-    if (t.combatant.passive !== null) {
-      for (const effect of t.combatant.passive.effects) {
-        applyEffect(effect, t.combatant, t.side, state, events, step);
+    // A fast mon can bank several thresholds in one Step and fires once per threshold, with the
+    // remainder carried rather than discarded. At 100 Speed that is three activations per
+    // attack, which is what the charge scale is calibrated to; discarding the overshoot instead
+    // would silently cap every mon at one activation and make Speed above the threshold worthless.
+    const activations = Math.floor(t.combatant.charge / charge.threshold);
+    t.combatant.charge -= activations * charge.threshold;
+
+    for (let n = 0; n < activations; n++) {
+      events.push({
+        step,
+        kind: 'PassiveTriggered',
+        sourceSide: t.side,
+        sourceInstanceId: t.combatant.instanceId,
+      });
+      if (t.combatant.passive !== null) {
+        for (const effect of t.combatant.passive.effects) {
+          applyEffect(effect, t.combatant, t.side, state, events, step);
+        }
       }
     }
   }
@@ -120,6 +133,15 @@ export function advanceStepMutable(state: BattleState, _rng: Rng): StepEvent[] {
   // running out, and anything that could mitigate it is exactly what caused the stalemate.
   applySuddenDeath(leadA, 'A', events, step);
   applySuddenDeath(leadB, 'B', events, step);
+
+  // --- 3.7. Held items -----------------------------------------------------------------------
+  // After all damage for the Step, before anyone is removed: regeneration should be able to save
+  // a mon that would otherwise fall, and a below-half heal should read the health it actually
+  // ends the Step on rather than a value some later beat undoes.
+  applyItemUpkeep(leadA, 'A', events, step);
+  applyItemUpkeep(supportA, 'A', events, step);
+  applyItemUpkeep(leadB, 'B', events, step);
+  applyItemUpkeep(supportB, 'B', events, step);
 
   // --- 4. Faint check and promotion --------------------------------------------------------
   // The only point removal and promotion happen, batching every faint this Step caused.
@@ -143,8 +165,9 @@ function addIfTriggering(
   side: Side,
   role: number,
   list: Triggerer[],
+  threshold: number,
 ): void {
-  if (combatant !== null && combatant.charge >= CHARGE_THRESHOLD) {
+  if (combatant !== null && combatant.charge >= threshold) {
     list.push({ combatant, side, role });
   }
 }
@@ -165,7 +188,24 @@ function compareTriggerOrder(x: Triggerer, y: Triggerer): number {
 
 // --- beats -----------------------------------------------------------------------------------
 
-function accrueCharge(combatant: Combatant | null): void {
+/**
+ * Accrues a mon's charge and says so.
+ *
+ * The event exists for the renderer. Charge used to change silently, which meant the ability arcs
+ * could only be redrawn at a Step boundary — they snapped from one value to the next instead of
+ * filling as the Step played, and the moment a bar reached full was invisible. Emitting it makes
+ * charge part of the same ordered stream as everything else the player watches.
+ *
+ * Nothing in the simulation reads the event, so the two implementations still agree on outcomes;
+ * it is additive to the stream and no fixture asserts on stream contents.
+ */
+function accrueCharge(
+  combatant: Combatant | null,
+  side: Side,
+  events: StepEvent[],
+  step: number,
+  perSpeedPoint: number,
+): void {
   if (combatant === null) return;
   if (combatant.status === 'Asleep') return;
 
@@ -175,9 +215,21 @@ function accrueCharge(combatant: Combatant | null): void {
   }
   // Truncated toward zero, matching the C# int cast. This is why Ice and Ground are a starting
   // charge deficit rather than a rate multiplier: at Speed 1 any slowdown truncates to zero.
-  combatant.charge += Math.trunc(
-    combatant.currentStats.speed * DEFAULT_STEP_DURATION_MS * multiplier,
+  const gained = Math.trunc(
+    combatant.currentStats.speed * perSpeedPoint * DEFAULT_STEP_DURATION_MS * multiplier,
   );
+  if (gained === 0) return;
+
+  combatant.charge += gained;
+  events.push({
+    step,
+    kind: 'ChargeGained',
+    sourceSide: side,
+    sourceInstanceId: combatant.instanceId,
+    targetSide: side,
+    targetInstanceId: combatant.instanceId,
+    amount: gained,
+  });
 }
 
 function applyStatusTick(
@@ -217,6 +269,48 @@ function applyStatusTick(
     });
   }
   // Paralyzed and Asleep have no tick damage; their whole effect is on charge accrual.
+}
+
+/**
+ * A held item's end-of-Step behaviour: regeneration, then the one-shot below-half heal.
+ *
+ * Both are capped at the holder's maximum, and neither fires on a mon already at zero — an item
+ * pulling someone back from a fatal blow in the same Step it landed would make the faint rule
+ * ambiguous, and "heals when low" is a cushion, not a revival.
+ */
+function applyItemUpkeep(
+  combatant: Combatant | null,
+  side: Side,
+  events: StepEvent[],
+  step: number,
+): void {
+  if (combatant === null || combatant.heldItem === null) return;
+  if (combatant.currentHP <= 0) return;
+
+  const max = combatant.currentStats.health;
+  const heal = (amount: number): void => {
+    const actual = Math.min(amount, max - combatant.currentHP);
+    if (actual <= 0) return;
+    combatant.currentHP += actual;
+    events.push({
+      step,
+      kind: 'Heal',
+      sourceSide: side,
+      sourceInstanceId: combatant.instanceId,
+      targetSide: side,
+      targetInstanceId: combatant.instanceId,
+      amount: actual,
+    });
+  };
+
+  const regen = combatant.heldItem.regenPerStep ?? 0;
+  if (regen > 0) heal(regen);
+
+  const lastStand = combatant.heldItem.healBelowHalf ?? 0;
+  if (lastStand > 0 && !combatant.usedLastStand && combatant.currentHP * 2 < max) {
+    combatant.usedLastStand = true;
+    heal(lastStand);
+  }
 }
 
 /**
@@ -403,23 +497,27 @@ function applyEffect(
   if (resolved === null) return;
   const { target, side: targetSide } = resolved;
 
+  // Read at the moment the ability fires, not when the passive was authored, so a Special buffed
+  // mid-battle is worth more on the next trigger.
+  const amount = effect.scalesWithSpecial === true ? self.currentStats.special : effect.amount;
+
   switch (effect.type) {
     case 'DealDamage':
-      applyDamage(target, targetSide, effect.amount, self, selfSide, events, step);
+      applyDamage(target, targetSide, amount, self, selfSide, events, step);
       break;
 
     case 'Heal':
-      applyHeal(target, targetSide, effect.amount, self, selfSide, events, step);
+      applyHeal(target, targetSide, amount, self, selfSide, events, step);
       break;
 
     case 'Shield':
-      target.shield += effect.amount;
-      events.push(effectEvent('Shield', self, selfSide, target, targetSide, step, effect.amount));
+      target.shield += amount;
+      events.push(effectEvent('Shield', self, selfSide, target, targetSide, step, amount));
       break;
 
     case 'ApplyStatus':
       if (effect.status !== undefined) {
-        applyStatus(target, targetSide, effect.status, effect.amount, self, selfSide, events, step);
+        applyStatus(target, targetSide, effect.status, amount, self, selfSide, events, step);
       }
       break;
 
@@ -428,16 +526,16 @@ function applyEffect(
       break;
 
     case 'BuffAttack':
-      target.currentStats.attack += effect.amount;
+      target.currentStats.attack += amount;
       events.push(
-        effectEvent('BuffAttack', self, selfSide, target, targetSide, step, effect.amount),
+        effectEvent('BuffAttack', self, selfSide, target, targetSide, step, amount),
       );
       break;
 
     case 'BuffSpeed':
-      target.currentStats.speed += effect.amount;
+      target.currentStats.speed += amount;
       events.push(
-        effectEvent('BuffSpeed', self, selfSide, target, targetSide, step, effect.amount),
+        effectEvent('BuffSpeed', self, selfSide, target, targetSide, step, amount),
       );
       break;
 
@@ -445,15 +543,15 @@ function applyEffect(
       // Amount is a percentage delta (50 => x1.5, -50 => x0.5), floored at 0.
       target.chargeRateMultiplier = Math.max(
         0,
-        target.chargeRateMultiplier + effect.amount / 100,
+        target.chargeRateMultiplier + amount / 100,
       );
       events.push(
-        effectEvent('ChargeRateModified', self, selfSide, target, targetSide, step, effect.amount),
+        effectEvent('ChargeRateModified', self, selfSide, target, targetSide, step, amount),
       );
       break;
 
     case 'DamageReduction':
-      target.damageReductionFlat += effect.amount;
+      target.damageReductionFlat += amount;
       events.push(
         effectEvent(
           'DamageReductionApplied',
@@ -462,7 +560,7 @@ function applyEffect(
           target,
           targetSide,
           step,
-          effect.amount,
+          amount,
         ),
       );
       break;
@@ -472,10 +570,10 @@ function applyEffect(
       // meaningless, and 100%+ is self-sustaining forever.
       target.lifestealPercent = Math.min(
         MAX_LIFESTEAL_PERCENT,
-        target.lifestealPercent + effect.amount / 100,
+        target.lifestealPercent + amount / 100,
       );
       events.push(
-        effectEvent('Lifesteal', self, selfSide, target, targetSide, step, effect.amount),
+        effectEvent('Lifesteal', self, selfSide, target, targetSide, step, amount),
       );
       break;
   }
@@ -561,6 +659,22 @@ export function applyStatus(
       kind: 'StatusBlocked',
       sourceSide,
       sourceInstanceId: source.instanceId,
+      targetSide,
+      targetInstanceId: target.instanceId,
+      status,
+    });
+    return;
+  }
+
+  // A cure item spends itself the instant a status lands, so the status never actually takes
+  // hold — checked after the Fairy ward, which is free and should be used up first.
+  if (target.heldItem?.curesStatus === true && !target.usedStatusCure) {
+    target.usedStatusCure = true;
+    events.push({
+      step,
+      kind: 'StatusCleared',
+      sourceSide: targetSide,
+      sourceInstanceId: target.instanceId,
       targetSide,
       targetInstanceId: target.instanceId,
       status,

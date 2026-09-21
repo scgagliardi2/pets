@@ -13,18 +13,12 @@ import { CHARGE_THRESHOLD, type Combatant, type Side } from '../sim/index.js';
 import type { Species } from '../content/index.js';
 import { spriteUrl } from '../content/sprites.js';
 import type { MonFlash } from '../playback/display.js';
-import {
-  CHARGE_ARC,
-  FIGURES,
-  NOMINAL_SPRITE,
-  SHIELD_BUBBLE,
-  figuresLift,
-  spriteBox,
-  type Slot,
-} from './layout.js';
+import { CHARGE_ARC, NOMINAL_SPRITE, SHIELD_BUBBLE, spriteBox, type Slot } from './layout.js';
 
 interface MonViewProps {
   combatant: Combatant;
+  /** See ChargeArc. */
+  chargeDurationMs?: number;
   species: Species;
   side: Side;
   slot: Slot;
@@ -40,20 +34,18 @@ interface MonViewProps {
  * It can read below empty. Ice and Ground synergies open the enemy Lead in charge *debt*, and
  * that has to be visible or a Lead that seems inexplicably slow is just confusing. Debt shows as
  * a red stub at the leading edge rather than as an empty track.
- *
- * `ready` is the beat between the arc landing full and the passive firing, when the board is held
- * still: the arc pulses so the pause has an obvious subject.
  */
 function ChargeArc({
   charge,
   cx,
   cy,
-  ready = false,
+  durationMs,
 }: {
   charge: number;
   cx: number;
   cy: number;
-  ready?: boolean;
+  /** Overrides the CSS default so the fill runs continuously rather than in short snaps. */
+  durationMs?: number;
 }) {
   const { radius, thickness, sweepDegrees } = CHARGE_ARC;
   const half = (sweepDegrees / 2) * (Math.PI / 180);
@@ -63,46 +55,52 @@ function ChargeArc({
     return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
   };
 
-  const arcPath = (from: number, to: number): string => {
-    const a = point(from);
-    const b = point(to);
-    return `M ${a.x} ${a.y} A ${radius} ${radius} 0 0 1 ${b.x} ${b.y}`;
-  };
+  const a = point(0);
+  const b = point(1);
+  const track = `M ${a.x} ${a.y} A ${radius} ${radius} 0 0 1 ${b.x} ${b.y}`;
 
+  // The fill is the *same* path revealed by a dash offset, rather than a second path recomputed
+  // to a shorter sweep. An SVG path's `d` cannot be transitioned, so redrawing it made the bar
+  // jump from one value to the next; `stroke-dashoffset` is a plain number and animates.
+  const length = radius * (2 * half);
   const filled = Math.max(0, Math.min(1, charge / CHARGE_THRESHOLD));
   const full = filled >= 1;
 
   return (
     <g>
       <path
-        d={arcPath(0, 1)}
+        d={track}
         fill="none"
         stroke="rgba(14,22,16,0.5)"
         strokeWidth={thickness + 6}
         strokeLinecap="round"
       />
-      <path d={arcPath(0, 1)} fill="none" stroke="#e9eee6" strokeWidth={thickness} strokeLinecap="round" />
-      {ready && (
+      <path d={track} fill="none" stroke="#e9eee6" strokeWidth={thickness} strokeLinecap="round" />
+      <path
+        className={`charge-fill ${full ? 'full' : ''}`}
+        d={track}
+        fill="none"
+        stroke={full ? '#8ff06a' : '#4fbb3f'}
+        strokeWidth={thickness}
+        strokeLinecap="round"
+        strokeDasharray={length}
+        strokeDashoffset={length * (1 - filled)}
+        style={
+          durationMs !== undefined
+            ? { transition: `stroke-dashoffset ${durationMs}ms linear, stroke 160ms linear` }
+            : undefined
+        }
+      />
+      {charge < 0 && (
         <path
-          className="charge-ready"
-          d={arcPath(0, 1)}
+          d={track}
           fill="none"
-          stroke="#8ff06a"
-          strokeWidth={thickness + 10}
-          strokeLinecap="round"
-        />
-      )}
-      {filled > 0.001 && (
-        <path
-          d={arcPath(0, filled)}
-          fill="none"
-          stroke={full ? '#8ff06a' : '#4fbb3f'}
+          stroke="#d9564c"
           strokeWidth={thickness}
           strokeLinecap="round"
+          strokeDasharray={length}
+          strokeDashoffset={length * 0.9}
         />
-      )}
-      {charge < 0 && (
-        <path d={arcPath(0, 0.1)} fill="none" stroke="#d9564c" strokeWidth={thickness} strokeLinecap="round" />
       )}
     </g>
   );
@@ -119,7 +117,15 @@ export function burstPath(cx: number, cy: number, outer: number, inner: number, 
   return `M ${steps.join(' L ')} Z`;
 }
 
-export function MonView({ combatant, species, side, slot, flash, fainting }: MonViewProps) {
+export function MonView({
+  combatant,
+  species,
+  side,
+  slot,
+  flash,
+  fainting,
+  chargeDurationMs,
+}: MonViewProps) {
   // Sprites run 23x39 to 153x94 and are drawn at true relative scale, so the real dimensions
   // matter and a fixed box would be wrong for every one of them. Lay out against a nominal box
   // until the image reports its own size.
@@ -158,8 +164,8 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
   // right-hand side is occupied by its own Lead.
   const figureStyle: React.CSSProperties =
     slot.readout === 'right'
-      ? { left: box.left + box.width + 8, top: box.top + box.height - figuresLift() }
-      : { left: box.left + box.width / 2 - FIGURES.bar.width / 2, top: box.top + box.height + 6 };
+      ? { left: box.left + box.width + 8, top: box.top + box.height - 62 }
+      : { left: box.left + box.width / 2 - 46, top: box.top + box.height + 6 };
 
   return (
     <div
@@ -207,12 +213,7 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
             strokeWidth={SHIELD_BUBBLE.strokeWidth}
           />
         )}
-        <ChargeArc
-          charge={combatant.charge}
-          cx={localCX}
-          cy={arcCY}
-          ready={flash?.charged === true}
-        />
+        <ChargeArc charge={combatant.charge} cx={localCX} cy={arcCY} durationMs={chargeDurationMs} />
       </svg>
 
       {combatant.shield > 0 && (
@@ -221,12 +222,11 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
         </div>
       )}
 
-      {/* Attack in a burst, HP beside it, and the bar underneath so "how hurt is it" stays a
-          glance rather than arithmetic. Its size comes from layout.ts, because the block above is
-          positioned from it. The name is on hover: with 183 species nobody recognises every
-          sprite, but four permanent labels is a lot of text over the art. */}
-      <div className="figures" style={{ ...figureStyle, gap: FIGURES.gap }}>
-        <div className="figures-row" style={{ height: FIGURES.rowHeight }}>
+      {/* Attack in a burst, HP beside it, and a thin bar underneath so "how hurt is it" stays a
+          glance rather than arithmetic. The name is on hover: with 183 species nobody recognises
+          every sprite, but four permanent labels is a lot of text over the art. */}
+      <div className="figures" style={figureStyle}>
+        <div className="figures-row">
           <span className="figure-attack">
             <svg viewBox="0 0 46 46" width="46" height="46" aria-hidden="true">
               <path d={burstPath(23, 23, 22, 14.5)} fill="#14161a" stroke="#05070a" strokeWidth="1.5" />
@@ -234,16 +234,11 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
             <em>{combatant.currentStats.attack}</em>
           </span>
           <span className="figure-hp">{hp}</span>
+          <span className="figure-special" title="Special — what the ability is worth when the bar fills">
+            {combatant.currentStats.special}
+          </span>
         </div>
-        <div
-          className="hp-track"
-          style={{ width: FIGURES.bar.width, height: FIGURES.bar.height }}
-          role="progressbar"
-          aria-label={`${species.name} health`}
-          aria-valuenow={hp}
-          aria-valuemin={0}
-          aria-valuemax={maxHP}
-        >
+        <div className="hp-track">
           <div className={`hp-fill ${hpClass}`} style={{ width: `${hpFraction * 100}%` }} />
         </div>
         <MonBadges combatant={combatant} />
@@ -259,8 +254,9 @@ export function MonView({ combatant, species, side, slot, flash, fainting }: Mon
         >
           <strong>{species.name}</strong>
           <span>
-            {species.types.join(' / ')} &middot; {hp}/{maxHP} hp &middot; spd{' '}
-            {combatant.currentStats.speed}
+            {species.types.join(' / ')} &middot; {hp}/{maxHP} hp &middot;{' '}
+            {combatant.currentStats.attack} atk &middot; {combatant.currentStats.special} sp
+            &middot; spd {combatant.currentStats.speed}
           </span>
           {combatant.passive !== null && (
             <span className="mon-name-passive">{combatant.passive.displayName}</span>

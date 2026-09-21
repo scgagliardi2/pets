@@ -72,6 +72,15 @@ export interface EffectDefinition {
   readonly type: EffectType;
   readonly target: TargetSelector;
   /**
+   * When true, `amount` is ignored and the acting mon's Special is used instead.
+   *
+   * This is what makes Special mean anything: the default ability is "deal damage equal to your
+   * Special", and it is expressed as a normal DealDamage effect carrying this flag rather than as
+   * a special case in the Step loop. An ability that shields, heals or inflicts a status simply
+   * does not set it, and so *overrides* the default rather than adding to it.
+   */
+  readonly scalesWithSpecial?: boolean;
+  /**
    * Base magnitude. Ignored by effects that don't take one (ClearStatus, and ApplyStatus for
    * Paralyzed/Asleep). For ApplyStatus with Poisoned/Burned this is the tick damage.
    * For ModifyChargeRate it is a percentage delta (50 => x1.5). For Lifesteal, a percentage.
@@ -96,6 +105,16 @@ export interface Stats {
   attack: number;
   health: number;
   speed: number;
+  /**
+   * The magnitude of the mon's ability: what it does when its charge bar fills.
+   *
+   * Separate from Attack because the two fire on different clocks. Attack lands every Step and is
+   * always damage; Special lands once a charge meter fills and may not be damage at all — a mon
+   * whose ability shields or heals spends its Special on that instead. Keeping them apart is what
+   * lets a frail special attacker and a plain bruiser be different mons rather than the same mon
+   * with different numbers.
+   */
+  special: number;
 }
 
 /**
@@ -105,6 +124,22 @@ export interface Stats {
  * have different lifetimes. In Unity, before this split existed, running a battle wrote shields,
  * poison stacks and damage permanently onto the player's roster.
  */
+/**
+ * What a held item does *during* a battle, already resolved to numbers.
+ *
+ * The simulator never learns what an item is, the same way it never learns what a Pokémon is — it
+ * is handed the behaviour and applies it. Keeping it resolved here means a new item is a content
+ * change, not a Step-loop change, unless it genuinely needs a new kind of behaviour.
+ */
+export interface HeldItemEffects {
+  /** Health restored at the end of every Step. */
+  readonly regenPerStep?: number;
+  /** Health restored once, the first time the holder drops below half. */
+  readonly healBelowHalf?: number;
+  /** Clears a status the moment it lands, once. */
+  readonly curesStatus?: boolean;
+}
+
 export interface Combatant {
   readonly instanceId: string;
   /** Opaque back-reference to the run-level record. The sim never reads through it. */
@@ -125,6 +160,17 @@ export interface Combatant {
   lifestealPercent: number;
   /** Per-tick damage for the current Poisoned/Burned status. */
   statusTickDamage: number;
+  /** The held item's battle behaviour, or null. */
+  readonly heldItem: HeldItemEffects | null;
+  /**
+   * Whether the item's one-shot effects have fired this battle.
+   *
+   * Battle-local on purpose: combatants are rebuilt for every fight, so "refreshes at the end of
+   * a battle" needs no reset step anywhere — a spent berry is simply unspent next time, because
+   * this object no longer exists.
+   */
+  usedStatusCure: boolean;
+  usedLastStand: boolean;
   /** Poison ticks since last application; poison damage is tick * stacks and grows each tick. */
   poisonStacks: number;
 }
@@ -147,6 +193,7 @@ export type StepEventKind =
   | 'StatusApplied'
   | 'StatusCleared'
   | 'StatusTick'
+  | 'ChargeGained'
   | 'StatusBlocked'
   | 'TypeSynergy'
   | 'SuddenDeath'
@@ -215,10 +262,13 @@ export interface CombatantSpec {
   attack: number;
   health: number;
   speed: number;
+  /** Defaults to 0 — a combatant built without one simply has no Special-scaled ability. */
+  special?: number;
   passive?: PassiveDefinition | null;
   types?: readonly PokemonType[];
   /** Starting HP, when a mon arrives already damaged. Defaults to full health. */
   currentHP?: number;
+  heldItem?: HeldItemEffects | null;
 }
 
 /** A fresh combatant at a known-clean slate. Mirrors `BattleCombatant.FromInstance`. */
@@ -226,7 +276,12 @@ export function makeCombatant(spec: CombatantSpec): Combatant {
   return {
     instanceId: spec.instanceId,
     sourceId: spec.sourceId,
-    currentStats: { attack: spec.attack, health: spec.health, speed: spec.speed },
+    currentStats: {
+      attack: spec.attack,
+      health: spec.health,
+      speed: spec.speed,
+      special: spec.special ?? 0,
+    },
     currentHP: spec.currentHP ?? spec.health,
     status: null,
     passive: spec.passive ?? null,
@@ -239,6 +294,9 @@ export function makeCombatant(spec: CombatantSpec): Combatant {
     lifestealPercent: 0,
     statusTickDamage: 0,
     poisonStacks: 0,
+    heldItem: spec.heldItem ?? null,
+    usedStatusCure: false,
+    usedLastStand: false,
   };
 }
 

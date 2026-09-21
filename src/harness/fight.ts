@@ -138,6 +138,8 @@ function describeEvent(e: StepEvent): string {
       return `${src} fires its passive`;
     case 'Faint':
       return `${src} faints`;
+    case 'ChargeGained':
+      return `${tgt} charges +${amt}`;
     case 'BallThrown':
       return `a ball is thrown at ${tgt} (${amt}%)`;
     case 'Caught':
@@ -157,6 +159,7 @@ function board(lineUp: Combatant[]): string {
       const bits = [
         `HP ${c.currentHP}/${c.currentStats.health}`,
         `ATK ${c.currentStats.attack}`,
+        `SP ${c.currentStats.special}`,
         `SPD ${c.currentStats.speed}`,
         `chg ${c.charge}`,
       ];

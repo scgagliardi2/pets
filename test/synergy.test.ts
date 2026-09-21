@@ -211,10 +211,13 @@ describe('charge', () => {
     expect(byId(state, 'lead').charge).toBe(2);
   });
 
-  it('Electric never pushes the Lead past the threshold, so it buys at most one early trigger', () => {
-    const { state } = open([mon('lead', ['Electric']), mon('support', ['Electric'])], []);
-    // 2 per Electric-type x2 would be 4; the cap holds it at the threshold.
-    expect(byId(state, 'lead').charge).toBe(CHARGE_THRESHOLD);
+  it('never pushes the Lead past the threshold', () => {
+    // The cap is what the clamp exists for. Against the game's 100-point threshold a couple of
+    // Electric-types no longer come close to it, so this pins the clamp itself rather than a
+    // specific count: charge after the opening is never above the threshold.
+    const lots = Array.from({ length: 60 }, (_, i) => mon(`e${i}`, ['Electric']));
+    const { state } = open(lots, []);
+    expect(byId(state, 'e0').charge).toBe(CHARGE_THRESHOLD);
   });
 
   it('Psychic front-loads the Lead and Support', () => {

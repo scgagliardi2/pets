@@ -18,7 +18,12 @@
  */
 
 import { applyStatus, resolveFaintsAndPromotions } from './advanceStep.js';
-import { CHARGE_THRESHOLD, MAX_LIFESTEAL_PERCENT } from './config.js';
+import {
+  CHARGE_THRESHOLD,
+  DEFAULT_CHARGE_CONFIG,
+  MAX_LIFESTEAL_PERCENT,
+  type ChargeConfig,
+} from './config.js';
 import { takeHit } from './damage.js';
 import {
   POKEMON_TYPES,
@@ -210,7 +215,10 @@ export function effectAtCount(type: PokemonType, count: number): string {
  *
  * Mutates the state it's given; the runners own the cloning.
  */
-export function applyOpeningMutable(state: BattleState): StepEvent[] {
+export function applyOpeningMutable(
+  state: BattleState,
+  charge: ChargeConfig = DEFAULT_CHARGE_CONFIG,
+): StepEvent[] {
   const events: StepEvent[] = [];
   const countsA = countTypes(state.lineUpA);
   const countsB = countTypes(state.lineUpB);
@@ -226,8 +234,8 @@ export function applyOpeningMutable(state: BattleState): StepEvent[] {
   applyDefenses(state.lineUpA, countsA);
   applyDefenses(state.lineUpB, countsB);
 
-  applyOwnCharge(state.lineUpA, countsA);
-  applyOwnCharge(state.lineUpB, countsB);
+  applyOwnCharge(state.lineUpA, countsA, charge.threshold);
+  applyOwnCharge(state.lineUpB, countsB, charge.threshold);
   applyEnemyCharge(state.lineUpB, countsA);
   applyEnemyCharge(state.lineUpA, countsB);
 
@@ -268,9 +276,9 @@ function addHealth(mon: Combatant, amount: number): void {
   mon.currentHP += amount;
 }
 
-function addCharge(mon: Combatant, amount: number): void {
+function addCharge(mon: Combatant, amount: number, threshold: number): void {
   if (amount > 0) {
-    mon.charge = Math.min(CHARGE_THRESHOLD, mon.charge + amount);
+    mon.charge = Math.min(threshold, mon.charge + amount);
   }
 }
 
@@ -358,15 +366,15 @@ function applyDefenses(lineUp: Combatant[], counts: TypeCounts): void {
   }
 }
 
-function applyOwnCharge(lineUp: Combatant[], counts: TypeCounts): void {
+function applyOwnCharge(lineUp: Combatant[], counts: TypeCounts, threshold: number): void {
   const lead = lineUp[0];
   if (lead === undefined) return;
 
-  addCharge(lead, counts.Electric * ELECTRIC_LEAD_CHARGE_PER_TYPE);
+  addCharge(lead, counts.Electric * ELECTRIC_LEAD_CHARGE_PER_TYPE, threshold);
   const psychic = counts.Psychic * PSYCHIC_CHARGE_PER_TYPE;
-  addCharge(lead, psychic);
+  addCharge(lead, psychic, threshold);
   const support = lineUp[1];
-  if (support !== undefined) addCharge(support, psychic);
+  if (support !== undefined) addCharge(support, psychic, threshold);
 }
 
 function applyEnemyCharge(enemies: Combatant[], counts: TypeCounts): void {

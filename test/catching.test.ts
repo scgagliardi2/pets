@@ -176,12 +176,16 @@ describe('what a catch produces', () => {
     expect(mon.timesEvolved).toBe(0);
   });
 
-  it('gets its own instance id, so it does not grow along the enemy line', () => {
-    // The growth draw is keyed to the id; reusing the wild mon's would make the catch a copy of
-    // the mon that was about to beat you.
+  it('gets its own instance id', () => {
+    // This used to matter for stats: growth was drawn from a hash of the id, so reusing the wild
+    // mon's made the catch a copy of the mon that had just been beating you. Growth is now the
+    // player's choice and the id no longer touches it, so the requirement is only that ids stay
+    // unique — two catches of the same species must remain two mons in the roster.
     const a = caughtInstance(charmander.id, 'Ultra', 10, 0, 'c-a')!;
     const b = caughtInstance(charmander.id, 'Ultra', 10, 0, 'c-b')!;
-    expect(statsOf(a)).not.toEqual(statsOf(b));
+
+    expect(a.instanceId).not.toBe(b.instanceId);
+    expect(statsOf(a)).toEqual(statsOf(b));
   });
 
   it('keeps the target EXP under an Ultra Ball', () => {

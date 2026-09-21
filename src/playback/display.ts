@@ -10,14 +10,12 @@
  * 1. This is **display only**. Nothing here feeds back into the sim. A bug here makes the
  *    animation wrong, never the fight.
  * 2. At the end of every Step the renderer **resyncs to the authoritative post-Step state**
- *    (`syncTo` below). Anything this missed is corrected at the boundary rather than accumulating.
- *
- * Charge is the one thing not driven by an event at all — accrual is silent, so `chargePlan`
- * derives the arcs' movement from the boards either side of the Step instead.
+ *    (`syncTo` below). Anything this missed — charge accrual raises no event, for instance — is
+ *    corrected at the boundary rather than accumulating.
  */
 
 import type { BattleState, Combatant, StepEvent } from '../sim/index.js';
-import { cloneBattleState, CHARGE_THRESHOLD } from '../sim/index.js';
+import { cloneBattleState } from '../sim/index.js';
 
 /** Transient flourishes a mon is showing right now, cleared as the Step moves on. */
 export interface MonFlash {
@@ -31,8 +29,6 @@ export interface MonFlash {
   firing?: boolean;
   /** Shield just absorbed a blow. */
   absorbed?: number;
-  /** Its arc has just landed full and its passive is about to fire. */
-  charged?: boolean;
 }
 
 export interface DisplayState {
@@ -139,6 +135,10 @@ export function applyEvent(display: DisplayState, event: StepEvent): DisplayStat
       flash(event.sourceInstanceId, { firing: true });
       break;
 
+    case 'ChargeGained':
+      if (target !== null) target.charge += event.amount ?? 0;
+      break;
+
     case 'BallThrown':
       break;
 
@@ -160,88 +160,9 @@ export function applyEvent(display: DisplayState, event: StepEvent): DisplayStat
 /**
  * Snap to the authoritative post-Step board and clear the transient flourishes.
  *
- * Called at every Step boundary, so anything the per-event walk got wrong — including the
- * fractional charge the fill leaves the arcs sitting at — is corrected rather than carried forward.
+ * Called at every Step boundary. Charge accrual raises no event, so the arcs only move here — and
+ * anything else the per-event walk got wrong is corrected rather than carried forward.
  */
 export function syncTo(board: BattleState): DisplayState {
   return { board: cloneBattleState(board), flashes: {}, fainting: [], lastEvent: null };
-}
-
-// --- charge ----------------------------------------------------------------------------------
-
-/** Where each mon's arc starts and ends over one Step, and who lands full. */
-export interface ChargePlan {
-  /** Charge before the Step, keyed by instanceId. */
-  from: Record<string, number>;
-  /** Charge to fill to, keyed by instanceId. Absent for a mon that leaves the field. */
-  to: Record<string, number>;
-  /** Who reaches full this Step, in the order their passives fire. */
-  full: string[];
-}
-
-/**
- * What the arcs should do over one Step, read off the boards either side of it.
- *
- * Charge accrual raises no event, so there is nothing for `applyEvent` to walk — which is why the
- * arcs used to sit still through a Step and then jump at its boundary. The arc is the game's clock
- * (Speed does nothing but fill it), and a clock that only moves between Steps doesn't read as one.
- *
- * A mon whose passive fires ends the Step back at 0, so its post-Step charge is no use as a
- * target: it fills to full instead, and the `PassiveTriggered` beat is what empties it.
- */
-export function chargePlan(
-  before: BattleState,
-  after: BattleState,
-  events: StepEvent[],
-): ChargePlan {
-  const full = events
-    .filter((e) => e.kind === 'PassiveTriggered' && e.sourceInstanceId !== undefined)
-    .map((e) => e.sourceInstanceId!);
-  const fired = new Set(full);
-
-  const afterById = new Map<string, Combatant>();
-  for (const c of [...after.lineUpA, ...after.lineUpB]) afterById.set(c.instanceId, c);
-
-  const from: Record<string, number> = {};
-  const to: Record<string, number> = {};
-  for (const c of [...before.lineUpA, ...before.lineUpB]) {
-    from[c.instanceId] = c.charge;
-    if (fired.has(c.instanceId)) to[c.instanceId] = CHARGE_THRESHOLD;
-    else {
-      const later = afterById.get(c.instanceId);
-      if (later !== undefined) to[c.instanceId] = later.charge;
-    }
-  }
-
-  return { from, to, full };
-}
-
-/**
- * The arcs partway through a fill, `t` running 0 to 1.
- *
- * Deliberately fractional: charge is an integer of at most 3 against a threshold of 3, so rounding
- * the interpolation would put the arc back to jumping in thirds, which is the thing being fixed.
- */
-export function chargeAt(plan: ChargePlan, t: number): Record<string, number> {
-  const clamped = Math.max(0, Math.min(1, t));
-  const charges: Record<string, number> = {};
-  for (const [id, to] of Object.entries(plan.to)) {
-    const from = plan.from[id] ?? to;
-    charges[id] = from + (to - from) * clamped;
-  }
-  return charges;
-}
-
-/** A copy of `display` with the named mons' charge overwritten. Never mutates the input. */
-export function withCharges(
-  display: DisplayState,
-  charges: Record<string, number>,
-  flashes: Record<string, MonFlash> = display.flashes,
-): DisplayState {
-  const board = cloneBattleState(display.board);
-  for (const c of [...board.lineUpA, ...board.lineUpB]) {
-    const charge = charges[c.instanceId];
-    if (charge !== undefined) c.charge = charge;
-  }
-  return { ...display, board, flashes };
 }

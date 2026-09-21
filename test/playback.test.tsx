@@ -13,22 +13,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { StrictMode } from 'react';
 
 import { PlaybackCancelled, PlaybackClock } from '../src/playback/clock.js';
-import {
-  applyEvent,
-  chargeAt,
-  chargePlan,
-  initialDisplay,
-  syncTo,
-  withCharges,
-} from '../src/playback/display.js';
 import { BattlePlayer } from '../src/playback/player.js';
-import {
-  CHARGE_THRESHOLD,
-  makeBattleState,
-  makeCombatant,
-  type PassiveDefinition,
-} from '../src/sim/index.js';
-import { createInstance } from '../src/content/factory.js';
+import { applyEvent, initialDisplay, syncTo } from '../src/playback/display.js';
+import { OnDemandRunner, makeBattleState, makeCombatant } from '../src/sim/index.js';
+import { createInstance, toCombatant } from '../src/content/factory.js';
 import { useRunStore } from '../src/state/runStore.js';
 import { BattleScreen } from '../src/ui/BattleScreen.js';
 import { CHARGE_ARC, FIELD, SLOTS, SPRITE_SCALE, spriteBox } from '../src/ui/layout.js';
@@ -197,133 +185,6 @@ describe('display state', () => {
     expect(synced.fainting).toEqual([]);
     expect(synced.board.stepNumber).toBe(4);
   });
-});
-
-describe('the charge plan', () => {
-  const at = (id: string, charge: number) => {
-    const c = makeCombatant({ instanceId: id, attack: 3, health: 10, speed: 1 });
-    c.charge = charge;
-    return c;
-  };
-
-  it('fills from the pre-Step charge to the post-Step charge', () => {
-    const plan = chargePlan(
-      makeBattleState([at('a', 0)], [at('b', 1)]),
-      makeBattleState([at('a', 1)], [at('b', 2)]),
-      [],
-    );
-
-    expect(plan.from).toEqual({ a: 0, b: 1 });
-    expect(plan.to).toEqual({ a: 1, b: 2 });
-    expect(plan.full).toEqual([]);
-  });
-
-  it('fills a triggering mon to full, not to the zero it is left at', () => {
-    // The Step resets a fired passive's charge to 0, so the post-Step board says 0 and playing
-    // that back would drain the arc instead of filling it — the arc has to land full first.
-    const plan = chargePlan(
-      makeBattleState([at('a', 2)], [at('b', 0)]),
-      makeBattleState([at('a', 0)], [at('b', 1)]),
-      [{ step: 1, kind: 'PassiveTriggered', sourceSide: 'A', sourceInstanceId: 'a' }],
-    );
-
-    expect(plan.to['a']).toBe(CHARGE_THRESHOLD);
-    expect(plan.full).toEqual(['a']);
-  });
-
-  it('leaves a mon that left the field out of the fill', () => {
-    const plan = chargePlan(
-      makeBattleState([at('a', 1)], [at('b', 1)]),
-      makeBattleState([at('a', 2)], []),
-      [],
-    );
-
-    expect(plan.to['b']).toBeUndefined();
-  });
-
-  it('interpolates fractionally, so a three-point meter does not move in thirds', () => {
-    const plan = chargePlan(
-      makeBattleState([at('a', 1)], []),
-      makeBattleState([at('a', 2)], []),
-      [],
-    );
-
-    expect(chargeAt(plan, 0)['a']).toBe(1);
-    expect(chargeAt(plan, 0.5)['a']).toBe(1.5);
-    expect(chargeAt(plan, 1)['a']).toBe(2);
-    // Clamped: a fill can be asked to land past its window.
-    expect(chargeAt(plan, 1.4)['a']).toBe(2);
-  });
-
-  it('writes charges onto a copy of the board, never the one it was given', () => {
-    const display = initialDisplay(makeBattleState([at('a', 0)], [at('b', 0)]));
-    const after = withCharges(display, { a: 1.5 });
-
-    expect(display.board.lineUpA[0]!.charge).toBe(0);
-    expect(after.board.lineUpA[0]!.charge).toBe(1.5);
-  });
-});
-
-describe('the arcs move while a Step is playing', () => {
-  /** Watches every snapshot a player publishes, since the point is what happens mid-Step. */
-  const watch = (player: BattlePlayer) => {
-    const snapshots: ReturnType<BattlePlayer['getSnapshot']>[] = [];
-    player.subscribe(() => snapshots.push(player.getSnapshot()));
-    return snapshots;
-  };
-
-  it('fills the arc partway during the Step rather than jumping at its end', async () => {
-    const own = makeCombatant({ instanceId: 'fill-a', attack: 1, health: 90, speed: 1 });
-    const foe = makeCombatant({ instanceId: 'fill-b', attack: 1, health: 90, speed: 1 });
-    const player = new BattlePlayer([own], [foe], 1);
-    const snapshots = watch(player);
-
-    player.stepOnce();
-    await waitFor(() => expect(player.getSnapshot().stepNumber).toBe(1), { timeout: 4000 });
-
-    const charges = snapshots.map((s) => s.display.board.lineUpA[0]?.charge ?? 0);
-    // Speed 1 against a threshold of 3: the arc goes 0 to 1 over the Step, and the whole point is
-    // that it was seen somewhere in between.
-    expect(charges.some((c) => c > 0 && c < 1)).toBe(true);
-    expect(charges[charges.length - 1]).toBe(1);
-
-    player.dispose();
-  }, 10_000);
-
-  it('holds on the full arc before the passive fires', async () => {
-    const passive: PassiveDefinition = {
-      id: 'test-guard',
-      displayName: 'Test Guard',
-      effects: [{ type: 'Shield', target: 'Self', amount: 2 }],
-    };
-    // Speed 3 fills the meter in a single Step, so the passive fires on Step 1.
-    const own = makeCombatant({
-      instanceId: 'hold-a',
-      attack: 1,
-      health: 90,
-      speed: 3,
-      passive,
-    });
-    const foe = makeCombatant({ instanceId: 'hold-b', attack: 1, health: 90, speed: 1 });
-    const player = new BattlePlayer([own], [foe], 1);
-    const snapshots = watch(player);
-
-    player.stepOnce();
-    await waitFor(() => expect(player.getSnapshot().stepNumber).toBe(1), { timeout: 4000 });
-
-    const held = snapshots.findIndex((s) => s.display.flashes['hold-a']?.charged === true);
-    const fired = snapshots.findIndex((s) =>
-      s.history.some((e) => e.kind === 'PassiveTriggered'),
-    );
-
-    expect(held, 'the board held on a full arc').toBeGreaterThan(-1);
-    expect(fired, 'the passive fired').toBeGreaterThan(-1);
-    expect(held, 'held before firing').toBeLessThan(fired);
-    // And it was actually full while held, not still on its way up.
-    expect(snapshots[held]!.display.board.lineUpA[0]!.charge).toBe(CHARGE_THRESHOLD);
-
-    player.dispose();
-  }, 10_000);
 });
 
 describe('layout', () => {
@@ -562,14 +423,17 @@ describe('the fight holds on its verdict before reporting', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
-    await waitFor(() => expect(finished).toHaveLength(1), { timeout: 8000 });
+    // "Run to the end" rather than Play: this test is about the callback firing once, not about
+    // playback pacing, and fights now run long enough at normal speed to make an 8-second wait
+    // marginal. Both routes end through the same finish path.
+    fireEvent.click(screen.getByRole('button', { name: /Run to the end/i }));
+    await waitFor(() => expect(finished).toHaveLength(1), { timeout: 15_000 });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 400));
     });
 
     expect(finished).toHaveLength(1);
-  }, 20_000);
+  }, 25_000);
 });
 
 describe('catching the last foe does not lock the screen', () => {
@@ -610,4 +474,73 @@ describe('catching the last foe does not lock the screen', () => {
     await waitFor(() => expect(finished).toHaveLength(1), { timeout: 8000 });
     expect(finished[0]).toBe('SideAWins');
   }, 20_000);
+});
+
+describe('charge fills during the attack beat, not after', () => {
+  it('applies a ChargeGained event in the same display update as the attack that precedes it', () => {
+    // Before the fix, charge was applied in its own sequential iteration after the attack's beat
+    // had already finished waiting — the arc snapped to its new value once the lunge was over.
+    // The fix folds a zero-length beat into whichever visible beat precedes it, so both changes
+    // land in one display update and the arc's CSS transition runs while the lunge plays.
+    // Speed 1, not 3: at 3 the mon would also cross the charge threshold this same Step and its
+    // passive would reset charge straight back to 0, which is correct simulation behaviour but
+    // would obscure what this test is checking.
+    const attacker = makeCombatant({ instanceId: 'a', attack: 3, health: 20, speed: 1 });
+    const defender = makeCombatant({ instanceId: 'b', attack: 1, health: 20, speed: 1 });
+    const board = makeBattleState([attacker], [defender]);
+    const runner = new OnDemandRunner([attacker], [defender], 1);
+    const events = runner.nextStep();
+
+    const damageIndex = events.findIndex((e) => e.kind === 'Damage');
+    const chargeIndex = events.findIndex((e) => e.kind === 'ChargeGained');
+    expect(damageIndex).toBeGreaterThanOrEqual(0);
+    expect(chargeIndex).toBeGreaterThan(damageIndex);
+
+    // Simulate the player's grouping: apply events until a nonzero-beat event, folding any
+    // trailing zero-beat events into the same update.
+    let display = initialDisplay(board);
+    const BEAT: Record<string, number> = { Damage: 420, ChargeGained: 0 };
+    const updates: number[] = [];
+    for (let i = 0; i < events.length; i++) {
+      display = applyEvent(display, events[i]!);
+      const wait = BEAT[events[i]!.kind] ?? 240;
+      while (i + 1 < events.length && (BEAT[events[i + 1]!.kind] ?? 240) === 0) {
+        i++;
+        display = applyEvent(display, events[i]!);
+      }
+      updates.push(wait);
+    }
+
+    // The attack and the charge gain that follows it land in the same grouped update — there is
+    // no separate zero-length update between them.
+    expect(updates.filter((w) => w === 0)).toHaveLength(0);
+    expect(display.board.lineUpA[0]!.charge).toBeGreaterThan(0);
+  });
+});
+
+describe('the charge fill duration spans the remaining beat, not a short snap', () => {
+  it('gives a gain a duration well past the old fixed short transition', async () => {
+    // Speed 1 so the mon does not also cross the charge threshold this Step, which would fire
+    // its passive and immediately reset the duration to the fast ability-snap value instead.
+    const attacker = createInstance('Charmander', { instanceId: 'a' });
+    const defender = createInstance('Squirtle', { instanceId: 'b' });
+
+    let seen: number | undefined;
+    const player = new BattlePlayer([attacker].map(toCombatant), [defender].map(toCombatant), 1);
+    const unsub = player.subscribe(() => {
+      const value = player.getSnapshot().chargeDurationMs[attacker.instanceId];
+      if (value !== undefined) seen = value;
+    });
+
+    player.stepOnce();
+    // Two Damage beats (420ms each) precede the merged ChargeGained group in this exchange, so
+    // the duration isn't recorded until partway through the second one.
+    await new Promise((r) => setTimeout(r, 900));
+
+    unsub();
+    player.dispose();
+    // The old fixed transition was 280ms; a duration meant to span the rest of the Step plus the
+    // inter-Step gap should clear it by a wide margin.
+    expect(seen).toBeGreaterThan(280);
+  });
 });

@@ -11,9 +11,20 @@
  * count and how many times it has evolved, every time it's asked for.
  */
 
-import { makeCombatant, type Combatant, type Stats } from '../sim/index.js';
+import {
+  makeCombatant,
+  type Combatant,
+  type HeldItemEffects,
+  type PokemonType,
+  type Stats,
+} from '../sim/index.js';
+import { itemById, statEffectsOf } from './items.js';
 import { baseFormOf, resolvePassive, speciesNamed, speciesOf, type Species } from './index.js';
-import { statsAtExp } from './statGrowth.js';
+import {
+  emptyAllocation,
+  statsFromAllocation,
+  type Allocation,
+} from './statGrowth.js';
 
 /** A mon as the run holds it. Everything derivable is derived, not stored. */
 export interface PokemonInstance {
@@ -21,26 +32,25 @@ export interface PokemonInstance {
   readonly instanceId: string;
   /** What the mon is *now*, which may be several evolutions along its chain. */
   readonly speciesId: number;
-  /** Lifetime EXP. A flat counter — no level, no curve, no EXP-to-next-level. */
+  /**
+   * Progress toward evolving, and nothing else.
+   *
+   * EXP used to mean two things at once — how close a mon was to evolving *and* how many stat
+   * increases it was owed — which made every screen ambiguous about what a number referred to.
+   * Those are now separate: this is evolution progress, `statPoints` is spending power.
+   */
   readonly exp: number;
+  /** Stat increases earned but not yet assigned. */
+  readonly statPoints: number;
+  /** Where the player has already put this mon's stat points. */
+  readonly allocation: Allocation;
   /** How many evolutions are behind it. */
   readonly timesEvolved: number;
   /** Damage carried between nodes, if the run carries it. Null means undamaged. */
   readonly currentHP: number | null;
+  /** The item this mon is holding, or null. At most one. */
+  readonly heldItemId: string | null;
   readonly nickname?: string;
-  /**
-   * Flat Attack and Health a fusion bolted on, on top of everything derived.
-   *
-   * The one thing about a mon that is **stored rather than derived**, and it is stored because it
-   * cannot be rebuilt: a fusion is a fact about two mons that no longer both exist, so there is
-   * nothing left to re-derive it from. Everything else on a stat line still comes from the base
-   * form, the EXP count and the evolutions behind it, and the bonus is simply added last — which
-   * means EXP earned after a fusion keeps growing the mon normally.
-   */
-  readonly bonusAttack?: number;
-  readonly bonusHealth?: number;
-  /** How many mons have been absorbed into this one. Zero for a mon that was never fused. */
-  readonly timesFused?: number;
 }
 
 let nextInstanceOrdinal = 0;
@@ -64,13 +74,13 @@ export function resetInstanceIds(): void {
 
 export interface CreateOptions {
   exp?: number;
+  statPoints?: number;
+  allocation?: Allocation;
   timesEvolved?: number;
   instanceId?: string;
   nickname?: string;
   currentHP?: number | null;
-  bonusAttack?: number;
-  bonusHealth?: number;
-  timesFused?: number;
+  heldItemId?: string | null;
 }
 
 /** A new mon of a species. Accepts a dex id, a name, or the species itself. */
@@ -83,13 +93,29 @@ export function createInstance(
     instanceId: options.instanceId ?? newInstanceId(resolved.name.toLowerCase()),
     speciesId: resolved.id,
     exp: Math.max(0, options.exp ?? 0),
+    statPoints: Math.max(0, options.statPoints ?? 0),
+    // A mon created with EXP but no allocation has stats spread evenly rather than left unassigned:
+    // encounters and Gym Leaders arrive fully formed, and only the player's own mons go through
+    // the assignment screen.
+    allocation: options.allocation ?? spreadEvenly(Math.max(0, options.exp ?? 0)),
     timesEvolved: Math.max(0, options.timesEvolved ?? 0),
     currentHP: options.currentHP ?? null,
+    heldItemId: options.heldItemId ?? null,
     nickname: options.nickname,
-    bonusAttack: Math.max(0, options.bonusAttack ?? 0),
-    bonusHealth: Math.max(0, options.bonusHealth ?? 0),
-    timesFused: Math.max(0, options.timesFused ?? 0),
   };
+}
+
+/** An even split across the four stats, for mons that arrive already grown. */
+export function spreadEvenly(points: number): Allocation {
+  const a = { ...emptyAllocation() };
+  const order = ['health', 'attack', 'special', 'speed'] as const;
+  for (let i = 0; i < Math.max(0, points); i++) {
+    // Speed last and least: it is the strongest per point, so an even split would hand every
+    // wild mon a charge-rate advantage nobody chose to give it.
+    const stat = order[i % (i < 4 ? 3 : order.length)]!;
+    a[stat] += 1;
+  }
+  return a;
 }
 
 function resolveSpecies(species: Species | number | string): Species {
@@ -112,32 +138,53 @@ export function speciesOfInstance(instance: PokemonInstance): Species {
   return found;
 }
 
-/**
- * A mon's current stat line, derived from scratch, plus whatever a fusion added.
- *
- * The derived half is rebuilt every time it is asked for; the fusion bonus is the only part read
- * out of the record rather than recomputed. See `bonusAttack` on `PokemonInstance` for why.
- */
+/** A mon's current stat line, derived from scratch. */
 export function statsOf(instance: PokemonInstance): Stats {
   const species = speciesOfInstance(instance);
-  const derived = statsAtExp(
-    baseFormOf(species),
-    instance.instanceId,
-    instance.exp,
-    instance.timesEvolved,
-  );
+  const base = statsFromAllocation(baseFormOf(species), instance.allocation, instance.timesEvolved);
+  const item = statEffectsOf(itemById(instance.heldItemId));
+
   return {
-    attack: derived.attack + Math.max(0, instance.bonusAttack ?? 0),
-    health: derived.health + Math.max(0, instance.bonusHealth ?? 0),
-    speed: derived.speed,
+    attack: base.attack + item.attack,
+    health: base.health + item.health,
+    special: base.special + item.special,
+    speed: base.speed + item.speed,
   };
 }
 
-/** The stat line a mon would have with no fusion bonus — what EXP and evolution alone bought. */
-export function derivedStatsOf(instance: PokemonInstance): Stats {
-  const species = speciesOfInstance(instance);
-  return statsAtExp(baseFormOf(species), instance.instanceId, instance.exp, instance.timesEvolved);
+/** The mon's typing, after any type-setting item replaces it. */
+export function typesOf(instance: PokemonInstance): readonly PokemonType[] {
+  const override = statEffectsOf(itemById(instance.heldItemId)).overrideTypes;
+  return override ?? speciesOfInstance(instance).types;
 }
+
+/** The battle behaviour of whatever this mon is holding, resolved for the simulator. */
+export function heldItemEffectsOf(instance: PokemonInstance): HeldItemEffects | null {
+  const item = itemById(instance.heldItemId);
+  if (item === null) return null;
+
+  switch (item.kind) {
+    case 'regen':
+      return { regenPerStep: item.amount ?? 0 };
+    case 'lastStand':
+      return { healBelowHalf: item.amount ?? 0 };
+    case 'cureStatus':
+      return { curesStatus: true };
+    default:
+      // Flat stats and typing are folded into the stat line; training and EXP items act between
+      // battles. None of them need the simulator to know anything.
+      return null;
+  }
+}
+
+/**
+ * Stat points earned but not yet assigned.
+ *
+ * Read straight off the mon rather than derived as `exp - totalAllocated`, now that EXP means
+ * evolution progress only and the two no longer move together.
+ */
+export const unspentPoints = (instance: PokemonInstance): number =>
+  Math.max(0, instance.statPoints);
 
 /** Max HP is just the Health stat; there is no separate ceiling. */
 export function maxHPOf(instance: PokemonInstance): number {
@@ -161,17 +208,46 @@ export function toCombatant(instance: PokemonInstance): Combatant {
     attack: stats.attack,
     health: stats.health,
     speed: stats.speed,
+    special: stats.special,
     currentHP: instance.currentHP ?? stats.health,
     // Resolved against the mon's *current* species and stage, so an evolved mon's passive scales
     // if its content ever declares a magnitude table.
     passive: resolvePassive(species, species.evolutionStage),
-    types: species.types,
+    types: typesOf(instance),
+    heldItem: heldItemEffectsOf(instance),
   });
 }
 
-/** A whole line-up, in order. Position 0 is the Lead, 1 the Support, the rest dormant. */
-export function toLineUp(instances: readonly PokemonInstance[]): Combatant[] {
-  return instances.map(toCombatant);
+/** Flat, run-long bonuses from trainer buffs, applied when a battle line-up is built. */
+export interface TeamBonuses {
+  attack?: number;
+  health?: number;
+  special?: number;
+  startingCharge?: number;
+}
+
+/**
+ * A whole line-up, in order. Position 0 is the Lead, 1 the Support, the rest dormant.
+ *
+ * Bonuses are applied here rather than folded into `statsOf`, because they belong to the *run*,
+ * not to the mon: a mon moved to the Box and back should not carry them, and the roster screens
+ * should show what a mon actually is.
+ */
+export function toLineUp(
+  instances: readonly PokemonInstance[],
+  bonuses: TeamBonuses = {},
+): Combatant[] {
+  return instances.map((instance) => {
+    const combatant = toCombatant(instance);
+    if (bonuses.attack !== undefined) combatant.currentStats.attack += bonuses.attack;
+    if (bonuses.special !== undefined) combatant.currentStats.special += bonuses.special;
+    if (bonuses.health !== undefined) {
+      combatant.currentStats.health += bonuses.health;
+      combatant.currentHP += bonuses.health;
+    }
+    if (bonuses.startingCharge !== undefined) combatant.charge += bonuses.startingCharge;
+    return combatant;
+  });
 }
 
 /** What a mon is called: its nickname if it has one, otherwise its species name. */

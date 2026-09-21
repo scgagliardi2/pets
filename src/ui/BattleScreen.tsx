@@ -45,8 +45,8 @@ export interface BattleScreenProps {
   scenarioNote: string;
   /** Changing this rebuilds the fight from scratch. */
   runKey: string;
-  /** Called once, when the fight resolves. */
-  onFinished?: (outcome: BattleOutcome) => void;
+  /** Called once, when the fight resolves, with everyone on your side who was ever on the field. */
+  onFinished?: (outcome: BattleOutcome, participants: string[]) => void;
 }
 
 /**
@@ -112,9 +112,9 @@ function BattleView({
     // so reporting on it cuts to the results screen on the same frame as the death blow.
     if (isFinished && outcome !== null && !reported.current) {
       reported.current = true;
-      onFinished?.(outcome);
+      onFinished?.(outcome, snapshot.participants);
     }
-  }, [isFinished, outcome, onFinished]);
+  }, [isFinished, outcome, onFinished, snapshot.participants]);
 
   const resolveThrow = useRunStore((s) => s.resolveThrow);
   const balls = useRunStore((s) => s.run.balls);
@@ -180,6 +180,7 @@ function BattleView({
                   slot={slot}
                   flash={display.flashes[combatant.instanceId]}
                   fainting={display.fainting.includes(combatant.instanceId)}
+                  chargeDurationMs={snapshot.chargeDurationMs[combatant.instanceId]}
                 />
               );
             }),
@@ -201,14 +202,12 @@ function BattleView({
             className="caption"
             style={{ left: CHROME.caption.x, top: CHROME.caption.y, width: CHROME.caption.width }}
           >
-            {isOver && outcome !== null ? (
-              <span className="verdict">
-                {outcome === 'SideAWins' ? 'You win' : outcome === 'SideBWins' ? 'You lose' : 'Draw'}
-              </span>
-            ) : (
-              describeEvent(display.lastEvent, speciesByInstance) ?? scenarioNote
-            )}
+            {describeEvent(display.lastEvent, speciesByInstance) ?? scenarioNote}
           </div>
+
+          {/* The verdict is a popup over the finished board rather than a cut away from it: the
+              board is what the player wants to read at that moment, and cutting to another screen
+              throws it away. */}
         </div>
       </div>
 
@@ -632,6 +631,8 @@ function describeEvent(event: StepEvent | null, names: Map<string, Species>): st
       return `${src} fires its passive`;
     case 'Faint':
       return `${src} faints`;
+    case 'ChargeGained':
+      return `${tgt} charges (+${amt})`;
     case 'BallThrown':
       return `You throw a ball at ${tgt} — ${amt}% odds`;
     case 'Caught':

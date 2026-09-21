@@ -1,33 +1,38 @@
 /**
- * The run: the Location path, your team, the Encounter you walked into, and what a fight just did.
+ * The run: the Location path, your team, and what a fight just did.
  *
- * Views over one store — the map you choose from, the Center, an Encounter's scene, the result of
- * the fight you just had, and the end of the run. The battle screen itself is unchanged; it is
- * handed a line-up and an opponent and reports an outcome, and knows nothing about badges, Morale
- * or which kind of node sent it there.
+ * Three views over one store — the map you choose from, the result of the fight you just had, and
+ * the end of the run. The battle screen itself is unchanged; it is handed a line-up and an
+ * opponent and reports an outcome, and knows nothing about badges or Morale.
  */
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { speciesOf } from '../content/index.js';
 import { spriteUrl } from '../content/sprites.js';
-import { displayNameOf, statsOf, type PokemonInstance } from '../content/factory.js';
-import type { Stats } from '../sim/index.js';
+import { statsOf, typesOf, unspentPoints, type PokemonInstance } from '../content/factory.js';
+import { itemById } from '../content/items.js';
 import { EXP_PER_EVOLUTION, expSinceEvolution } from '../meta/experience.js';
-import { canCombine, combine as fuse, partnersFor } from '../meta/fusion.js';
+import { GROWABLE_STATS, MAX_GROWN_SPEED } from '../content/statGrowth.js';
 import { BADGES_TO_WIN, MAX_PARTY_SIZE } from '../meta/progression.js';
-import { describeBounty } from '../meta/roadEvents.js';
-import type { MapNode, NodeType } from '../meta/runState.js';
+import { badgeFor } from '../meta/badges.js';
 import { useRunStore } from '../state/runStore.js';
-import { SHOP_STOCK, canAfford, describeInventory } from '../meta/shop.js';
+import { canCombine, type RunState } from '../meta/runState.js';
+import {
+  REROLL_COST,
+  SHOP_STOCK,
+  adoptionCost,
+  canAfford,
+  canReroll,
+  describeInventory,
+} from '../meta/shop.js';
 import { acceptDrop, readDragPayload, setDragPayload } from './dragDrop.js';
-import { EvolutionScene } from './EvolutionScene.js';
-import { TeamSynergies } from './TeamSynergies.js';
 
 export function RunHeader() {
   const run = useRunStore((s) => s.run);
   const location = useRunStore((s) => s.location);
   const startRun = useRunStore((s) => s.startRun);
+  const openBag = useRunStore((s) => s.openBag);
 
   return (
     <div className="panel run-header">
@@ -45,105 +50,160 @@ export function RunHeader() {
         ${run.money}
       </span>
       <div className="spacer" />
+      <button onClick={openBag}>Bag</button>
       <button onClick={() => startRun()}>New run</button>
     </div>
   );
 }
 
-/**
- * How each node kind presents itself: the icon drawn on the map, and what it is called.
- *
- * The icons are the ones the Location map was designed around — a black exclamation in the grass
- * for a fight, a trainer silhouette with a ball for the one whose team you cannot see, a gold
- * question mark over a ball for an Encounter, the domed Center, and the crowned Gym. A node is
- * read at a glance from its silhouette, which is the whole reason the map is a map rather than a
- * list; the word underneath is the fallback, not the signal.
- */
-const NODE_ART: Record<NodeType, { icon: string; kind: string; hint: string }> = {
-  Wild: {
-    icon: '/icons/nodes/battle.png',
-    kind: 'Battle',
-    hint: 'Wild Pokémon. EXP, money, and something you can throw a ball at.',
-  },
-  Trainer: {
-    icon: '/icons/nodes/mystery_trainer.png',
-    kind: 'Mystery Trainer',
-    hint: 'A bigger team than the grass fields, for better money. You see it when you arrive.',
-  },
-  Encounter: {
-    icon: '/icons/nodes/encounter.png',
-    kind: 'Encounter',
-    hint: 'A scene and a choice. No EXP from the node itself — everything else is on the table.',
-  },
-  Center: {
-    icon: '/icons/nodes/pokemon_center.png',
-    kind: 'Pokémon Center',
-    hint: 'Restock balls. Pays no EXP and no money.',
-  },
-  Gym: {
-    icon: '/icons/nodes/gym.png',
-    kind: 'Gym',
-    hint: 'The Leader. Beat them for the badge and the next Location.',
-  },
+/** The five node icons, by node type. */
+const NODE_ICON: Record<string, string> = {
+  Wild: 'battle',
+  MysteryTrainer: 'mystery-trainer',
+  Gym: 'gym',
+  Center: 'shop',
+  Encounter: 'encounter',
 };
 
-/** A node with the edges the generator wired it with. The map hands these out; the type hides it. */
-type EdgedNode = MapNode & { next?: readonly string[] };
+const NODE_KIND: Record<string, string> = {
+  Wild: 'Battle',
+  MysteryTrainer: 'Trainer',
+  Gym: 'Gym',
+  Center: 'Shop',
+  Encounter: 'Encounter',
+};
 
-/** Where every node landed on screen, measured once the columns have laid themselves out. */
-interface Geometry {
-  readonly points: Record<string, { x: number; y: number }>;
-  readonly width: number;
-  readonly height: number;
+const nodeKind = (node: { type: string }): string => NODE_KIND[node.type] ?? 'Battle';
+
+/** Three letters, so two of them fit under a node icon. */
+const STAT_ABBREV: Record<string, string> = {
+  attack: 'ATK',
+  health: 'HP',
+  special: 'SP',
+  speed: 'SPD',
+};
+
+/**
+ * A card's own drop handler: dropping one mon directly onto another always does something to
+ * both of them, never nothing.
+ *
+ * Same evolution line → combine. Otherwise → swap, wherever each currently is — line-up or Box.
+ * That symmetry is what makes a card a predictable target: you don't have to know in advance
+ * whether a drop will "count", because it always does. The earlier version only intercepted a
+ * combinable drop and silently declined everything else, which read as the feature not working
+ * when it was actually just declining.
+ *
+ * Gaps are the one thing this doesn't touch — they stay the way to insert a mon into a position
+ * without displacing whoever is already there.
+ */
+function cardDropHandler(
+  run: RunState,
+  actions: {
+    combine: (keepId: string, consumeId: string) => void;
+    swap: (a: string, b: string) => void;
+    equip: (instanceId: string, itemId: string) => void;
+  },
+  targetId: string,
+): (event: React.DragEvent) => void {
+  return (event) => {
+    const payload = readDragPayload(event);
+    if (payload === null) return;
+
+    // An item dropped on a mon is always "give it to this one", whether it came from the bag or
+    // off another mon — the store handles returning whatever was displaced.
+    if (payload.kind === 'item') {
+      event.preventDefault();
+      event.stopPropagation();
+      actions.equip(targetId, payload.itemId);
+      return;
+    }
+
+    if (payload.kind !== 'mon' || payload.instanceId === targetId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (canCombine(run, payload.instanceId, targetId)) {
+      actions.combine(targetId, payload.instanceId);
+    } else {
+      actions.swap(payload.instanceId, targetId);
+    }
+  };
 }
 
 /**
- * The Location's branching path, with your traveller on it.
+ * The Location's branching path, drawn over its region art.
  *
- * Laid out as columns of layers, entry on the left and the Gym on the right, over the Location's
- * own art. Only the nodes the current position leads to are takeable — the decision is which
- * fight you give up, so the ones being passed on have to stay visible rather than disappear.
+ * Nodes sit in layer columns with the edges between them drawn as lines, so the branching is
+ * something you can see and plan against rather than infer from which buttons light up. Only the
+ * nodes the current position leads to are takeable; the ones being passed on stay visible,
+ * because the decision is which fight you give up.
  *
- * **The edges are drawn, not implied.** A column of buttons tells you what you may take next but
- * not what any of it leads to, and the whole point of a branching map is that a choice two layers
- * out is visible from here. The lines are measured from the DOM rather than computed, because the
- * columns are laid out by flexbox and their positions depend on how the panel wrapped.
- *
- * The token is the thing that makes the map a journey rather than a menu. It sits on the last
- * node taken and slides to the next one, so progress is something you watch happen rather than
- * infer from which buttons went grey.
+ * The trainer token walks the line to the node you pick *before* that node's event fires. The
+ * store holds a `travelling` phase for exactly as long as that takes.
  */
 export function LocationMap() {
   const run = useRunStore((s) => s.run);
   const map = useRunStore((s) => s.map);
   const location = useRunStore((s) => s.location);
   const available = useRunStore((s) => s.available);
+  const phase = useRunStore((s) => s.phase);
+  const travellingTo = useRunStore((s) => s.travellingTo);
   const enter = useRunStore((s) => s.enter);
+  const arrive = useRunStore((s) => s.arrive);
 
-  const boardRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef(new Map<string, HTMLButtonElement>());
-  const [geometry, setGeometry] = useState<Geometry | null>(null);
+  const [centres, setCentres] = useState<Map<string, { x: number; y: number }>>(new Map());
 
   const here = run.visited.length > 0 ? run.visited[run.visited.length - 1]! : null;
+  // While travelling the token aims at the destination; the previous node is where it starts.
+  const previous =
+    travellingTo !== null && run.visited.length > 1 ? run.visited[run.visited.length - 2]! : here;
+  const tokenAt = travellingTo ?? here;
 
+  // Measured from the DOM rather than computed: the layer columns are laid out by flexbox, so
+  // their positions depend on how the panel wrapped and on the region art behind them.
+  // Measured against the *content row*, not the scrolling board around it.
+  //
+  // The board scrolls and its content is wider than its visible box. Measuring node centres
+  // against the board's bounding rect gives viewport coordinates that shift the moment anything
+  // is scrolled, and an SVG sized to the board covers only the visible width — so the edges drew
+  // in the wrong places and ran off the side. The row is the full content box and does not
+  // scroll relative to its children, so offsets against it are stable.
   useLayoutEffect(() => {
-    const board = boardRef.current;
-    if (board === null) return;
-
     const measure = (): void => {
-      const b = board.getBoundingClientRect();
-      const points: Record<string, { x: number; y: number }> = {};
+      const row = rowRef.current;
+      if (row === null) return;
+      const r = row.getBoundingClientRect();
+      const next = new Map<string, { x: number; y: number }>();
       for (const [id, el] of nodeRefs.current) {
         const n = el.getBoundingClientRect();
-        points[id] = { x: n.left - b.left + n.width / 2, y: n.top - b.top + n.height / 2 };
+        next.set(id, { x: n.left - r.left + n.width / 2, y: n.top - r.top + n.height / 2 });
       }
-      setGeometry({ points, width: board.scrollWidth, height: board.scrollHeight });
+      setCentres(next);
     };
 
     measure();
+    // Re-measured on layout changes as well as resize: the columns are laid out by flexbox over
+    // a background image, so their positions settle a frame or two after mount.
+    const observer = new ResizeObserver(measure);
+    if (rowRef.current !== null) observer.observe(rowRef.current);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [map, run.visited.length]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [map]);
+
+  // The walk is a fixed beat. Held in an effect rather than driven by a transitionend event,
+  // which does not fire if the element never actually moves — the first node of a Location has
+  // nowhere to travel from, and the run would hang waiting for it.
+  useEffect(() => {
+    if (phase !== 'travelling') return;
+    const timer = setTimeout(arrive, 620);
+    return () => clearTimeout(timer);
+  }, [phase, travellingTo, arrive]);
 
   const byLayer = new Map<number, typeof map.nodes>();
   for (const node of map.nodes) {
@@ -151,141 +211,132 @@ export function LocationMap() {
   }
   const layers = [...byLayer.keys()].sort((a, b) => a - b);
 
-  const token = here === null ? null : (geometry?.points[here] ?? null);
+  const token = tokenAt === null ? undefined : centres.get(tokenAt);
+  const startedAt = previous === null ? undefined : centres.get(previous);
 
   return (
-    <div
-      className={`panel location-map region-${location.slug}`}
-      style={{
-        // The art sits under a scrim so white node labels stay readable over a bright desert or a
-        // pale tundra; the tint is what shows through if the file isn't there at all.
-        backgroundColor: location.tint,
-        backgroundImage: `linear-gradient(rgb(6 9 14 / 0.62), rgb(6 9 14 / 0.62)), url('${location.art}')`,
-      }}
-    >
-      <div className="layer-row" ref={boardRef}>
-        {geometry !== null && (
-          <svg
-            className="map-edges"
-            width={geometry.width}
-            height={geometry.height}
+    <div className="panel location-map">
+      <div
+        className="map-board"
+        style={{ backgroundImage: `url(/art/regions/${location.region}.jpg)` }}
+      >
+        <div className="map-scrim" />
+
+        <div className="layer-row" ref={rowRef}>
+        {/* Edges first, under the nodes, in the row's own coordinate space. */}
+        <svg className="map-edges" aria-hidden="true">
+          {map.nodes.flatMap((node) =>
+            (node as { next?: readonly string[] }).next?.map((toId) => {
+              const a = centres.get(node.id);
+              const b = centres.get(toId);
+              if (a === undefined || b === undefined) return null;
+              const walked = run.visited.includes(node.id) && run.visited.includes(toId);
+              const open = node.id === here && available.includes(toId);
+              return (
+                <line
+                  key={`${node.id}->${toId}`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  className={`map-edge ${walked ? 'walked' : ''} ${open ? 'open' : ''}`}
+                />
+              );
+            }) ?? [],
+          )}
+        </svg>
+
+          {layers.map((layer) => (
+            <div className="layer" key={layer}>
+              {byLayer.get(layer)!.map((node) => {
+                const done = run.visited.includes(node.id);
+                const open = available.includes(node.id) && phase === 'map';
+                return (
+                  <button
+                    key={node.id}
+                    ref={(el) => {
+                      if (el === null) nodeRefs.current.delete(node.id);
+                      else nodeRefs.current.set(node.id, el);
+                    }}
+                    className={`map-node ${node.type.toLowerCase()} ${done ? 'done' : ''} ${open ? 'available' : ''} ${node.id === here ? 'here' : ''}`}
+                    disabled={!open}
+                    onClick={() => enter(node.id)}
+                    title={
+                      open
+                        ? `${nodeKind(node)}: ${node.label}${
+                            node.statRewards !== undefined && node.statRewards.length > 0
+                              ? ` — everyone who fights gains ${node.statRewards.join(' and ')}`
+                              : ''
+                          }`
+                        : done
+                          ? 'Already taken'
+                          : 'Not reachable from here'
+                    }
+                  >
+                    <img
+                      className="node-icon"
+                      src={`/icons/nodes/${NODE_ICON[node.type] ?? 'battle'}.png`}
+                      alt=""
+                    />
+                    <span className="node-kind">{nodeKind(node)}</span>
+                    {node.statRewards !== undefined && node.statRewards.length > 0 && (
+                      <span className="node-stats">
+                        {node.statRewards.map((stat) => (
+                          <span key={stat} className={`node-stat ${stat}`}>
+                            {STAT_ABBREV[stat] ?? stat}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+
+        {token !== undefined && (
+          <div
+            className={`traveller ${phase === 'travelling' ? 'walking' : ''}`}
+            style={{
+              left: token.x,
+              top: token.y,
+              // Starting point matters only for the very first frame of a walk; after that the
+              // CSS transition carries it.
+              ...(startedAt !== undefined && phase !== 'travelling' ? {} : {}),
+            }}
             aria-hidden="true"
           >
-            {map.nodes.flatMap((node) =>
-              ((node as EdgedNode).next ?? []).map((toId) => {
-                const from = geometry.points[node.id];
-                const to = geometry.points[toId];
-                if (from === undefined || to === undefined) return null;
-                // An edge is lit when it is one of the moves on offer right now, and dimmed once
-                // its source is behind you — the path you walked stays legible without competing
-                // with the choice in front of you.
-                const open = node.id === here && available.includes(toId);
-                const spent = run.visited.includes(node.id);
-                return (
-                  <line
-                    key={`${node.id}->${toId}`}
-                    className={`map-edge ${open ? 'open' : spent ? 'spent' : ''}`}
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                  />
-                );
-              }),
-            )}
-          </svg>
-        )}
-
-        {layers.map((layer) => (
-          <div className="layer" key={layer}>
-            {byLayer.get(layer)!.map((node) => {
-              const done = run.visited.includes(node.id);
-              const open = available.includes(node.id);
-              const art = NODE_ART[node.type];
-              return (
-                <button
-                  key={node.id}
-                  ref={(el) => {
-                    if (el === null) nodeRefs.current.delete(node.id);
-                    else nodeRefs.current.set(node.id, el);
-                  }}
-                  className={`map-node ${node.type.toLowerCase()} ${done ? 'done' : ''} ${open ? 'available' : ''} ${node.id === here ? 'here' : ''}`}
-                  disabled={!open}
-                  onClick={() => enter(node.id)}
-                  title={
-                    open
-                      ? `${art.kind} — ${art.hint}`
-                      : done
-                        ? `${art.kind}: already taken`
-                        : `${art.kind} — not reachable from here`
-                  }
-                >
-                  <img className="node-icon" src={art.icon} alt="" />
-                  <span className="node-kind">{art.kind}</span>
-                  {/* A Center and a Mystery Trainer are their own label; printing it twice under
-                      the icon is noise where the flavour line should be. */}
-                  {node.label !== art.kind && <span className="node-label">{node.label}</span>}
-                </button>
-              );
-            })}
-          </div>
-        ))}
-
-        {token !== null && (
-          <div className="traveller" style={{ left: token.x, top: token.y }} aria-hidden="true">
             <span className="traveller-dot" />
           </div>
         )}
+        </div>
       </div>
-      {available.length === 0 && <p className="map-note">No way forward from here.</p>}
+
+      <div className="map-foot">
+        <strong>{location.name}</strong>
+        <span>{location.blurb}</span>
+      </div>
     </div>
   );
 }
 
-/**
- * An Encounter: a scene, a short list of choices, and what the one you took did.
- *
- * Every choice states its trade in full before it is clicked — the cost, the odds where there are
- * any, and what lands in the run. An encounter whose price is a surprise is a trap, and a trap is
- * a node a player learns to walk around, which costs the map a whole kind of node.
- *
- * A branch that starts a fight leaves this screen for the battle and never comes back to it; the
- * result panel behind the fight pays the bounty and narrates the whole node at once.
- */
+/** A road encounter: fiction, two or three choices, and what came of it. */
 export function EncounterPanel() {
-  const event = useRunStore((s) => s.event);
-  const result = useRunStore((s) => s.eventResult);
-  const choose = useRunStore((s) => s.chooseEncounter);
+  const encounter = useRunStore((s) => s.encounter);
+  const outcome = useRunStore((s) => s.encounterOutcome);
+  const take = useRunStore((s) => s.takeEncounterChoice);
   const leave = useRunStore((s) => s.leaveEncounter);
-  const [seenEvolutions, setSeenEvolutions] = useState(false);
-
-  if (event === null) return null;
-
-  const evolutions = result?.report.evolutions ?? [];
-  if (evolutions.length > 0 && !seenEvolutions) {
-    return <EvolutionScene evolutions={evolutions} onDone={() => setSeenEvolutions(true)} />;
-  }
+  if (encounter === null) return null;
 
   return (
     <div className="panel encounter-panel">
-      <img className="encounter-mark" src={NODE_ART.Encounter.icon} alt="" />
-      <h2>{event.title}</h2>
-      {/* The byline is who you are dealing with. Dropped when it is only the title again. */}
-      {event.speaker.toLowerCase() !== event.title.toLowerCase().replace(/^the /, '') && (
-        <p className="encounter-speaker">{event.speaker}</p>
-      )}
-      <p className="encounter-body">{event.body}</p>
+      <h2>{encounter.title}</h2>
+      <p className="encounter-body">{encounter.body}</p>
 
-      {result === null ? (
+      {outcome === null ? (
         <div className="encounter-choices">
-          {event.choices.map((choice, index) => (
-            <button
-              key={choice.label}
-              className="encounter-choice"
-              disabled={!choice.available}
-              onClick={() => choose(index)}
-              title={choice.available ? choice.detail : 'Not something you can do right now'}
-            >
+          {encounter.choices.map((choice, i) => (
+            <button key={choice.label} className="encounter-choice" onClick={() => take(i)}>
               <span className="choice-label">{choice.label}</span>
               <span className="choice-detail">{choice.detail}</span>
             </button>
@@ -293,9 +344,9 @@ export function EncounterPanel() {
         </div>
       ) : (
         <>
-          <p className="encounter-result">{result.message}</p>
+          <p className="encounter-outcome">{outcome}</p>
           <button className="primary" onClick={leave}>
-            Move on
+            Continue
           </button>
         </>
       )}
@@ -308,6 +359,11 @@ export function ShopPanel() {
   const run = useRunStore((s) => s.run);
   const purchase = useRunStore((s) => s.purchase);
   const leaveShop = useRunStore((s) => s.leaveShop);
+  const adoptable = useRunStore((s) => s.adoptable);
+  const adopt = useRunStore((s) => s.adopt);
+  const rerollAdoptions = useRunStore((s) => s.rerollAdoptions);
+  const purchasableItems = useRunStore((s) => s.purchasableItems);
+  const buyItem = useRunStore((s) => s.buyItem);
 
   return (
     <div className="panel shop-panel">
@@ -339,218 +395,73 @@ export function ShopPanel() {
         })}
       </div>
 
-      <button className="primary" onClick={leaveShop}>
-        Move on
-      </button>
-    </div>
-  );
-}
+      <div className="team-heading">
+        Adopt <span className="team-hint">Pokémon that live around here</span>
+      </div>
+      <div className="adopt-row">
+        {adoptable.map((mon) => {
+          const species = speciesOf(mon.speciesId);
+          if (species === null) return null;
+          const cost = adoptionCost(species.tier);
+          const stats = statsOf(mon);
+          const affordable = run.money >= cost;
 
-/**
- * Combining, as a two-step choice: press ⊕ on a mon, then pick what it folds into.
- *
- * **Only ⊕ arms a combine.** A plain drag used to arm one too, which meant dragging a Charmander
- * past another Charmander lit that card up as a merge target and dropping on it destroyed a
- * Pokémon when all the player wanted was to change the batting order. One gesture, one verb: a
- * drag moves a mon, ⊕ combines two. Once ⊕ is pressed, either clicking a partner or dropping the
- * armed mon on it commits the merge.
- *
- * The cards light up from the *real* candidate test in `/src/meta/fusion` — a card only glows
- * where a merge would actually land. Highlighting everything and refusing on drop would teach the
- * rule by failure.
- */
-interface CombineSelection {
-  /** The mon waiting for a partner, once ⊕ has been pressed on it. */
-  pendingId: string | null;
-  /** Whether this mon has anything at all to merge with, which is what enables its button. */
-  hasPartner: (mon: PokemonInstance) => boolean;
-  /** Whether the armed mon would merge into this one. False whenever nothing is armed. */
-  isCandidate: (mon: PokemonInstance) => boolean;
-  /** Whether dropping `draggedId` on this mon should merge rather than move. */
-  wouldMerge: (draggedId: string | null, mon: PokemonInstance) => boolean;
-  /** The stat line the merge would produce, so the choice is made on numbers, not faith. */
-  previewFor: (mon: PokemonInstance) => Stats | null;
-  toggle: (instanceId: string) => void;
-  commit: (targetId: string) => void;
-  cancel: () => void;
-}
+          return (
+            <button
+              key={mon.instanceId}
+              className="adopt-card"
+              disabled={!affordable}
+              onClick={() => adopt(mon.instanceId)}
+              title={affordable ? `Adopt ${species.name} for $${cost}` : 'Not enough money'}
+            >
+              <img src={spriteUrl(species, { facing: 'front' })} alt="" />
+              <span className="adopt-name">{species.name}</span>
+              <span className="adopt-figures">
+                {stats.attack}/{stats.special}/{stats.health} · spd {stats.speed}
+              </span>
+              <span className="adopt-types">
+                {species.types.map((t) => (
+                  <img key={t} src={`/icons/types/${t.toLowerCase()}.png`} alt={t} />
+                ))}
+              </span>
+              <span className="adopt-cost">${cost}</span>
+            </button>
+          );
+        })}
+        {adoptable.length === 0 && <p className="map-note">All adopted.</p>}
+      </div>
 
-function useCombineSelection(pool: readonly PokemonInstance[]): CombineSelection {
-  const applyCombine = useRunStore((s) => s.combine);
-  const [pendingId, setPendingId] = useState<string | null>(null);
+      <div className="team-heading">
+        Items <span className="team-hint">a Pokémon holds one at a time</span>
+      </div>
+      <div className="shop-stock">
+        {purchasableItems.map((item) => {
+          const affordable = run.money >= item.cost;
+          return (
+            <button
+              key={item.id}
+              className="shop-item"
+              disabled={!affordable}
+              onClick={() => buyItem(item.id)}
+              title={affordable ? `Buy ${item.name} for $${item.cost}` : 'Not enough money'}
+            >
+              <span className="shop-item-name">{item.name}</span>
+              <span className="shop-item-cost">${item.cost}</span>
+              <span className="shop-item-blurb">{item.blurb}</span>
+            </button>
+          );
+        })}
+        {purchasableItems.length === 0 && <p className="map-note">Sold out of items.</p>}
+      </div>
 
-  const source = pendingId === null ? null : (pool.find((m) => m.instanceId === pendingId) ?? null);
-  const isCandidate = (mon: PokemonInstance): boolean =>
-    source !== null && canCombine(source, mon);
-
-  return {
-    pendingId,
-    hasPartner: (mon) => partnersFor(mon, pool).length > 0,
-    isCandidate,
-    wouldMerge: (draggedId, mon) => draggedId !== null && draggedId === pendingId && isCandidate(mon),
-    previewFor: (mon) => {
-      if (source === null) return null;
-      // The target goes first, so a tie over which form survives falls to the mon the player
-      // aimed at — the same call the store will make when this is committed.
-      const fusion = fuse(mon, source);
-      return fusion === null ? null : statsOf(fusion.mon);
-    },
-    toggle: (instanceId) => setPendingId((current) => (current === instanceId ? null : instanceId)),
-    commit: (targetId) => {
-      if (pendingId === null) return;
-      applyCombine(targetId, pendingId);
-      setPendingId(null);
-    },
-    cancel: () => setPendingId(null),
-  };
-}
-
-/** The one button that both starts a combine and finishes it, depending on what is armed. */
-function CombineButton({
-  mon,
-  selection,
-}: {
-  mon: PokemonInstance;
-  selection: CombineSelection;
-}) {
-  if (selection.isCandidate(mon)) {
-    return (
-      <button
-        className="combine-go"
-        onClick={() => selection.commit(mon.instanceId)}
-        title={`Combine into ${displayNameOf(mon)}`}
-      >
-        ⊕
-      </button>
-    );
-  }
-
-  const selected = selection.pendingId === mon.instanceId;
-  const partnered = selection.hasPartner(mon);
-  return (
-    <button
-      className={selected ? 'combine-on' : ''}
-      disabled={!partnered}
-      onClick={() => selection.toggle(mon.instanceId)}
-      title={
-        selected
-          ? 'Cancel combine'
-          : partnered
-            ? 'Combine with another of its family'
-            : 'Nothing of its family to combine with'
-      }
-    >
-      ⊕
-    </button>
-  );
-}
-
-/** What the last combine produced. Stays until the next fight starts, then clears itself. */
-function FusionNote() {
-  const fusion = useRunStore((s) => s.lastFusion);
-  if (fusion === null) return null;
-
-  const stats = statsOf(fusion.mon);
-  return (
-    <p className="fusion-note">
-      {displayNameOf(fusion.mon)} absorbed its own kind — now {stats.attack} atk &middot;{' '}
-      {stats.health} hp
-      {fusion.evolutions.map((e) => (
-        <span key={e.instanceId + e.to.id}>
-          {' '}
-          and evolved into {e.to.name}
-        </span>
-      ))}
-      .
-    </p>
-  );
-}
-
-/** Which mon is in hand. Owned by the screen, so every slot on it can show itself as a target. */
-function useMonDrag() {
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  return {
-    draggingId,
-    begin: (instanceId: string) => setDraggingId(instanceId),
-    end: () => setDraggingId(null),
-  };
-}
-
-/**
- * One position on a roster: the mon standing in it, or the outline waiting for one.
- *
- * **Every slot is a drop target, filled or empty, and it owns the whole drop.** The card inside it
- * only starts drags. That is what fixed reordering: while the card was also a drop target, a drop
- * either merged (destroying a mon), or missed the card and fell through to the row, which appended
- * it to the end — so the same gesture did three different things depending on a few pixels.
- *
- * The slot says what it will do *before* the drop: the mon that would be displaced is outlined and
- * labelled, and an empty slot lights up with where the mon would land. Nothing about a drag should
- * have to be discovered by doing it and looking at the result.
- */
-function RosterSlot({
-  index,
-  mon,
-  draggingId,
-  selection,
-  onDropMon,
-  emptyHint,
-  children,
-}: {
-  /** The slot's position, for the number in its corner. Null in the Box, which has no order. */
-  index: number | null;
-  mon: PokemonInstance | null;
-  draggingId: string | null;
-  selection?: CombineSelection;
-  onDropMon: (instanceId: string) => void;
-  emptyHint?: string;
-  children?: React.ReactNode;
-}) {
-  const [over, setOver] = useState(false);
-
-  const isSelf = mon !== null && mon.instanceId === draggingId;
-  const merges = mon !== null && (selection?.wouldMerge(draggingId, mon) ?? false);
-  // A drag is in flight and this is not the slot it came from, so something would happen here.
-  const accepts = draggingId !== null && !isSelf;
-  const verb = merges ? 'Combine' : mon === null ? 'Place here' : 'Swap';
-
-  return (
-    <div
-      className={`roster-slot ${mon === null ? 'empty' : 'filled'} ${accepts ? 'targetable' : ''} ${over && accepts ? 'over' : ''} ${merges ? 'merging' : ''}`}
-      onDragEnter={(event) => {
-        if (!accepts) return;
-        acceptDrop(event);
-        setOver(true);
-      }}
-      onDragOver={(event) => {
-        if (!accepts) return;
-        acceptDrop(event);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        // Stopped, or the grid underneath treats the same drop as its own and undoes this one.
-        event.stopPropagation();
-        setOver(false);
-        const payload = readDragPayload(event);
-        if (payload === null || payload.kind !== 'mon') return;
-        if (payload.instanceId === mon?.instanceId) return;
-        if (merges && mon !== null) {
-          selection?.commit(mon.instanceId);
-          return;
-        }
-        onDropMon(payload.instanceId);
-      }}
-    >
-      {mon === null ? (
-        <div className="slot-empty">
-          {index !== null && <span className="slot-number">{index + 1}</span>}
-          <span className="slot-empty-hint">{emptyHint ?? 'empty'}</span>
-        </div>
-      ) : (
-        children
-      )}
-      {over && accepts && <span className="slot-verb">{verb}</span>}
+      <div className="shop-actions">
+        <button disabled={!canReroll(run.money)} onClick={rerollAdoptions}>
+          Reroll the shelf (${REROLL_COST})
+        </button>
+        <button className="primary" onClick={leaveShop}>
+          Move on
+        </button>
+      </div>
     </div>
   );
 }
@@ -559,102 +470,125 @@ function RosterSlot({
  * The line-up, laid out horizontally under the map.
  *
  * Order is the whole of formation — slot 0 fights, slot 1 is the Support a passive can target,
- * and everything past that waits — so the builder is a row of numbered slots rather than a list.
- * **All six slots are always drawn**, the empty ones included: the line-up's size is a decision
- * the player is making every turn, and a row that only shows what you already have hides both how
- * much room is left and where a mon from the Box would go.
+ * and everything past that waits — so the builder is a row of numbered slots rather than a list,
+ * and reordering is a drag rather than a pair of arrows. The arrows stay anyway: a drag is
+ * impossible with a keyboard and awkward on a trackpad.
  *
- * Dragging swaps: drop a mon on another and the two trade places. The arrows stay for adjacent
- * moves, because a drag is impossible with a keyboard and awkward on a trackpad.
+ * Drop targets are the gaps *between* slots, not the cards themselves. Dropping "onto" a card is
+ * ambiguous — before it or after it? — and the ambiguity shows up as mons landing one slot off
+ * from where they were aimed.
  */
+/**
+ * A row of mons with insertion gaps between them, and swap-or-combine on the cards themselves.
+ *
+ * The one interaction model, used everywhere a line-up is shown: drop between two cards to
+ * insert without displacing anyone; drop directly onto a card to trade places with it, or to
+ * combine if the two share an evolution line. Previously this existed only in the bottom strip —
+ * the Box screen's line-up grid had no gaps at all, which is why reordering there didn't work.
+ */
+function SlottedRow({
+  instances,
+  onInsertAt,
+  onOpenDetail,
+  cardActions,
+  className,
+  emptyHint,
+}: {
+  instances: readonly PokemonInstance[];
+  /** Insert a dragged mon at this index in the line-up, promoting it from the Box if needed. */
+  onInsertAt: (instanceId: string, index: number) => void;
+  onOpenDetail: (instanceId: string) => void;
+  cardActions?: (mon: PokemonInstance, index: number) => React.ReactNode;
+  className?: string;
+  emptyHint?: React.ReactNode;
+}) {
+  const run = useRunStore((s) => s.run);
+  const combine = useRunStore((s) => s.combine);
+  const swap = useRunStore((s) => s.swap);
+  const equip = useRunStore((s) => s.equip);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+
+  const onDropAt = (index: number) => (event: React.DragEvent) => {
+    event.preventDefault();
+    // Stopped, or the drop bubbles up to the row's own handler, which appends to the end and
+    // silently undoes the more specific placement that just happened.
+    event.stopPropagation();
+    setDropIndex(null);
+    const payload = readDragPayload(event);
+    if (payload === null || payload.kind !== 'mon') return;
+    onInsertAt(payload.instanceId, index);
+  };
+
+  const gap = (index: number) => (
+    <div
+      key={`gap-${index}`}
+      className={`slot-gap ${dropIndex === index ? 'over' : ''}`}
+      onDragEnter={(e) => {
+        acceptDrop(e);
+        setDropIndex(index);
+      }}
+      onDragOver={acceptDrop}
+      onDragLeave={() => setDropIndex((d) => (d === index ? null : d))}
+      onDrop={onDropAt(index)}
+    />
+  );
+
+  return (
+    <div
+      className={`slot-row ${className ?? ''}`}
+      onDragOver={acceptDrop}
+      onDrop={onDropAt(instances.length)}
+    >
+      {gap(0)}
+      {instances.map((mon, index) => (
+        <Fragment key={mon.instanceId}>
+          <TeamCard
+            mon={mon}
+            index={index}
+            onDragStart={(e) =>
+              setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'lineUp' })
+            }
+            onClick={() => onOpenDetail(mon.instanceId)}
+            onDrop={cardDropHandler(run, { combine, swap, equip }, mon.instanceId)}
+            actions={cardActions?.(mon, index)}
+          />
+          {gap(index + 1)}
+        </Fragment>
+      ))}
+      {instances.length === 0 && emptyHint !== undefined && (
+        <p className="map-note">{emptyHint}</p>
+      )}
+    </div>
+  );
+}
+
 export function TeamBuilder() {
   const run = useRunStore((s) => s.run);
-  const moveToBox = useRunStore((s) => s.moveToBox);
-  const reorder = useRunStore((s) => s.reorder);
-  const dropOnSlot = useRunStore((s) => s.dropOnSlot);
+  const placeInLineUp = useRunStore((s) => s.placeInLineUp);
   const openBox = useRunStore((s) => s.openBox);
-
-  const drag = useMonDrag();
-  const selection = useCombineSelection(run.lineUp);
-  const slots = Array.from({ length: MAX_PARTY_SIZE }, (_, i) => run.lineUp[i] ?? null);
+  const openDetail = useRunStore((s) => s.openDetail);
 
   return (
     <div className="panel team-builder">
       <div className="builder-head">
         <span className="team-heading">
-          Line-up <span className="team-hint">slot 1 leads, slot 2 supports, the rest wait</span>
+          Line-up{' '}
+          <span className="team-hint">
+            drop between two mons to insert · drop onto one to swap or combine
+          </span>
         </span>
         <div className="spacer" />
         <button onClick={openBox}>Box ({run.box.length})</button>
       </div>
 
-      <TeamSynergies mons={run.lineUp} />
+      <SlottedRow instances={run.lineUp} onInsertAt={placeInLineUp} onOpenDetail={openDetail} />
 
-      <div className="slot-row">
-        {slots.map((mon, index) => (
-          <RosterSlot
-            key={mon?.instanceId ?? `empty-${index}`}
-            index={index}
-            mon={mon}
-            draggingId={drag.draggingId}
-            selection={selection}
-            onDropMon={(instanceId) => dropOnSlot(instanceId, index)}
-            emptyHint={index < run.lineUp.length + 1 ? 'drag a mon here' : 'empty'}
-          >
-            {mon !== null && (
-              <TeamCard
-                mon={mon}
-                index={index}
-                selection={selection}
-                onDragStart={(e) => {
-                  setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'lineUp' });
-                  drag.begin(mon.instanceId);
-                }}
-                onDragEnd={drag.end}
-                actions={
-                  <>
-                    <button
-                      disabled={index === 0}
-                      onClick={() => reorder(mon.instanceId, index - 1)}
-                      title="Move forward"
-                    >
-                      ‹
-                    </button>
-                    <button
-                      disabled={index === run.lineUp.length - 1}
-                      onClick={() => reorder(mon.instanceId, index + 1)}
-                      title="Move back"
-                    >
-                      ›
-                    </button>
-                    <CombineButton mon={mon} selection={selection} />
-                    <button
-                      disabled={run.lineUp.length <= 1}
-                      onClick={() => moveToBox(mon.instanceId)}
-                      title="Send to the Box"
-                    >
-                      ✕
-                    </button>
-                  </>
-                }
-              />
-            )}
-          </RosterSlot>
-        ))}
-      </div>
-
-      {selection.pendingId !== null && (
-        <p className="combine-hint">
-          Pick another of the same family to combine with — or press ⊕ again to cancel.
-        </p>
+      {run.lineUp.length < MAX_PARTY_SIZE && (
+        <p className="team-hint slot-hint">{MAX_PARTY_SIZE - run.lineUp.length} free · drag from the Box</p>
       )}
-      <FusionNote />
     </div>
   );
 }
-
-/** How many empty slots the Box shows under whatever is in it, so it is always a visible target. */
-const MIN_BOX_SLOTS = 6;
 
 /** The Box: everything caught but not carried. */
 export function BoxScreen() {
@@ -662,57 +596,14 @@ export function BoxScreen() {
   const closeBox = useRunStore((s) => s.closeBox);
   const moveToLineUp = useRunStore((s) => s.moveToLineUp);
   const moveToBox = useRunStore((s) => s.moveToBox);
-  const dropOnSlot = useRunStore((s) => s.dropOnSlot);
+  const placeInLineUp = useRunStore((s) => s.placeInLineUp);
+  const openDetail = useRunStore((s) => s.openDetail);
+  const combine = useRunStore((s) => s.combine);
+  const swap = useRunStore((s) => s.swap);
+  const equip = useRunStore((s) => s.equip);
 
   const [overBox, setOverBox] = useState(false);
-  const drag = useMonDrag();
   const full = run.lineUp.length >= MAX_PARTY_SIZE;
-  // Everything the player owns, because this is the screen where a boxed Charmander can be fed
-  // to the Charizard that is fighting.
-  const selection = useCombineSelection([...run.lineUp, ...run.box]);
-
-  const lineUpSlots = Array.from({ length: MAX_PARTY_SIZE }, (_, i) => run.lineUp[i] ?? null);
-  // Enough outlines that the Box reads as somewhere things go, rather than as blank panel below a
-  // heading — and so an empty Box still has something to aim a drag at.
-  const boxSlots = [
-    ...run.box,
-    ...Array.from({ length: Math.max(MIN_BOX_SLOTS - run.box.length, 1) }, () => null),
-  ];
-
-  const cardFor = (mon: PokemonInstance, index: number | null, from: 'lineUp' | 'box') => (
-    <TeamCard
-      mon={mon}
-      index={index ?? undefined}
-      selection={selection}
-      onDragStart={(e) => {
-        setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from });
-        drag.begin(mon.instanceId);
-      }}
-      onDragEnd={drag.end}
-      actions={
-        <>
-          <CombineButton mon={mon} selection={selection} />
-          {from === 'lineUp' ? (
-            <button
-              disabled={run.lineUp.length <= 1}
-              onClick={() => moveToBox(mon.instanceId)}
-              title="Send to the Box"
-            >
-              ✕
-            </button>
-          ) : (
-            <button
-              disabled={full}
-              onClick={() => moveToLineUp(mon.instanceId)}
-              title={full ? 'Line-up is full — drag it onto a slot to swap' : 'Add to the line-up'}
-            >
-              +
-            </button>
-          )}
-        </>
-      }
-    />
-  );
 
   return (
     <div className="panel box-screen">
@@ -725,35 +616,38 @@ export function BoxScreen() {
       </div>
 
       <p className="shop-sub quiet">
-        Drag a mon onto a slot to put it there — onto an occupied one and the two swap, so a full
-        line-up is still something you can trade into. Mons in the Box earn no EXP; one that didn't
-        fight doesn't grow. Two of one family can be combined with ⊕, wherever either is kept.
+        Mons in the Box earn no EXP — one that didn't fight doesn't grow. Move one into the line-up
+        and the next win's catch-up brings it back within a couple of points of the rest.
       </p>
-
-      <TeamSynergies mons={run.lineUp} detailed label="Type buffs your line-up carries into the next fight" />
 
       <div className="box-heading">
         Line-up ({run.lineUp.length}/{MAX_PARTY_SIZE})
       </div>
-      <div className="box-grid">
-        {lineUpSlots.map((mon, index) => (
-          <RosterSlot
-            key={mon?.instanceId ?? `line-empty-${index}`}
-            index={index}
-            mon={mon}
-            draggingId={drag.draggingId}
-            selection={selection}
-            onDropMon={(instanceId) => dropOnSlot(instanceId, index)}
-            emptyHint="drag a mon here"
+      <SlottedRow
+        instances={run.lineUp}
+        onInsertAt={placeInLineUp}
+        onOpenDetail={openDetail}
+        className="wrap"
+        emptyHint="Drag a mon here."
+        cardActions={(mon) => (
+          <button
+            disabled={run.lineUp.length <= 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              moveToBox(mon.instanceId);
+            }}
+            title="Send to the Box"
           >
-            {mon !== null && cardFor(mon, index, 'lineUp')}
-          </RosterSlot>
-        ))}
-      </div>
+            ✕
+          </button>
+        )}
+      />
 
-      <div className="box-heading">Box ({run.box.length})</div>
+      <div className="box-heading">
+        Box ({run.box.length}) <span className="team-hint">drop onto one to swap or combine</span>
+      </div>
       <div
-        className={`box-grid box-store ${overBox ? 'over' : ''}`}
+        className={`box-grid ${overBox ? 'over' : ''}`}
         onDragEnter={(e) => {
           acceptDrop(e);
           setOverBox(true);
@@ -767,139 +661,290 @@ export function BoxScreen() {
           if (payload?.kind === 'mon' && payload.from === 'lineUp') moveToBox(payload.instanceId);
         }}
       >
-        {boxSlots.map((mon, index) => (
-          <RosterSlot
-            key={mon?.instanceId ?? `box-empty-${index}`}
-            index={null}
+        {run.box.map((mon) => (
+          <TeamCard
+            key={mon.instanceId}
             mon={mon}
-            draggingId={drag.draggingId}
-            selection={selection}
-            // A slot in the Box is storage, not a position: whatever lands here is simply benched.
-            onDropMon={(instanceId) => moveToBox(instanceId)}
-            emptyHint="store a mon here"
-          >
-            {mon !== null && cardFor(mon, null, 'box')}
-          </RosterSlot>
+            onDragStart={(e) =>
+              setDragPayload(e, { kind: 'mon', instanceId: mon.instanceId, from: 'box' })
+            }
+            onClick={() => openDetail(mon.instanceId)}
+            onDrop={cardDropHandler(run, { combine, swap, equip }, mon.instanceId)}
+            actions={
+              <button
+                disabled={full}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  moveToLineUp(mon.instanceId);
+                }}
+                title={full ? 'Line-up is full' : 'Add to the line-up'}
+              >
+                +
+              </button>
+            }
+          />
         ))}
+        {run.box.length === 0 && <p className="map-note">Nothing stored. Catch something.</p>}
       </div>
-
-      {selection.pendingId !== null && (
-        <p className="combine-hint">
-          Pick another of the same family to combine with — or press ⊕ again to cancel.
-        </p>
-      )}
-      <FusionNote />
     </div>
   );
 }
 
 /**
- * One mon, as a draggable card. Used by the line-up row and by both grids in the Box.
+ * A mon's held-item slot: shows what it is carrying, and is both a drag source and a drop target.
  *
- * Drags start here and end here; **the slot around it owns the drop.** A card that was also a drop
- * target competed with the slot underneath it for the same pixels, and which one won decided
- * whether a drag reordered the team or merged two mons together.
+ * Dragging the item off and onto another mon moves it directly; dropping it anywhere that isn't a
+ * mon does nothing, so an item can't be lost by a misaimed drag. Clicking it returns it to the bag.
  */
+function HeldItemSlot({ mon }: { mon: PokemonInstance }) {
+  const unequip = useRunStore((s) => s.unequip);
+  const item = itemById(mon.heldItemId);
+  if (item === null) return null;
+
+  return (
+    <span
+      className={`held-item kind-${item.kind}`}
+      draggable
+      onDragStart={(e) => {
+        e.stopPropagation();
+        setDragPayload(e, { kind: 'item', itemId: item.id, from: mon.instanceId });
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        unequip(mon.instanceId);
+      }}
+      title={`${item.name} — ${item.blurb} (click to return to the bag)`}
+    >
+      {item.name}
+    </span>
+  );
+}
+
+/** One mon, as a draggable card. Used by the line-up row and by both grids in the Box. */
 function TeamCard({
   mon,
   index,
   actions,
   onDragStart,
-  onDragEnd,
-  selection,
+  onClick,
+  onDrop,
 }: {
   mon: PokemonInstance;
   index?: number;
   actions?: React.ReactNode;
   onDragStart?: (event: React.DragEvent) => void;
-  onDragEnd?: () => void;
-  selection?: CombineSelection;
+  onClick?: () => void;
+  onDrop?: (event: React.DragEvent) => void;
 }) {
   const species = speciesOf(mon.speciesId);
   if (species === null) return null;
   const stats = statsOf(mon);
+  // Typing can be overridden by a Plate, so read it from the mon rather than the species.
+  const heldTypes = typesOf(mon);
 
   const since = expSinceEvolution(mon);
   const canEvolve = species.evolvesIntoId !== null;
-
-  const selected = selection?.pendingId === mon.instanceId;
-  const candidate = selection?.isCandidate(mon) ?? false;
-  const merged = candidate ? (selection?.previewFor(mon) ?? null) : null;
-  const fused = mon.timesFused ?? 0;
+  const pending = unspentPoints(mon);
 
   return (
     <div
-      className={`team-card ${index === 0 ? 'lead' : index === 1 ? 'support' : ''} ${selected === true ? 'combining' : ''} ${candidate ? 'combine-candidate' : ''}`}
+      className={`team-card ${index === 0 ? 'lead' : index === 1 ? 'support' : ''} ${onClick !== undefined ? 'clickable' : ''}`}
       draggable={onDragStart !== undefined}
       onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      onClick={onClick}
+      onDrop={onDrop}
     >
       {index !== undefined && <span className="slot-number">{index + 1}</span>}
-      {/* Not draggable in its own right: a native image drag starts from the sprite instead of
-          the card, which hands the drop target a picture rather than a mon. */}
-      <img src={spriteUrl(species, { facing: 'front' })} alt="" draggable={false} />
+      {pending > 0 && (
+        <span className="pending-badge" title={`${pending} point${pending === 1 ? '' : 's'} to spend`}>
+          {pending}
+        </span>
+      )}
+      <img src={spriteUrl(species, { facing: 'front' })} alt="" />
       <div className="team-meta">
-        <span className="team-name">
-          {species.name}
-          {fused > 0 && (
-            <em title={`${fused} mon${fused === 1 ? '' : 's'} folded into this one`}>⊕{fused}</em>
-          )}
-        </span>
-        <span className="team-figures">
-          {stats.attack} atk · {stats.health} hp · spd {stats.speed}
-        </span>
-        {merged !== null ? (
-          <span className="team-preview">
-            → {merged.attack} atk · {merged.health} hp if combined
+        <span className="team-name">{species.name}</span>
+        <div className="team-stat-grid">
+          <span>
+            <em>ATK</em> {stats.attack}
           </span>
+          <span>
+            <em>SP</em> {stats.special}
+          </span>
+          <span>
+            <em>HP</em> {stats.health}
+          </span>
+          <span>
+            <em>SPD</em> {stats.speed}
+          </span>
+        </div>
+        {canEvolve ? (
+          <div className="evo-bar" title={`${since}/${EXP_PER_EVOLUTION} EXP toward evolving`}>
+            <div
+              className="evo-bar-fill"
+              style={{ width: `${Math.min(100, (since / EXP_PER_EVOLUTION) * 100)}%` }}
+            />
+          </div>
         ) : (
-          <span className="team-exp" title={`${mon.exp} lifetime EXP`}>
-            {canEvolve ? `${since}/${EXP_PER_EVOLUTION} to evolve` : `${mon.exp} exp`}
-          </span>
+          <span className="team-exp">final form</span>
         )}
         <span className="team-types">
-          {species.types.map((t) => (
+          {heldTypes.map((t) => (
             <img key={t} src={`/icons/types/${t.toLowerCase()}.png`} alt={t} title={t} />
           ))}
         </span>
+        <HeldItemSlot mon={mon} />
       </div>
       {actions !== undefined && <div className="team-actions">{actions}</div>}
     </div>
   );
 }
 
+export function GrowthPanel() {
+  const run = useRunStore((s) => s.run);
+  const choose = useRunStore((s) => s.choose);
+  const waiting = [...run.lineUp, ...run.box].filter((m) => unspentPoints(m) > 0);
+  if (waiting.length === 0) return null;
+
+  return (
+    <div className="panel growth-panel">
+      <div className="team-heading">
+        Stat points <span className="team-hint">one point, one stat</span>
+      </div>
+      {waiting.map((mon) => {
+        const species = speciesOf(mon.speciesId);
+        if (species === null) return null;
+        const stats = statsOf(mon);
+        const left = unspentPoints(mon);
+
+        return (
+          <div className="growth-row" key={mon.instanceId}>
+            <img src={spriteUrl(species, { facing: 'front' })} alt="" />
+            <div className="growth-meta">
+              <span className="team-name">{species.name}</span>
+              <span className="team-figures">
+                {stats.attack} atk · {stats.special} sp · {stats.health} hp · spd {stats.speed}
+              </span>
+            </div>
+            <span className="growth-left">{left}</span>
+            <div className="growth-buttons">
+              {GROWABLE_STATS.map((stat) => {
+                const capped = stat === 'speed' && stats.speed >= MAX_GROWN_SPEED;
+                return (
+                  <button
+                    key={stat}
+                    className={`growth-button ${stat}`}
+                    disabled={capped}
+                    onClick={() => choose(mon.instanceId, stat)}
+                    title={
+                      capped
+                        ? `Speed is capped at ${MAX_GROWN_SPEED}`
+                        : stat === 'speed'
+                          ? 'Speed fills the ability bar faster — the strongest point in the game'
+                          : `+1 ${stat}`
+                    }
+                  >
+                    {stat === 'special' ? 'SP' : stat.slice(0, 3).toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
- * Evolutions earned by the fight that just ended, played once before the screen behind them.
+ * Beating a Gym: the badge, the leader's line, and where to go next.
  *
- * Keyed by the node and by what evolved, so dismissing the ceremony doesn't re-arm it on the next
- * render and the next fight gets its own.
+ * The route choice lives here rather than on the map because it is the moment it belongs to —
+ * the Location is finished, and picking the next one is the reward for finishing it. Each option
+ * names the types you are likely to meet, so it is a real decision rather than three names.
  */
-function useEvolutionCeremony() {
-  const result = useRunStore((s) => s.lastResult);
-  const [seen, setSeen] = useState<string | null>(null);
+export function CelebrationPanel() {
+  const run = useRunStore((s) => s.run);
+  const choices = useRunStore((s) => s.regionChoices);
+  const chooseRegion = useRunStore((s) => s.chooseRegion);
+  const badge = badgeFor(run.badges - 1);
 
-  const evolutions = result?.report.evolutions ?? [];
-  const key =
-    result === null ? null : `${result.nodeId}:${evolutions.map((e) => e.instanceId + e.to.id).join(',')}`;
+  return (
+    <div className="panel celebration-panel">
+      <div className="badge-award">
+        <span className="badge-glyph" aria-hidden="true">
+          {badge.glyph}
+        </span>
+        <div>
+          <h2>{badge.name}</h2>
+          <p className="badge-leader">Defeated {badge.leader}</p>
+        </div>
+      </div>
 
-  return {
-    evolutions,
-    pending: key !== null && evolutions.length > 0 && seen !== key,
-    finish: () => setSeen(key),
-  };
+      <blockquote className="badge-quote">“{badge.quote}”</blockquote>
+
+      <p className="badge-count">
+        {run.badges} of {BADGES_TO_WIN} badges
+      </p>
+
+      {choices.length > 0 && (
+        <>
+          <div className="team-heading">Where next?</div>
+          <div className="region-choices">
+            {choices.map((loc) => (
+              <button
+                key={loc.name}
+                className="region-choice"
+                onClick={() => chooseRegion(loc.name)}
+                style={{ backgroundImage: `url(/art/regions/${loc.region}.jpg)` }}
+              >
+                <span className="region-scrim" />
+                <span className="region-body">
+                  <strong>{loc.name}</strong>
+                  <em>{loc.blurb}</em>
+                  <span className="region-types">
+                    {loc.typeBias.map((t) => (
+                      <img key={t} src={`/icons/types/${t.toLowerCase()}.png`} alt={t} title={t} />
+                    ))}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Arriving somewhere new: one permanent buff, picked once, flavoured to the region. */
+export function BuffPanel() {
+  const location = useRunStore((s) => s.location);
+  const choices = useRunStore((s) => s.buffChoices);
+  const chooseBuff = useRunStore((s) => s.chooseBuff);
+
+  return (
+    <div className="panel buff-panel">
+      <h2>{location.name}</h2>
+      <p className="shop-sub">
+        You settle in. Something about the place sticks with you — pick one, and it lasts the rest
+        of the run.
+      </p>
+      <div className="buff-choices">
+        {choices.map((buff) => (
+          <button key={buff.id} className="buff-choice" onClick={() => chooseBuff(buff.id)}>
+            <strong>{buff.name}</strong>
+            <span>{buff.blurb}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function ResultPanel() {
   const result = useRunStore((s) => s.lastResult);
   const dismiss = useRunStore((s) => s.dismissResult);
-  const ceremony = useEvolutionCeremony();
   if (result === null) return null;
-
-  // The ceremony comes first and the tally waits behind it: an evolution is the one thing a fight
-  // produces that is worth stopping for, and it cannot compete with a list it is an item in.
-  if (ceremony.pending) {
-    return <EvolutionScene evolutions={ceremony.evolutions} onDone={ceremony.finish} />;
-  }
 
   const won = result.outcome === 'SideAWins';
 
@@ -909,9 +954,13 @@ export function ResultPanel() {
         {won ? 'Victory' : result.outcome === 'Draw' ? 'Draw' : 'Defeat'}
       </h2>
       <ul className="result-list">
-        {won && <li>+{result.expEach} EXP to everyone who fought</li>}
+        {won && <li>+{result.expEach} EXP toward evolving, for everyone who fought</li>}
+        {won && result.statRewards.length > 0 && (
+          <li className="good">
+            +1 {result.statRewards.join(' and +1 ')} to everyone who fought
+          </li>
+        )}
         {result.money > 0 && <li>+${result.money}</li>}
-        {result.bounty !== null && <li className="good">Bounty: {describeBounty(result.bounty)}</li>}
         {result.badge && <li>Badge earned</li>}
         {result.moraleLost > 0 && <li className="bad">-{result.moraleLost} morale</li>}
         {result.report.evolutions.map((e) => (
@@ -931,13 +980,7 @@ export function ResultPanel() {
 export function RunOverPanel() {
   const run = useRunStore((s) => s.run);
   const startRun = useRunStore((s) => s.startRun);
-  const ceremony = useEvolutionCeremony();
   const won = run.badges >= BADGES_TO_WIN;
-
-  // The last fight of a run evolves things too, and the run ending is no reason to skip it.
-  if (ceremony.pending) {
-    return <EvolutionScene evolutions={ceremony.evolutions} onDone={ceremony.finish} />;
-  }
 
   return (
     <div className="panel result-panel">

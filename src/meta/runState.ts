@@ -13,22 +13,19 @@
  */
 
 import type { PokemonInstance } from '../content/factory.js';
-import { combine, type Fusion } from './fusion.js';
+import { baseFormOf, speciesOf } from '../content/index.js';
+import type { GrowableStat } from '../content/statGrowth.js';
 import { MAX_PARTY_SIZE, STARTING_MONEY, STARTING_MORALE } from './progression.js';
-import { addBalls, spendBall, STARTING_BALLS, type BallInventory, type BallTier } from './balls.js';
+import { spendBall, STARTING_BALLS, type BallInventory, type BallTier } from './balls.js';
 
 /**
- * What a node on a Location's path is.
+ * `Wild` is a battle against wild Pokémon, which can be caught.
  *
- * Five kinds, and they are the five the original map icons were drawn for: a wild fight, a
- * trainer whose team you don't see until you take it, a narrative Encounter, the Center, and the
- * Gym that ends the Location.
+ * `MysteryTrainer` is the hook for the asynchronous multiplayer that comes later: another
+ * player's team, fought as an opponent. Their Pokémon are not catchable — they belong to someone
+ * — so the reward is money instead.
  */
-export type NodeType = 'Wild' | 'Trainer' | 'Encounter' | 'Center' | 'Gym';
-
-/** Node kinds that open the battle screen. The other two resolve on the map layer. */
-export const isBattleNode = (type: NodeType): boolean =>
-  type === 'Wild' || type === 'Trainer' || type === 'Gym';
+export type NodeType = 'Wild' | 'MysteryTrainer' | 'Gym' | 'Center' | 'Encounter';
 
 /** One node on a Location's path. */
 export interface MapNode {
@@ -37,6 +34,14 @@ export interface MapNode {
   /** How deep into the Location this node sits; 1 is the first. Feeds encounter scaling. */
   readonly layer: number;
   readonly label: string;
+  /**
+   * The two stats every participant gains by winning here, shown on the node before it is taken.
+   *
+   * Awarded directly rather than as points to assign: the choice is which *route* to walk, made
+   * once on the map, instead of the same four buttons after every fight. Only battle nodes carry
+   * it — a shop or an encounter has no participants.
+   */
+  readonly statRewards?: readonly GrowableStat[];
 }
 
 export interface RunState {
@@ -54,6 +59,12 @@ export interface RunState {
   /** Where the player is now, or null before the Location starts. */
   readonly currentNodeId: string | null;
   readonly balls: BallInventory;
+  /** Permanent trainer buffs picked on entering each region, oldest first. */
+  readonly buffs: readonly string[];
+  /** Items not currently held by anyone, as id -> count. */
+  readonly bag: Readonly<Record<string, number>>;
+  /** Regions already travelled, so the same one is never offered twice. */
+  readonly regionsVisited: readonly string[];
 }
 
 export const createRun = (seed: number, starters: PokemonInstance[]): RunState => ({
@@ -66,6 +77,9 @@ export const createRun = (seed: number, starters: PokemonInstance[]): RunState =
   visited: [],
   currentNodeId: null,
   balls: STARTING_BALLS,
+  buffs: [],
+  bag: {},
+  regionsVisited: ['forest'],
 });
 
 export const isRunOver = (run: RunState): boolean => run.morale <= 0;
@@ -73,18 +87,6 @@ export const isRunOver = (run: RunState): boolean => run.morale <= 0;
 export const useBall = (run: RunState, tier: BallTier): RunState => ({
   ...run,
   balls: spendBall(run.balls, tier),
-});
-
-/**
- * Hands the run balls it didn't buy.
- *
- * Balls are the only consumable this build has, so they are also what an Encounter means by "an
- * item" — a reward that is spent rather than banked, and therefore one that can be given
- * generously without inflating the run's power.
- */
-export const grantBalls = (run: RunState, tier: BallTier, amount: number): RunState => ({
-  ...run,
-  balls: addBalls(run.balls, tier, Math.max(0, amount)),
 });
 
 export const isRunWon = (run: RunState, badgesToWin: number): boolean => run.badges >= badgesToWin;
@@ -136,108 +138,6 @@ export function reorderLineUp(run: RunState, instanceId: string, toIndex: number
   return { ...run, lineUp: next };
 }
 
-/**
- * Drops a mon on a line-up slot — the one move a drag makes.
- *
- * Four cases, and they are all the same sentence: *the mon you dragged ends up in the slot you
- * dropped it on*.
- *
- * - A line-up mon onto an occupied slot: the two **swap**. Not an insert — inserting has to
- *   answer "before or after?", which a drop on a card cannot, and a target that guesses puts mons
- *   a slot away from where they were aimed.
- * - A line-up mon onto an empty slot: it moves to the end. The line-up is dense — slot 0 leads,
- *   slot 1 supports, and the rest queue — so there is no such thing as a hole in the middle of it.
- * - A Box mon onto an occupied slot: they **exchange**. The Box mon takes the slot and the mon it
- *   displaced takes its place in the Box, which is also what makes a full line-up still swappable
- *   instead of silently refusing the drop.
- * - A Box mon onto an empty slot: it joins the line-up at the end.
- *
- * Returns the run unchanged when the id names nothing the run owns, so a stale drag is a no-op.
- */
-export function placeInSlot(run: RunState, instanceId: string, slotIndex: number): RunState {
-  const target = Math.max(0, slotIndex);
-  const fromLineUp = run.lineUp.findIndex((m) => m.instanceId === instanceId);
-
-  if (fromLineUp >= 0) {
-    const occupant = run.lineUp[target];
-    if (occupant === undefined) return reorderLineUp(run, instanceId, run.lineUp.length - 1);
-    if (occupant.instanceId === instanceId) return run;
-
-    const lineUp = [...run.lineUp];
-    lineUp[fromLineUp] = occupant;
-    lineUp[target] = run.lineUp[fromLineUp]!;
-    return { ...run, lineUp };
-  }
-
-  const boxIndex = run.box.findIndex((m) => m.instanceId === instanceId);
-  if (boxIndex < 0) return run;
-  const mon = run.box[boxIndex]!;
-  const occupant = run.lineUp[target];
-
-  if (occupant === undefined) {
-    if (run.lineUp.length >= MAX_PARTY_SIZE) return run;
-    return {
-      ...run,
-      lineUp: [...run.lineUp, mon],
-      box: run.box.filter((_, i) => i !== boxIndex),
-    };
-  }
-
-  const lineUp = [...run.lineUp];
-  lineUp[target] = mon;
-  const box = [...run.box];
-  box[boxIndex] = occupant;
-  return { ...run, lineUp, box };
-}
-
-/** A mon the run owns, wherever it is kept. */
-export const findMon = (run: RunState, instanceId: string): PokemonInstance | null =>
-  allMons(run).find((m) => m.instanceId === instanceId) ?? null;
-
-/**
- * Folds two mons of a family into one, wherever the two are kept.
- *
- * **The survivor lands in the line-up if either half was fighting**, in the earlier of their two
- * slots. Merging is meant to be a way to turn two bodies into one better one, not a way to
- * accidentally bench it — and the alternative rule, "it lands where the one you dropped onto
- * was", can empty a line-up of one by dragging its last mon into the Box.
- *
- * Returns null when the two can't merge, so a stale click or a hand-made id changes nothing.
- */
-export function combineMons(
-  run: RunState,
-  aId: string,
-  bId: string,
-): { run: RunState; fusion: Fusion } | null {
-  const a = findMon(run, aId);
-  const b = findMon(run, bId);
-  if (a === null || b === null) return null;
-
-  const fusion = combine(a, b);
-  if (fusion === null) return null;
-
-  const indexIn = (list: readonly PokemonInstance[], id: string): number =>
-    list.findIndex((m) => m.instanceId === id);
-  const positions = (list: readonly PokemonInstance[]): number[] =>
-    [indexIn(list, aId), indexIn(list, bId)].filter((i) => i >= 0);
-
-  const lineUpSlots = positions(run.lineUp);
-  const boxSlots = positions(run.box);
-  const isOther = (m: PokemonInstance): boolean =>
-    m.instanceId !== aId && m.instanceId !== bId;
-
-  const lineUp = run.lineUp.filter(isOther);
-  const box = run.box.filter(isOther);
-
-  if (lineUpSlots.length > 0) {
-    lineUp.splice(Math.min(Math.min(...lineUpSlots), lineUp.length), 0, fusion.mon);
-  } else {
-    box.splice(Math.min(Math.min(...boxSlots), box.length), 0, fusion.mon);
-  }
-
-  return { run: { ...run, lineUp, box }, fusion };
-}
-
 /** A caught mon joins the Box, or the line-up if there's room and the caller asks. */
 export function addCaught(run: RunState, mon: PokemonInstance, toLineUp = false): RunState {
   if (toLineUp && run.lineUp.length < MAX_PARTY_SIZE) {
@@ -260,6 +160,14 @@ export const addMoney = (run: RunState, amount: number): RunState => ({
 
 export const awardBadge = (run: RunState): RunState => ({ ...run, badges: run.badges + 1 });
 
+export const addBuff = (run: RunState, buffId: string): RunState =>
+  run.buffs.includes(buffId) ? run : { ...run, buffs: [...run.buffs, buffId] };
+
+export const visitRegion = (run: RunState, region: string): RunState =>
+  run.regionsVisited.includes(region)
+    ? run
+    : { ...run, regionsVisited: [...run.regionsVisited, region] };
+
 export const enterNode = (run: RunState, nodeId: string): RunState => ({
   ...run,
   currentNodeId: nodeId,
@@ -272,23 +180,128 @@ export function completeNode(run: RunState, nodeId: string): RunState {
 }
 
 /**
- * Steps off the current node **without** marking it resolved, so it is still on offer.
- *
- * This is what a lost fight does. Consuming the node on a loss meant a beaten player paid twice —
- * the Morale and the node — and, worse, could be walked into a Location with no way forward: lose
- * the only node a layer offered and the map is over for reasons that have nothing to do with the
- * run's rules. The Morale is the price of a loss; the node stays, and the fight behind it is the
- * same fight, so a retry has to be paid for by changing the team rather than by rolling again.
- */
-export const leaveNode = (run: RunState): RunState => ({ ...run, currentNodeId: null });
-
-/**
  * Restores everything after a battle.
  *
  * This is where "damage resets" is actually enforced: HP goes back to null, which means derived
  * from the mon's Health stat, and a fainted mon is simply back. Nothing about a battle survives
  * it except EXP and anything caught.
  */
+/**
+ * Every other owned Pokémon in the same evolution line — what a card's "combine" list draws from,
+ * and what a drag-onto-a-card drop checks before acting.
+ *
+ * Line, not species: a Charmander and a Charmeleon are the same premise at different points, so
+ * either can absorb the other. A Charmander and a Squirtle are not.
+ */
+export function duplicatesOf(run: RunState, instanceId: string): PokemonInstance[] {
+  const mon = allMons(run).find((m) => m.instanceId === instanceId);
+  if (mon === undefined) return [];
+  const species = speciesOf(mon.speciesId);
+  if (species === null) return [];
+  const rootId = baseFormOf(species).id;
+
+  return allMons(run).filter((m) => {
+    if (m.instanceId === instanceId) return false;
+    const other = speciesOf(m.speciesId);
+    return other !== null && baseFormOf(other).id === rootId;
+  });
+}
+
+/** Whether two owned Pokémon could be combined: different mons, same evolution line. */
+export function canCombine(run: RunState, aId: string, bId: string): boolean {
+  if (aId === bId) return false;
+  return duplicatesOf(run, aId).some((m) => m.instanceId === bId);
+}
+
+/**
+ * Swaps two owned Pokémon's positions.
+ *
+ * Works regardless of where either currently is — line-up or Box — and each lands in exactly the
+ * slot the other vacated. That symmetry is what makes "drop one mon onto another" a single,
+ * predictable action everywhere: dragging a Box mon onto a line-up card promotes and benches in
+ * one move, dragging within the line-up reorders, and dragging within the Box just trades two
+ * storage slots (which does nothing functionally, but is harmless and keeps the rule uniform
+ * rather than special-cased per screen).
+ */
+export function swapMons(run: RunState, aId: string, bId: string): RunState {
+  if (aId === bId) return run;
+
+  const aLineUp = run.lineUp.findIndex((m) => m.instanceId === aId);
+  const aBox = run.box.findIndex((m) => m.instanceId === aId);
+  const bLineUp = run.lineUp.findIndex((m) => m.instanceId === bId);
+  const bBox = run.box.findIndex((m) => m.instanceId === bId);
+
+  if ((aLineUp < 0 && aBox < 0) || (bLineUp < 0 && bBox < 0)) return run;
+
+  const aMon = aLineUp >= 0 ? run.lineUp[aLineUp]! : run.box[aBox]!;
+  const bMon = bLineUp >= 0 ? run.lineUp[bLineUp]! : run.box[bBox]!;
+
+  const lineUp = [...run.lineUp];
+  const box = [...run.box];
+
+  if (aLineUp >= 0 && bLineUp >= 0) {
+    lineUp[aLineUp] = bMon;
+    lineUp[bLineUp] = aMon;
+  } else if (aBox >= 0 && bBox >= 0) {
+    box[aBox] = bMon;
+    box[bBox] = aMon;
+  } else if (aLineUp >= 0 && bBox >= 0) {
+    lineUp[aLineUp] = bMon;
+    box[bBox] = aMon;
+  } else {
+    lineUp[bLineUp] = aMon;
+    box[aBox] = bMon;
+  }
+
+  return { ...run, lineUp, box };
+}
+
+/**
+ * Moves an item onto a mon, from the bag or from another mon.
+ *
+ * A mon holds one item, so equipping over an existing one returns the old item to the bag rather
+ * than destroying it — an accidental drop should never cost the player an item.
+ */
+export function equipItem(run: RunState, instanceId: string, itemId: string): RunState {
+  const target = allMons(run).find((m) => m.instanceId === instanceId);
+  if (target === undefined) return run;
+  if ((run.bag[itemId] ?? 0) <= 0) return run;
+  if (target.heldItemId === itemId) return run;
+
+  const bag = { ...run.bag, [itemId]: (run.bag[itemId] ?? 0) - 1 };
+  // Whatever it was holding goes back on the shelf.
+  if (target.heldItemId !== null) {
+    bag[target.heldItemId] = (bag[target.heldItemId] ?? 0) + 1;
+  }
+
+  const apply = (mon: PokemonInstance): PokemonInstance =>
+    mon.instanceId === instanceId ? { ...mon, heldItemId: itemId } : mon;
+
+  return { ...run, bag, lineUp: run.lineUp.map(apply), box: run.box.map(apply) };
+}
+
+/** Takes a mon's item off and returns it to the bag. */
+export function unequipItem(run: RunState, instanceId: string): RunState {
+  const target = allMons(run).find((m) => m.instanceId === instanceId);
+  if (target === undefined || target.heldItemId === null) return run;
+
+  const bag = { ...run.bag, [target.heldItemId]: (run.bag[target.heldItemId] ?? 0) + 1 };
+  const apply = (mon: PokemonInstance): PokemonInstance =>
+    mon.instanceId === instanceId ? { ...mon, heldItemId: null } : mon;
+
+  return { ...run, bag, lineUp: run.lineUp.map(apply), box: run.box.map(apply) };
+}
+
+/** Adds an item to the bag. */
+export const addItem = (run: RunState, itemId: string, count = 1): RunState => ({
+  ...run,
+  bag: { ...run.bag, [itemId]: Math.max(0, (run.bag[itemId] ?? 0) + count) },
+});
+
+/** Every item id the bag currently holds at least one of. */
+export const bagContents = (run: RunState): string[] =>
+  Object.keys(run.bag).filter((id) => (run.bag[id] ?? 0) > 0);
+
 export const healAll = (run: RunState): RunState => ({
   ...run,
   lineUp: run.lineUp.map((m) => ({ ...m, currentHP: null })),

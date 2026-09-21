@@ -14,7 +14,7 @@ understanding. No monetisation, no wide distribution.
 
 ## Status
 
-**Stages 1-7 of 7 are complete.** 309 tests passing. See "Build order" below.
+**Stages 1-7 of 7 are complete,** plus region art, encounters and player-chosen growth. 414 tests passing. See "Build order" below.
 
 | | |
 |---|---|
@@ -23,7 +23,7 @@ understanding. No monetisation, no wide distribution.
 | Battle screen | playable — `npm run dev` |
 | Run layer | playable loop — map, fights, EXP, evolution, morale |
 | Catching | live — odds, ball tiers, Step-boundary throws |
-| Rest of the loop | branching maps, 8 Locations, the Center shop, Encounter nodes |
+| Rest of the loop | branching maps, 8 Locations, the Center shop |
 | Breadth | traveller map, drag-and-drop, Box screen |
 
 There is **no UI yet**. The sim is exercised through the test suite and the text harness.
@@ -31,8 +31,6 @@ There is **no UI yet**. The sim is exercised through the test suite and the text
 ---
 
 ## Getting started
-
-Node 22.12 or newer — that is what the build toolchain (Vite 8, Vitest 5) requires.
 
 ```bash
 npm install
@@ -64,20 +62,10 @@ before you commit it. Odds rise sharply as the target weakens, so the loop is fi
 throw. Throws resolve only between Steps.
 
 Your traveller sits on the last node taken and slides to the next. The team builder runs along the
-bottom: every slot the line-up could hold is drawn, filled or empty, and **a drag is always a
-move** — drop a mon on another and the two swap, drop it on an empty slot and it takes the end of
-the queue, drop it on the Box and it is benched. A Box mon dropped on an occupied slot exchanges
-with whoever was there, so a full line-up is still something you can trade into. The slot says what
-it is about to do before you let go. Balls can be clicked or dragged straight onto the enemy.
+bottom: drag mons between slots to reorder, drag them out to the Box, and open the Box for a full
+view of everything you own. Balls can be clicked or dragged straight onto the enemy.
 
-**⊕ is the only thing that combines.** A drag used to arm a merge as well, which meant dragging a
-Charmander past a Charmeleon to change the batting order could destroy one of them. One gesture,
-one verb.
-
-Opens on the Location map — a fresh one every time the app loads, since a run with no seed rolls
-its own — drawn over the Location's own art with its branches drawn in: the moves on offer from
-where you stand are lit gold, the path behind you is dimmed. Pick a node to
-fight it; the battle screen opens **paused** with the
+Opens on the Location map. Pick a node to fight it; the battle screen opens **paused** with the
 synergy opening already applied, so you can read the board before anything moves. Press Play, or
 One Step to walk a Step at a time. Reorder your line-up in the panel on the right — position 0
 leads, position 1 supports, the rest wait.
@@ -101,23 +89,23 @@ src/
     synergy.ts        the opening pass — all 18 type synergies
     runners.ts        precomputed and on-demand runners
   content/          the roster and the rules for deriving from it
-    species.json      GENERATED - 183 curated species
+    species.json      GENERATED - 183 curated species, with Special
     passives.json     GENERATED - the 20 authored passives
     index.ts          typed registries, lookups, evolution chains
     statGrowth.ts     what EXP buys
     factory.ts        PokemonInstance -> Combatant
     sprites.ts        sprite URLs and scaling rules
   meta/             run rules, pure
+    encountersEvents.ts  the road-encounter catalogue
+    encounterEffects.ts  what a choice does to a run
     balls.ts          ball tiers, what each is worth, inventory
-    locations.ts      the eight Locations, their themes, and their map art
+    locations.ts      the eight Locations and their themes
     mapGenerator.ts   branching paths, with reachability invariants
-    roadEvents.ts     the nine Encounters an `?` node can roll, and what each branch does
     shop.ts           the Pokémon Center
     catching.ts       odds, the roll, what a catch produces
     progression.ts    how difficulty scales
     runState.ts       party, box, morale, money, badges
     experience.ts     EXP, evolution, catch-up
-    fusion.ts         combining two mons of a family into one
     encounters.ts     who you fight, and the first Location
   state/
     runStore.ts       the one mutable thing
@@ -130,10 +118,8 @@ src/
     theme.css
     MonView.tsx       sprite, charge arc, shield bubble, readout
     BattleScreen.tsx
-    RunScreen.tsx     map, team, Encounters, results, combining
-    TraitCounters.tsx the field's type counters
-    TeamSynergies.tsx the same counts, on the screens where the team is edited
-    EvolutionScene.tsx the ceremony played after a fight that grew something
+    RunScreen.tsx     map, team, results
+    TraitCounters.tsx
   harness/
     fight.ts          text-mode fight printer
 test/
@@ -204,8 +190,19 @@ discrete **Steps**, and one `advanceStep` function is the whole of it. Beats, in
    - **3.6 Sudden death** — from Step 30, escalating true damage to both Leads.
 4. **Faint check and promotion** — the only place removal happens.
 
-Three stats only: Attack, Health, Speed. No Defence — Attack subtracts directly from Health.
-Speed drives nothing but charge rate.
+Four stats: Attack, Health, Speed and **Special**. No Defence — Attack subtracts directly from
+Health. Speed drives nothing but charge rate.
+
+Attack lands every Step. **Special is what the ability is worth when the charge bar fills**, and
+the default ability is simply "deal damage equal to your Special". An authored ability that
+shields, heals or inflicts a status *replaces* that rather than adding to it — so a mon either
+hits for its Special or does something else with it, never both. Special is derived from the
+species' real Special Attack, scaled onto its tier line and clamped between half and twice its
+Attack, and it holds that ratio to Attack as the mon grows.
+
+**Every mon's Health is tripled** (`HEALTH_MULTIPLIER`), applied to the derived value rather than
+baked into `species.json`, so the generated roster still validates against the Unity assets number
+for number. Typical fights went from six or seven Steps to eleven to twenty.
 
 Damage always takes one path: **flat reduction → shield absorption → HP**, then lifesteal off the
 HP damage actually dealt.
@@ -226,61 +223,117 @@ HP damage actually dealt.
 ## The run, in one paragraph
 
 You start with two tier-1 mons and pick your way through a branching Location: an entry choice,
-four layers of forks, then the Gym. Eight Locations, each with its own type theme, Gym Leader and
-backdrop. Every win gives one EXP to everyone who fought; twelve EXP is an evolution. A loss
-costs one Morale, and at zero Morale the run ends.
-
-**A win consumes its node; a loss does not.** Morale is already what makes a run finite, so taking
-the node as well charges twice — and can strand a player on a layer that offered them one way
-forward. A retry is not a re-roll: the opponents and the battle seed come from the node, so the
-same team fights the same fight and something in the line-up has to change. A draw does consume
-the node, because it costs no Morale and would otherwise be an unlimited number of identical
-re-runs for free. **Damage does not carry between fights** —
+four layers of forks, then the Gym. Some nodes are wild fights, some are a Pokémon Center. Eight
+Locations, each with its own type theme and Gym Leader. Every win gives one EXP to everyone who fought; twelve EXP is an evolution. A loss
+costs one Morale, and at zero Morale the run ends. **Damage does not carry between fights** —
 everyone is restored after every battle, fainted included — so the pressure is Morale, not
 attrition, and a run is decided by the team you build rather than the health you nursed.
 
-### The five kinds of node
+## Spending EXP
 
-| | | |
+**EXP means progress toward evolving, and nothing else.** Spending power is a separate counter,
+**stat points**. The two used to be one number, which made every screen ambiguous about what it
+was showing.
+
+- **Winning a battle** gives +1 EXP toward evolving, and **+1 to each of the two stats that
+  battle node advertised** — applied directly, not as points to assign. The node shows them before
+  you take it, so the strategy is in choosing the route rather than clicking the same four buttons
+  after every fight.
+- **Evolving** plays the flicker-between-forms popup from the handheld games and grants 10 stat
+  points to assign by hand. That is now the only routine source of
+  them, so the assignment screen is a milestone rather than constant upkeep.
+- **Combining** gives +4 EXP toward evolving. Three sacrifices evolve a base-form mon — four
+  Charmanders make one Charmeleon.
+
+A stat point buys exactly one stat: a point into Attack moves Attack and nothing else.
+
+Click any card in the line-up (or the Box) to open its full detail panel: bigger stats, its
+ability's real description, spending pending points there instead of only after a fight, and
+**combining it with another Pokémon in the same evolution line** — a Charmander can absorb a
+Charmeleon, not just another Charmander. Combining is a rare-candy, not a pooling of two
+histories: the one consumed contributes a single flat `EXP_PER_EVOLUTION`, not its own lifetime
+total, so a pile of low-tier catches can't be cashed in as a shortcut past the tier curve. Routed
+through the same evolution check a battle win uses, so a combine that crosses a threshold evolves
+the kept mon exactly as a win would. Works by clicking a duplicate in the modal, or by **dragging
+one card onto another** directly — the drop only intercepts when the two actually share a line;
+otherwise it falls through to the normal move-between-groups behaviour.
+
+**Only the mons that fought earn it.** Anyone who was ever Lead or Support counts; a mon that sat
+at the back of the train the whole battle does not, and nor does it get pulled up by the catch-up
+floor. Sitting a fight out has to cost something or the line-up order is not a decision. The old
+automatic draw (a hash of the mon's id, weighted by its real Health share) is gone;
+`healthGrowthPercent` survives on `Species` as a record of that weighting and would be the natural
+default if an auto-allocate button ever appears.
+
+### Speed and the charge scale
+
+**100 Speed means three ability activations per attack.** Charge accrues at 3 per point of Speed
+per Step against a threshold of 100, and a mon fires once per whole threshold banked — carrying
+the remainder, so Speed above the threshold is not wasted. Every species starts at a flat 10
+Speed, firing roughly once every three and a half attacks, and the cap is 100.
+
+The old scale was Speed 1-3 against a threshold of 3, which made one point worth doubling or
+tripling a mon's entire output. Spreading the same relationship over a hundred points is what
+makes Speed something to invest in gradually. The flat starting value is deliberate: the
+tier-derived 1-3 spread meant nothing against 100, and re-deriving a per-species spread is a
+balance job in its own right.
+
+**The shared golden fixtures run on `LEGACY_CHARGE_CONFIG`.** They were calibrated against Unity's
+numbers, and the threshold decides when passives fire and therefore who wins — so on the new scale
+all six would fail. Rewriting their expectations would have thrown away the only
+cross-implementation guarantee this project has, so charge is parameterised instead and the
+fixtures keep testing the original contract.
+
+## Held items
+
+A Pokémon holds at most one. Items are bought at Shops (three on offer, rerolled with the
+Pokémon), found in encounters, and moved around by dragging — from the **Bag** popup onto a mon,
+from one mon to another, or clicked off to go back in the bag. Giving a mon a second item returns
+the first to the bag rather than destroying it.
+
+Each maps to a real Pokémon item where the mechanic has an honest counterpart:
+
+| Item | What it does |
+|---|---|
+| Lum Berry | Cures a status the moment it lands. Once per battle. |
+| Leftovers | Heals a little at the end of every Step. |
+| Sitrus Berry | Heals once, the first time the holder drops below half. |
+| Lucky Egg | Extra EXP toward evolving from every win. |
+| HP Up / Protein / Calcium / Carbos | Flat boost to one stat while held. |
+| Power Weight / Bracer / Lens / Anklet | +1 to one stat permanently after every battle fought. |
+| Plates (17) + Silk Scarf | **Replaces** the holder's typing with that type. |
+
+The Power items are the closest thing to a literal match — in canon they grant EVs per battle,
+which is exactly a small permanent boost after every fight. The Vitamins are a liberty: canon
+makes them one-use consumables, but the vitamin-to-stat mapping is the most recognisable one the
+games have. Plates are exactly what they do for Arceus, with Silk Scarf covering Normal since
+Arceus holds nothing to stay Normal.
+
+Typing items matter more here than in the real games, because typing drives the **team synergies**
+rather than a damage chart — a Plate is a way to buy into a synergy you are one mon short of.
+
+The one-shot items (Lum, Sitrus) track their spent state on the *combatant*, not the run, so
+"refreshes at the end of battle" needs no reset step anywhere: combatants are rebuilt every fight.
+
+## Node types
+
+| Icon | Node | What it is |
 |---|---|---|
-| **Battle** | wild fight | EXP, $2, and something you can throw a ball at |
-| **Mystery Trainer** | a themed team, one body larger and a point of EXP ahead | EXP, $4 |
-| **Encounter** | a scene and a choice | see below |
-| **Pokémon Center** | a shop | restocks balls; pays no EXP and no money |
-| **Gym** | the Leader | the badge, $5, and the next Location |
+| battle | **Wild** | Wild Pokémon. Catchable. Pays EXP and a little money. |
+| mystery-trainer | **Mystery Trainer** | Another player's team — the hook for asynchronous multiplayer, generated for now. **Not catchable**, so the reward is money instead, and more of it. |
+| encounter | **Encounter** | A branching road event. Usually positive. |
+| shop | **Shop** | The Pokémon Center. Sells balls, and offers five region-relevant Pokémon to adopt with a $2 reroll. Pays nothing. Never two layers in a row. |
+| gym | **Gym** | Ends the Location and awards a badge. |
 
-The entry layer is fights only, so a run opens on a decision about a fight. Generation guarantees
-at least one Encounter per Location, never two Centers in one layer, and never more than two
-Encounters.
+A Location runs eight columns: an entry choice of three, six layers of forks, then the Gym. Most
+layers offer three options.
 
-### Encounters
+## Beating a Gym
 
-Slay the Spire's `?` room: a short scene, two or three choices, each stating its trade in full
-before it is clicked. Nine of them — a Legendary you can fight for a bounty, a trader who swaps
-your least-grown mon for one a tier up at the same EXP, a professor who levels the line-up, a
-stray that joins you, the Day Care, a shrine, an abandoned pack, the Game Corner, and a Rocket
-shakedown.
-
-**They are skewed positive on purpose.** Taking one already costs the EXP and money the fight in
-that slot would have paid, and that is the price; charging twice would make it a node nobody
-takes. Every encounter therefore has at least one branch that cannot leave the run worse off, and
-a test in `test/roadEvents.test.ts` checks that across all nine — it fails the moment a new
-encounter is written without a safe branch. A branch that starts a fight hands the battle screen
-its opponents and pays its bounty on the win, not on the click.
-
-### Region art
-
-Each Location names a backdrop in `locations.ts`; the files live in `public/art/regions/` and that
-folder's README says which name goes with which Location. The map draws the art under a scrim so
-node labels stay readable over a pale tundra or a black volcano, and falls back to the Location's
-`tint` for any file that isn't there — a missing backdrop degrades rather than breaks.
-
-Between fights you can also **combine two mons of one family** — a Charmander into a Charmeleon,
-or two Charmanders — anywhere you can edit the team. The one furthest along the chain survives
-with the higher Attack and Health of the two plus one, a point of EXP, and sometimes the evolution
-that point tips it into; the other is consumed. It is the one place a stat is *stored* on a mon
-rather than derived from its EXP, for the reason `meta/fusion.ts` gives: the mon the bonus came
-from no longer exists, so there is nothing left to re-derive it from.
+A celebration screen gives the badge, the leader's line, and a choice of three regions to travel
+to next — each showing the types you are likely to meet there. On arrival you pick one of three
+**permanent trainer buffs** flavoured to that region, which last the rest of the run. The buff
+*effects* are placeholders; the shape around them is not.
 
 ## Balance findings worth revisiting
 
@@ -295,17 +348,19 @@ current behaviour so it changes deliberately.
   longest real fight at 17 Steps, and `SUDDEN_DEATH_STEP` (30) was chosen against that. A Grass
   stack with EXP runs 37. Sudden death can now decide a fight that was resolving on its own. In a
   4,000-fight random sweep it fired once, so it's rare rather than routine.
-- **The second Location's themed pool is almost all tier 1.** At one badge the tier cap allows
-  tier 2, but the Water/Rock base forms it can draw are twelve tier-1 species and a single tier-2
-  one — so a starter that won every fight in Location 1 out-budgets most of what Location 2
-  fields. The cap makes a stronger mon *available*, not common. This surfaced when per-node
-  seeding changed which species get drawn: the test asserting "still behind a second-Location
-  wild" had been passing on one seed that happened to draw the one tier-2 entry. It is now two
-  tests over the pool rather than one over a draw, and both state what is actually true.
 - **Catching is what keeps you on the curve, and it is now measured.** Before it existed, 0 of
   200 simulated runs were winnable: the tier cap rises one per badge and a tier is worth far more
   than a Location's EXP — tier 1 spends 8 stat points, tier 2 spends 18, while winning every fight
   in a Location earns 4. With catching, 140 of 150. So catching is load-bearing, not flavour.
+- **`SUDDEN_DEATH_STEP` is now wrong and actively interfering.** It is 30, chosen when the longest
+  real fight was 17. With tripled Health the longest is 43, so sudden death has gone from firing
+  once in four thousand fights to roughly one in sixteen — it decides fights that were resolving
+  on their own. Raising it is the first thing the balance pass should do. A test records the
+  current figure and will fail when it changes.
+- **Special is dormant for most of the roster.** Only 3 of the 20 authored abilities deal damage
+  to an enemy, so 17 override the default and never use the stat. That is correct behaviour and a
+  content gap, not a bug: the 183 unique abilities the design calls for don't exist yet, and the
+  20 shared type-flavoured ones stand in.
 - **The shop fixed the strategy gap and left the difficulty problem.** Before it existed, a player
   who threw freely won 93% of runs and one who held out for 65% odds won 42% — the game was mostly
   a test of throw aggression. With the shop, those become 92% and 84%: a cautious player banks

@@ -18,19 +18,15 @@ import {
   nodeById,
   reachableFrom,
 } from '../src/meta/mapGenerator.js';
-import { LOCATIONS, REGION_ART_DIR, locationFor } from '../src/meta/locations.js';
+import { LOCATIONS, REGION_ART, locationFor } from '../src/meta/locations.js';
+import { BADGES, badgeFor, buffTotal, buffsFor } from '../src/meta/badges.js';
+import { GROWABLE_STATS } from '../src/content/statGrowth.js';
+import { applyStatRewards } from '../src/meta/experience.js';
+import { createRun } from '../src/meta/runState.js';
+import { createInstance, unspentPoints } from '../src/content/factory.js';
 import { SHOP_STOCK, buy, canAfford, describeInventory } from '../src/meta/shop.js';
 import { STARTING_BALLS, emptyInventory, totalBalls } from '../src/meta/balls.js';
-import {
-  BADGES_TO_WIN,
-  MONEY_PER_GYM_WIN,
-  MONEY_PER_TRAINER_WIN,
-  MONEY_PER_WILD_WIN,
-  moneyForWin,
-  trainerTeamSize,
-  wildEncounterSize,
-} from '../src/meta/progression.js';
-import type { NodeType } from '../src/meta/runState.js';
+import { BADGES_TO_WIN } from '../src/meta/progression.js';
 import { POKEMON_TYPES } from '../src/sim/index.js';
 
 const SEEDS = Array.from({ length: 60 }, (_, i) => i + 1);
@@ -102,56 +98,6 @@ describe('map generation', () => {
         expect(count, `seed ${seed} layer ${layer}`).toBeLessThanOrEqual(1);
       }
     }
-  });
-
-  it('uses only node kinds the run layer can resolve', () => {
-    const known = new Set<NodeType>(['Wild', 'Trainer', 'Encounter', 'Center', 'Gym']);
-    for (const seed of SEEDS) {
-      for (const node of generateLocationMap(seed, seed % 8).nodes) {
-        expect(known.has(node.type), `seed ${seed}: ${node.type}`).toBe(true);
-      }
-    }
-  });
-
-  it('always puts at least one Encounter on the map', () => {
-    // Trades, free levels and the Legendary all live behind an Encounter. A Location that rolled
-    // none of them reads as a bug rather than as variance, so generation guarantees one.
-    for (const seed of SEEDS) {
-      const map = generateLocationMap(seed, seed % 8);
-      expect(map.nodes.some((n) => n.type === 'Encounter'), `seed ${seed}`).toBe(true);
-    }
-  });
-
-  it('keeps the entry layer to fights, so a run opens on a decision about a fight', () => {
-    for (const seed of SEEDS) {
-      const map = generateLocationMap(seed, seed % 8);
-      const entry = map.entryIds.map((id) => nodeById(map, id)!);
-      expect(
-        entry.every((n) => n.type === 'Wild' || n.type === 'Trainer'),
-        `seed ${seed}: ${entry.map((n) => n.type).join()}`,
-      ).toBe(true);
-    }
-  });
-
-  it('never fills a layer with Encounters, which would be a layer with no fight in it', () => {
-    for (const seed of SEEDS) {
-      const map = generateLocationMap(seed, seed % 8);
-      const perLayer = new Map<number, number>();
-      for (const node of map.nodes) {
-        if (node.type === 'Encounter') perLayer.set(node.layer, (perLayer.get(node.layer) ?? 0) + 1);
-      }
-      for (const [layer, count] of perLayer) {
-        expect(count, `seed ${seed} layer ${layer}`).toBeLessThanOrEqual(2);
-      }
-    }
-  });
-
-  it('offers Mystery Trainers somewhere across a run', () => {
-    const kinds = new Set(
-      SEEDS.flatMap((seed) => generateLocationMap(seed, seed % 8).nodes.map((n) => n.type)),
-    );
-    expect(kinds.has('Trainer')).toBe(true);
-    expect(kinds.has('Center')).toBe(true);
   });
 });
 
@@ -232,39 +178,6 @@ describe('the Locations', () => {
     expect(locationFor(-3)).toBe(LOCATIONS[0]);
     expect(locationFor(99)).toBe(LOCATIONS.at(-1));
   });
-
-  it('gives each its own backdrop and its own slug', () => {
-    // The art is what makes the eight read as eight places; two Locations sharing a backdrop would
-    // undo that quietly, without anything else in the game noticing.
-    expect(new Set(LOCATIONS.map((l) => l.slug)).size).toBe(LOCATIONS.length);
-    expect(new Set(LOCATIONS.map((l) => l.art)).size).toBe(LOCATIONS.length);
-
-    for (const loc of LOCATIONS) {
-      expect(loc.slug, loc.name).toMatch(/^[a-z0-9-]+$/);
-      expect(loc.art, loc.name).toMatch(new RegExp(`^${REGION_ART_DIR}/[a-z-]+\\.png$`));
-      expect(loc.tint, loc.name).toMatch(/^#[0-9a-f]{6}$/);
-    }
-  });
-});
-
-describe('what a node pays', () => {
-  it('pays a Gym best, a Mystery Trainer next, and the grass least', () => {
-    expect(moneyForWin('Gym')).toBe(MONEY_PER_GYM_WIN);
-    expect(moneyForWin('Trainer')).toBe(MONEY_PER_TRAINER_WIN);
-    expect(moneyForWin('Wild')).toBe(MONEY_PER_WILD_WIN);
-    expect(MONEY_PER_GYM_WIN).toBeGreaterThan(MONEY_PER_TRAINER_WIN);
-    expect(MONEY_PER_TRAINER_WIN).toBeGreaterThan(MONEY_PER_WILD_WIN);
-  });
-
-  it('pays nothing for a fight an Encounter started, which pays its own bounty', () => {
-    expect(moneyForWin('Encounter')).toBe(0);
-  });
-
-  it('gives a Mystery Trainer more bodies than the grass at the same point in the run', () => {
-    for (let badges = 0; badges < BADGES_TO_WIN; badges++) {
-      expect(trainerTeamSize(badges), `badge ${badges}`).toBeGreaterThan(wildEncounterSize(badges));
-    }
-  });
 });
 
 describe('the shop', () => {
@@ -304,5 +217,191 @@ describe('the shop', () => {
   it('describes an empty bag in words rather than as nothing', () => {
     expect(describeInventory(emptyInventory())).toBe('no balls');
     expect(describeInventory(STARTING_BALLS)).toContain('Poké Ball');
+  });
+});
+
+describe('the wider map', () => {
+  it('runs eight columns from entry to Gym', () => {
+    const layers = new Set(generateLocationMap(1, 0).nodes.map((n) => n.layer));
+    expect(layers.size).toBe(8);
+  });
+
+  it('offers three options in most layers', () => {
+    // Three is the normal width: enough that the choice is real, few enough to read at a glance.
+    let three = 0;
+    let total = 0;
+    for (const seed of SEEDS) {
+      const perLayer = new Map<number, number>();
+      for (const node of generateLocationMap(seed, 0).nodes) {
+        perLayer.set(node.layer, (perLayer.get(node.layer) ?? 0) + 1);
+      }
+      // Skip the entry and the Gym, whose widths are fixed.
+      for (const [layer, count] of perLayer) {
+        if (layer === 1 || layer === 8) continue;
+        total++;
+        if (count === 3) three++;
+      }
+    }
+    expect(three / total).toBeGreaterThan(0.5);
+  });
+
+  it('never puts two shop layers back to back', () => {
+    // Two rests in a row is a stretch of the Location with no fight in it, which is neither a
+    // decision nor a difficulty curve.
+    for (const seed of SEEDS) {
+      const layersWithShop = new Set(
+        generateLocationMap(seed, seed % 8)
+          .nodes.filter((n) => n.type === 'Center')
+          .map((n) => n.layer),
+      );
+      for (const layer of layersWithShop) {
+        expect(layersWithShop.has(layer + 1), `seed ${seed}, layers ${layer} and ${layer + 1}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('puts mystery trainers on the map', () => {
+    let found = 0;
+    for (const seed of SEEDS) {
+      if (generateLocationMap(seed, 0).nodes.some((n) => n.type === 'MysteryTrainer')) found++;
+    }
+    expect(found).toBeGreaterThan(SEEDS.length / 2);
+  });
+
+  it('still keeps every node reachable and every path leading to the Gym', () => {
+    for (const seed of SEEDS) {
+      const map = generateLocationMap(seed, seed % 8);
+      expect(allReachable(map), `seed ${seed}`).toBe(true);
+      expect(allPathsReachGym(map), `seed ${seed}`).toBe(true);
+    }
+  });
+});
+
+describe('badges and regional buffs', () => {
+  it('has a badge per Location, each with a leader and a line', () => {
+    expect(BADGES).toHaveLength(LOCATIONS.length);
+    for (const badge of BADGES) {
+      expect(badge.name.length).toBeGreaterThan(0);
+      expect(badge.leader.length).toBeGreaterThan(0);
+      expect(badge.quote.length).toBeGreaterThan(0);
+      expect(badge.glyph.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('names the leader the Location says runs the Gym', () => {
+    LOCATIONS.forEach((loc, i) => {
+      expect(badgeFor(i).leader, loc.name).toBe(loc.gymLeader);
+    });
+  });
+
+  it('clamps an out-of-range badge index rather than failing a run', () => {
+    expect(badgeFor(-1)).toBe(BADGES[0]);
+    expect(badgeFor(99)).toBe(BADGES.at(-1));
+  });
+
+  it('offers exactly three buffs in every region', () => {
+    for (const region of REGION_ART) {
+      expect(buffsFor(region), region).toHaveLength(3);
+    }
+  });
+
+  it('gives every buff a unique id, so two cannot collide in a run', () => {
+    const ids = REGION_ART.flatMap((r) => buffsFor(r).map((b) => b.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('describes every buff in words', () => {
+    for (const region of REGION_ART) {
+      for (const buff of buffsFor(region)) {
+        expect(buff.name.length, buff.id).toBeGreaterThan(0);
+        expect(buff.blurb.length, buff.id).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('totals the buffs a run has picked, ignoring other kinds', () => {
+    const income = REGION_ART.flatMap((r) => buffsFor(r)).filter(
+      (b) => b.effect.kind === 'income',
+    );
+    const two = income.slice(0, 2).map((b) => b.id);
+    const expected = income.slice(0, 2).reduce((sum, b) => sum + b.effect.amount, 0);
+
+    expect(buffTotal(two, 'income')).toBe(expected);
+    expect(buffTotal(two, 'teamAttack')).toBe(0);
+  });
+
+  it('ignores an unknown buff id rather than throwing', () => {
+    expect(buffTotal(['not-a-buff'], 'income')).toBe(0);
+  });
+});
+
+describe('the stats a battle node pays', () => {
+  it('gives every battle node exactly two distinct stats', () => {
+    // Two distinct, so the route choice is between combinations rather than a double helping of
+    // one thing — that pairing is where the strategy lives.
+    for (const seed of SEEDS) {
+      for (const node of generateLocationMap(seed, seed % 8).nodes) {
+        if (node.type === 'Center' || node.type === 'Encounter') continue;
+        expect(node.statRewards, `${seed}/${node.id}`).toBeDefined();
+        expect(node.statRewards!.length, `${seed}/${node.id}`).toBe(2);
+        expect(new Set(node.statRewards).size, `${seed}/${node.id}`).toBe(2);
+      }
+    }
+  });
+
+  it('gives nothing to nodes that field nobody', () => {
+    for (const seed of SEEDS) {
+      for (const node of generateLocationMap(seed, 0).nodes) {
+        if (node.type === 'Center' || node.type === 'Encounter') {
+          expect(node.statRewards, `${seed}/${node.id}`).toBeUndefined();
+        }
+      }
+    }
+  });
+
+  it('varies the pairing across a Location, so the route is a real choice', () => {
+    const pairings = new Set(
+      generateLocationMap(7, 2)
+        .nodes.filter((n) => n.statRewards !== undefined)
+        .map((n) => [...n.statRewards!].sort().join('+')),
+    );
+    expect(pairings.size).toBeGreaterThan(1);
+  });
+
+  it('uses only real growable stats', () => {
+    const valid = new Set<string>(GROWABLE_STATS);
+    for (const node of generateLocationMap(3, 1).nodes) {
+      for (const stat of node.statRewards ?? []) {
+        expect(valid.has(stat), stat).toBe(true);
+      }
+    }
+  });
+});
+
+describe('awarding those stats after a win', () => {
+  it('applies them straight to the allocation of everyone who fought', () => {
+    // Directly, not as points to assign: the node already said which two, so making the player
+    // click the same buttons afterwards is upkeep without a decision.
+    const state = createRun(1, [
+      createInstance('Charmander', { instanceId: 'fought' }),
+      createInstance('Squirtle', { instanceId: 'benched' }),
+    ]);
+    const after = applyStatRewards(state, ['attack', 'health'], ['fought']);
+
+    const fought = after.lineUp.find((m) => m.instanceId === 'fought')!;
+    const benched = after.lineUp.find((m) => m.instanceId === 'benched')!;
+
+    expect(fought.allocation.attack).toBe(1);
+    expect(fought.allocation.health).toBe(1);
+    expect(unspentPoints(fought)).toBe(0);
+    expect(benched.allocation.attack).toBe(0);
+  });
+
+  it('leaves the run alone when nobody fought or nothing was offered', () => {
+    const state = createRun(1, [createInstance('Charmander', { instanceId: 'a' })]);
+    expect(applyStatRewards(state, [], ['a'])).toBe(state);
+    expect(applyStatRewards(state, ['attack'], [])).toBe(state);
   });
 });

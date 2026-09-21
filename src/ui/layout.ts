@@ -109,30 +109,6 @@ export const CHARGE_ARC = {
   sweepDegrees: 66,
 } as const;
 
-/**
- * The numbers block that sits on the grass beside a mon: the attack burst, the HP figure, and the
- * HP bar under them.
- *
- * Sized here rather than in the stylesheet because the block is *positioned* from its own size —
- * the 'below' readout centres it on the sprite, and the 'right' readout lifts it so its bottom
- * lands near the mon's feet. With the size in CSS and the offsets in the component those two
- * drift apart the moment either changes, which is §6.7's "layout baked in two places" again.
- *
- * The bar is deliberately chunky. It is read from across a 1280-wide field while four of them
- * move at once, and at five pixels tall the difference between "hurt" and "nearly dead" was a
- * colour change nobody caught in peripheral vision.
- */
-export const FIGURES = {
-  /** The attack burst's box, which sets the height of the top row. */
-  rowHeight: 46,
-  gap: 4,
-  bar: { width: 148, height: 14 },
-} as const;
-
-/** How far above the sprite's feet a 'right' readout is lifted, so the block clears the ground. */
-export const figuresLift = (): number =>
-  FIGURES.rowHeight + FIGURES.gap + FIGURES.bar.height + 8;
-
 /** The shield bubble drawn around a mon. */
 export const SHIELD_BUBBLE = {
   /** Padding beyond the sprite's own box. */

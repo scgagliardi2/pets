@@ -6,6 +6,14 @@
  * pass, this implementation and the Unity one agree on how combat resolves, rather than this
  * implementation merely agreeing with one reading of the spec.
  *
+ * **Run under `LEGACY_CHARGE_CONFIG`, not the game's charge numbers.** The game has deliberately
+ * moved to a 100-point charge threshold so Speed can be invested in gradually; the fixtures were
+ * calibrated against Unity's 1-3 Speed against a threshold of 3. Four of the six assert exact
+ * charge values, and the threshold also decides when passives fire and therefore who wins — so
+ * run on the new scale they would all fail, and "fixing" them by rewriting the expectations would
+ * throw away the only cross-implementation guarantee this project has. Parameterising charge
+ * instead keeps them a real check of the Step loop, the damage pipeline, statuses and synergies.
+ *
  * Two shapes, per the source repo's shared/README.md:
  *  - **Outcome fixtures** (no `steps`, or `steps: 0`): run to completion, assert the outcome,
  *    the order mons fainted, and who survived at what HP.
@@ -27,6 +35,7 @@ import {
   makeCombatant,
   runPrecomputed,
   EVENT_CAP,
+  LEGACY_CHARGE_CONFIG,
   STEP_CAP,
   type BattleOutcome,
   type Combatant,
@@ -97,9 +106,9 @@ describe('golden fixtures (shared with the Unity implementation)', () => {
         // Run exactly N raw Steps, opening included, and read the board.
         const state = makeBattleState(lineUpA, lineUpB);
         const rng = createRandom(fixture.seed);
-        applyOpeningMutable(state);
+        applyOpeningMutable(state, LEGACY_CHARGE_CONFIG);
         for (let i = 0; i < fixture.steps!; i++) {
-          advanceStepMutable(state, rng);
+          advanceStepMutable(state, rng, LEGACY_CHARGE_CONFIG);
         }
 
         const byId = new Map<string, Combatant>();
@@ -118,7 +127,7 @@ describe('golden fixtures (shared with the Unity implementation)', () => {
       }
 
       // Outcome fixture: run to completion.
-      const log = runPrecomputed(lineUpA, lineUpB, fixture.seed);
+      const log = runPrecomputed(lineUpA, lineUpB, fixture.seed, LEGACY_CHARGE_CONFIG);
       expect(fixture.expected).toBeDefined();
       const want = fixture.expected!;
 

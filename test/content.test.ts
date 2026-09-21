@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { POKEMON_TYPES, type PokemonType } from '../src/sim/index.js';
 import {
+  BASE_SPEED,
   PASSIVES,
   SPECIES,
   baseFormOf,
@@ -29,11 +30,15 @@ import {
 } from '../src/content/index.js';
 import {
   ATTACK_PER_EVOLUTION,
+  GROWABLE_STATS,
+  HEALTH_MULTIPLIER,
   HEALTH_PER_EVOLUTION,
-  gainsHealth,
-  healthGainsIn,
-  statsAtExp,
+  MAX_GROWN_SPEED,
+  allocate,
+  emptyAllocation,
+  statsFromAllocation,
   statsFor,
+  totalAllocated,
 } from '../src/content/statGrowth.js';
 
 const named = (name: string) => {
@@ -296,115 +301,174 @@ describe('queries', () => {
   });
 });
 
-describe('stat growth from EXP', () => {
+describe('stat growth, now chosen by the player', () => {
   const charmander = named('Charmander');
 
-  it('a point of EXP buys Attack or Health, never both', () => {
-    // The rule ADR 0009 exists for. Total stats rise by exactly the EXP spent.
+  /** n points, all into one stat. */
+  const into = (stat: (typeof GROWABLE_STATS)[number], n: number) => {
+    let a = emptyAllocation();
+    for (let i = 0; i < n; i++) a = allocate(a, stat);
+    return a;
+  };
+
+  it('puts a point exactly where it is sent', () => {
     const base = baseStatsOf(charmander);
-    for (const exp of [1, 5, 12, 40]) {
-      const grown = statsAtExp(charmander, 'test-mon', exp, 0);
-      expect(grown.attack + grown.health).toBe(base.attack + base.health + exp);
-    }
+
+    expect(statsFromAllocation(charmander, into('attack', 5), 0).attack).toBe(base.attack + 5);
+    expect(statsFromAllocation(charmander, into('health', 5), 0).health).toBe(
+      (base.health + 5) * HEALTH_MULTIPLIER,
+    );
+    expect(statsFromAllocation(charmander, into('special', 5), 0).special).toBeGreaterThan(
+      statsFromAllocation(charmander, emptyAllocation(), 0).special,
+    );
+    expect(statsFromAllocation(charmander, into('speed', 1), 0).speed).toBe(BASE_SPEED + 1);
   });
 
-  it('is deterministic — the same mon and EXP always give the same line', () => {
-    const a = statsAtExp(charmander, 'mon-1', 17, 0);
-    const b = statsAtExp(charmander, 'mon-1', 17, 0);
+  it('lets the same species grow into different mons', () => {
+    // The whole point of the change: EXP is a decision, not something that happens to you.
+    const wall = statsFromAllocation(charmander, into('health', 10), 0);
+    const cannon = statsFromAllocation(charmander, into('attack', 10), 0);
+
+    expect(wall.health).toBeGreaterThan(cannon.health);
+    expect(cannon.attack).toBeGreaterThan(wall.attack);
+  });
+
+  it('is deterministic, with no hidden roll left in it', () => {
+    const a = statsFromAllocation(charmander, into('attack', 7), 0);
+    const b = statsFromAllocation(charmander, into('attack', 7), 0);
     expect(a).toEqual(b);
   });
 
-  it('grows two mons of the same species into different lines', () => {
-    const a = statsAtExp(charmander, 'mon-1', 20, 0);
-    const b = statsAtExp(charmander, 'mon-2', 20, 0);
-    expect(a).not.toEqual(b);
+  it('caps Speed at the charge scale calibration point', () => {
+    // 100 Speed is three ability activations per attack — the top of the scale, so the natural
+    // ceiling rather than an arbitrary one.
+    const stats = statsFromAllocation(charmander, into('speed', 500), 0);
+    expect(stats.speed).toBe(MAX_GROWN_SPEED);
   });
 
-  it('is rebuildable in any order — point 7 answers the same however you ask', () => {
-    // Stats are rebuilt from scratch on every grant, so a draw has to be answerable on its own.
-    const direct = gainsHealth(charmander.healthGrowthPercent, 'mon-1', 7);
-    const viaWalk = healthGainsIn(charmander.healthGrowthPercent, 'mon-1', 8) -
-      healthGainsIn(charmander.healthGrowthPercent, 'mon-1', 7);
-    expect(viaWalk === 1).toBe(direct);
-  });
-
-  it('follows the species growth bias in aggregate', () => {
-    // 72% to Health. Averaged over many mons rather than one, because a single mon's 500 draws
-    // have real sampling variance and a tight bound on one id would be a flaky test.
-    let health = 0;
-    const mons = 100;
-    const points = 200;
-    for (let m = 0; m < mons; m++) {
-      health += healthGainsIn(charmander.healthGrowthPercent, `bias-${m}`, points);
+  it('starts every species at the same flat base Speed', () => {
+    // The tier-derived 1-3 spread was calibrated to a threshold of 3 and means nothing against
+    // 100; everyone starts level until a per-species spread is re-derived.
+    for (const s of [named('Charmander'), named('Mewtwo'), named('Caterpie')]) {
+      expect(statsFromAllocation(s, emptyAllocation(), 0).speed, s.name).toBe(BASE_SPEED);
     }
-    const share = health / (mons * points);
-
-    expect(share).toBeGreaterThan(0.69);
-    expect(share).toBeLessThan(0.75);
   });
 
-  it('leaves adjacent point indices uncorrelated', () => {
-    // What the hash's final avalanche is for: without it, adjacent indices correlate and a mon's
-    // growth comes out in visible blocks. Run length alone is a bad test of this, because a 72%
-    // bias produces long Health runs all by itself — a true biased coin averages a longest run of
-    // about 13 over 200 draws. So measure the conditional probability instead: if the draws are
-    // independent, P(Health | previous was Health) should sit near the bias itself.
-    const pct = charmander.healthGrowthPercent;
-    let afterHealth = 0;
-    let health = 0;
-    let total = 0;
-
-    for (let m = 0; m < 200; m++) {
-      let previous = gainsHealth(pct, `corr-${m}`, 0);
-      for (let i = 1; i < 200; i++) {
-        const current = gainsHealth(pct, `corr-${m}`, i);
-        if (previous) {
-          afterHealth += current ? 1 : 0;
-          health++;
-        }
-        total++;
-        previous = current;
-      }
-    }
-
-    const conditional = afterHealth / health;
-    expect(conditional).toBeGreaterThan(pct / 100 - 0.05);
-    expect(conditional).toBeLessThan(pct / 100 + 0.05);
-    expect(total).toBeGreaterThan(0);
+  it('never changes Speed by accident', () => {
+    expect(statsFromAllocation(charmander, into('attack', 30), 3).speed).toBe(BASE_SPEED);
   });
 
-  it('never gives Shedinja a point of Health', () => {
-    const shedinja = named('Shedinja');
-    const base = baseStatsOf(shedinja);
-    const grown = statsAtExp(shedinja, 'shed-1', 30, 0);
-
-    expect(grown.health).toBe(base.health);
-    expect(grown.attack).toBe(base.attack + 30);
-  });
-
-  it('never changes Speed, with EXP or with evolution', () => {
-    const base = baseStatsOf(charmander);
-    expect(statsAtExp(charmander, 'mon-1', 100, 3).speed).toBe(base.speed);
-  });
-
-  it('adds a flat bonus per evolution', () => {
-    const none = statsAtExp(charmander, 'mon-1', 10, 0);
-    const twice = statsAtExp(charmander, 'mon-1', 10, 2);
+  it('adds a flat bonus per evolution on top of what was chosen', () => {
+    const none = statsFromAllocation(charmander, into('attack', 4), 0);
+    const twice = statsFromAllocation(charmander, into('attack', 4), 2);
 
     expect(twice.attack).toBe(none.attack + 2 * ATTACK_PER_EVOLUTION);
-    expect(twice.health).toBe(none.health + 2 * HEALTH_PER_EVOLUTION);
+    expect(twice.health).toBe(none.health + 2 * HEALTH_PER_EVOLUTION * HEALTH_MULTIPLIER);
   });
 
   it('grows an evolved mon from its base form, not from what it became', () => {
-    // A Charizard is a Charmander with EXP and two evolutions behind it — Charizard's own tier
-    // line is only a Pokedex entry. So a caught Charmeleon and a raised one are the same mon.
-    const asCharizard = statsFor(named('Charizard'), 'mon-1', 24, 2);
-    const fromCharmander = statsAtExp(charmander, 'mon-1', 24, 2);
-
-    expect(asCharizard).toEqual(fromCharmander);
+    const alloc = into('attack', 12);
+    expect(statsFor(named('Charizard'), alloc, 2)).toEqual(
+      statsFromAllocation(charmander, alloc, 2),
+    );
   });
 
-  it('treats negative EXP and evolutions as zero rather than going backwards', () => {
-    expect(statsAtExp(charmander, 'mon-1', -5, -2)).toEqual(baseStatsOf(charmander));
+  it('ignores negative allocations rather than going backwards', () => {
+    const base = baseStatsOf(charmander);
+    const broken = { attack: -5, health: -5, special: -5, speed: -5 };
+    const stats = statsFromAllocation(charmander, broken, -2);
+
+    expect(stats.attack).toBe(base.attack);
+    expect(stats.health).toBe(base.health * HEALTH_MULTIPLIER);
+  });
+
+  it('counts what has been spent', () => {
+    let a = emptyAllocation();
+    a = allocate(a, 'attack', 3);
+    a = allocate(a, 'speed', 1);
+    expect(totalAllocated(a)).toBe(4);
+  });
+
+  it('multiplies Health for the whole of a mon life, not just its base', () => {
+    const base = baseStatsOf(charmander);
+    expect(statsFromAllocation(charmander, emptyAllocation(), 0).health).toBe(
+      base.health * HEALTH_MULTIPLIER,
+    );
+  });
+});
+
+describe('Special, and the ability it drives', () => {
+  it('gives every species a Special of at least one', () => {
+    for (const s of SPECIES) {
+      expect(s.baseSpecial, s.name).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('makes special-leaning species special-leaning here too', () => {
+    // Alakazam is a glass cannon in the real games and should be one here; Machop is not.
+    const alakazam = named('Alakazam');
+    const machop = named('Machop');
+
+    expect(alakazam.baseSpecial).toBeGreaterThan(alakazam.baseAttack);
+    expect(machop.baseSpecial).toBeLessThan(machop.baseAttack);
+  });
+
+  it('clamps the ratio, so no ability is lethal on its own at its tier', () => {
+    // Unclamped, Alakazam's real 2.7x ratio produced an ability that nearly one-shot anything at
+    // tier 3. Special stays within twice Attack and no lower than half.
+    for (const s of SPECIES) {
+      expect(s.baseSpecial, s.name).toBeLessThanOrEqual(s.baseAttack * 2);
+      expect(s.baseSpecial * 2, s.name).toBeGreaterThanOrEqual(s.baseAttack);
+    }
+  });
+
+  it('moves only when Special is chosen', () => {
+    // An earlier version had Special ride the Attack line so an un-invested ability kept pace.
+    // That meant picking Attack silently raised two stats, which makes the choice a lie: a player
+    // told they are choosing one thing has to actually be choosing one thing.
+    const caterpie = named('Caterpie');
+    let attackOnly = emptyAllocation();
+    for (let i = 0; i < 20; i++) attackOnly = allocate(attackOnly, 'attack');
+
+    const fresh = statsFromAllocation(caterpie, emptyAllocation(), 0);
+    const pumped = statsFromAllocation(caterpie, attackOnly, 0);
+
+    expect(pumped.attack).toBeGreaterThan(fresh.attack);
+    expect(pumped.special).toBe(fresh.special);
+
+    // And it does move when it is the one chosen.
+    const special = statsFromAllocation(caterpie, allocate(emptyAllocation(), 'special', 4), 0);
+    expect(special.special).toBe(fresh.special + 4);
+  });
+
+  it('never lets an evolution or a Health point leak into Special either', () => {
+    const charmander = named('Charmander');
+    const base = statsFromAllocation(charmander, emptyAllocation(), 0);
+
+    expect(statsFromAllocation(charmander, emptyAllocation(), 3).special).toBe(base.special);
+    expect(statsFromAllocation(charmander, allocate(emptyAllocation(), 'health', 9), 0).special).toBe(
+      base.special,
+    );
+  });
+
+  it('falls back to a Special strike when a species has no authored ability', () => {
+    const withoutOne = { ...named('Charmander'), passiveId: null };
+    const ability = resolvePassive(withoutOne);
+
+    expect(ability?.id).toBe('default-special-strike');
+    expect(ability?.effects[0]?.scalesWithSpecial).toBe(true);
+  });
+
+  it('marks enemy damage as Special-scaled and leaves everything else alone', () => {
+    // Damage at an enemy IS the default ability, so it reads its magnitude off the mon. A shield,
+    // heal or status keeps its authored number, which is what makes it an override.
+    for (const passive of PASSIVES) {
+      for (const effect of passive.effects) {
+        const isEnemyDamage = effect.type === 'DealDamage' && effect.target.startsWith('Enemy');
+        expect(effect.scalesWithSpecial === true, `${passive.id}: ${effect.type}`).toBe(
+          isEnemyDamage,
+        );
+      }
+    }
   });
 });

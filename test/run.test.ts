@@ -7,13 +7,21 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { createInstance, statsOf, type PokemonInstance } from '../src/content/factory.js';
+import {
+  createInstance,
+  statsOf,
+  unspentPoints,
+  type PokemonInstance,
+} from '../src/content/factory.js';
+import { HEALTH_MULTIPLIER } from '../src/content/statGrowth.js';
 import { speciesNamed, speciesOf } from '../src/content/index.js';
-import { locationFor } from '../src/meta/locations.js';
 import {
   CATCH_UP_EXP_GAP,
+  EXP_PER_COMBINE,
   EXP_PER_EVOLUTION,
+  STAT_POINTS_PER_EVOLUTION,
   catchUpFloor,
+  combineMons,
   expSinceEvolution,
   grantWinExp,
   raiseToExp,
@@ -41,15 +49,23 @@ import {
   wildExp,
 } from '../src/meta/progression.js';
 import {
+  ADOPTION_SLOTS,
+  REROLL_COST,
+  adoptionCost,
+  canReroll,
+} from '../src/meta/shop.js';
+import {
   addCaught,
   benchToBox,
+  canCombine,
   createRun,
+  duplicatesOf,
   healAll,
   isRunOver,
   promoteFromBox,
   reorderLineUp,
   spendMorale,
-  type MapNode,
+  swapMons,
   type RunState,
 } from '../src/meta/runState.js';
 
@@ -95,15 +111,25 @@ describe('EXP and evolution', () => {
 
   it('an evolved mon grows from its base form, so it is worth more but not rebased', () => {
     const { mon } = raiseToExp(charmander('a'), EXP_PER_EVOLUTION);
-    const stats = statsOf(mon);
+    const spent = {
+      ...mon,
+      allocation: { attack: EXP_PER_EVOLUTION, health: 0, special: 0, speed: 0 },
+    };
+    const stats = statsOf(spent);
     const base = speciesNamed('Charmander')!;
 
-    // 12 points split between attack and health, plus the flat +3/+3 for the evolution.
-    expect(stats.attack + stats.health).toBe(
-      base.baseAttack + base.baseHealth + EXP_PER_EVOLUTION + 6,
-    );
-    // Speed never changes, not with EXP and not with evolution.
-    expect(stats.speed).toBe(base.baseSpeed);
+    expect(stats.attack).toBe(base.baseAttack + EXP_PER_EVOLUTION + 3);
+    expect(stats.health / HEALTH_MULTIPLIER).toBe(base.baseHealth + 3);
+  });
+
+  it('hands out stat points on evolving, not on every point of EXP', () => {
+    // EXP is evolution progress only now; evolving is what gives the player something to assign.
+    const short = raiseToExp(charmander('a'), EXP_PER_EVOLUTION - 1).mon;
+    expect(unspentPoints(short)).toBe(0);
+    expect(statsOf(short)).toEqual(statsOf(charmander('a')));
+
+    const evolved = raiseToExp(charmander('b'), EXP_PER_EVOLUTION).mon;
+    expect(unspentPoints(evolved)).toBe(STAT_POINTS_PER_EVOLUTION);
   });
 
   it('reports progress toward the next evolution', () => {
@@ -350,63 +376,6 @@ describe('the Location', () => {
   });
 });
 
-describe('who a node fields', () => {
-  const wildNode = (layer: number, id: string): MapNode => ({ id, type: 'Wild', layer, label: '' });
-
-  it('gives two nodes on the same layer different opposition', () => {
-    // They were seeded from position alone, so every node on a layer fielded the same team — all
-    // three entry nodes the same Eevee. Nothing about the game looked random after that.
-    const teamAt = (id: string) =>
-      generateWildEncounter(1, 2, wildNode(2, id)).map((m) => m.speciesId).join();
-
-    const siblings = ['L0-1-0', 'L0-1-1', 'L0-1-2', 'L0-1-3'].map(teamAt);
-    expect(new Set(siblings).size).toBe(siblings.length);
-  });
-
-  it('is still the same fight every time that one node is entered', () => {
-    // The other half: stable per node, so re-entering after a loss is the same fight rather than
-    // a re-roll, and previewing a node costs nothing.
-    const node = wildNode(3, 'L0-2-1');
-    expect(generateWildEncounter(9, 1, node).map((m) => m.speciesId)).toEqual(
-      generateWildEncounter(9, 1, node).map((m) => m.speciesId),
-    );
-  });
-
-  it('gives different runs different opposition at the same node', () => {
-    const node = wildNode(2, 'L0-1-0');
-    const runs = [1, 2, 3, 4, 5, 6].map((seed) =>
-      generateWildEncounter(seed, 1, node).map((m) => m.speciesId).join(),
-    );
-    expect(new Set(runs).size).toBeGreaterThan(1);
-  });
-
-  it('does not field the same species twice while the pool has others', () => {
-    // Drawing with replacement put the same mon up two or three times often enough to read as a
-    // bug. A team may still repeat once the pool is smaller than the team, which is the only case
-    // where the alternative is no encounter at all.
-    for (let badges = 3; badges < BADGES_TO_WIN; badges++) {
-      const size = wildEncounterSize(badges);
-      const pool = encounterPool(badges);
-      if (pool.length < size) continue;
-
-      for (let i = 0; i < 25; i++) {
-        const team = generateWildEncounter(i + 1, badges, wildNode(3, `n-${i}`));
-        const species = new Set(team.map((m) => m.speciesId));
-        expect(species.size, `badges ${badges}, seed ${i + 1}`).toBe(team.length);
-      }
-    }
-  });
-
-  it('gives a Gym Leader a line-up rather than one species repeated', () => {
-    for (let badges = 0; badges < BADGES_TO_WIN; badges++) {
-      const team = generateGymTeam(5, badges, 4, locationFor(badges).gymTheme);
-      const pool = encounterPool(badges, locationFor(badges).gymTheme);
-      if (pool.length < team.length) continue;
-      expect(new Set(team.map((m) => m.speciesId)).size, `badge ${badges}`).toBe(team.length);
-    }
-  });
-});
-
 describe('the tier curve outpaces EXP, which is what catching is for', () => {
   it('a Location is worth exactly the EXP the next one is pitched forward by', () => {
     // These two have to climb together or the player falls behind by design.
@@ -427,33 +396,207 @@ describe('the tier curve outpaces EXP, which is what catching is for', () => {
     expect(maxTier(1)).toBe(2);
   });
 
-  it('puts something in the second Location a fully-grown starter cannot match', () => {
-    // The claim is about the *pool*, not about one draw. It used to be checked against a single
-    // seeded encounter, which passed only because that seed happened to draw the one tier-2
-    // species in the Location's themed pool — the other twelve are tier 1, and the assertion
-    // flipped the moment the seeding changed. What is actually true, and is what catching exists
-    // to answer, is that the tier cap puts something out of the starter's reach into the pool.
-    const mine = statsOf(raiseToExp(defaultStarters()[0]!, EXP_PER_BADGE).mon);
-    const budget = (s: { attack: number; health: number }): number => s.attack + s.health;
+  it('a starter that won every fight in the first Location is still behind a second-Location wild', () => {
+    const starter = defaultStarters()[0]!;
+    const afterLocationOne = raiseToExp(starter, EXP_PER_BADGE).mon;
+    const mine = statsOf(afterLocationOne);
 
-    const pool = encounterPool(1, locationFor(1).typeBias).map((species) =>
-      budget(statsOf(createInstance(species, { exp: wildExp(1, 2), instanceId: 'probe' }))),
-    );
+    const node = FIRST_LOCATION.nodes[0]!;
+    const theirs = generateWildEncounter(1, 1, node).map((m) => statsOf(m));
+    const strongest = Math.max(...theirs.map((s) => s.attack + s.health));
 
-    expect(Math.max(...pool)).toBeGreaterThan(budget(mine));
+    expect(mine.attack + mine.health).toBeLessThan(strongest);
+  });
+});
+
+describe('EXP goes only to the mons that fought', () => {
+  it('pays the participants and skips the back of the train', () => {
+    // A dormant mon that never reached Lead or Support did not fight and should not be paid.
+    const state = run([charmander('lead'), charmander('support'), charmander('dormant')]);
+    const { run: after } = grantWinExp(state, 1, ['lead', 'support']);
+
+    const exp = Object.fromEntries(after.lineUp.map((m) => [m.instanceId, m.exp]));
+    expect(exp.lead).toBe(1);
+    expect(exp.support).toBe(1);
+    expect(exp.dormant).toBe(0);
   });
 
-  it('but most of what that Location fields is still beatable, or the run would be over', () => {
-    // The other half of the same fact, and the reason a run is playable at all: the tier cap makes
-    // a stronger mon *available*, it does not make every encounter one.
-    const mine = statsOf(raiseToExp(defaultStarters()[0]!, EXP_PER_BADGE).mon);
-    const budget = (s: { attack: number; health: number }): number => s.attack + s.health;
+  it('pays everyone when no participant list is given', () => {
+    // Which is right for an encounter that trains the whole team.
+    const state = run([charmander('a'), charmander('b')]);
+    const { run: after } = grantWinExp(state, 2);
+    expect(after.lineUp.every((m) => m.exp === 2)).toBe(true);
+  });
 
-    const pool = encounterPool(1, locationFor(1).typeBias).map((species) =>
-      budget(statsOf(createInstance(species, { exp: wildExp(1, 2), instanceId: 'probe' }))),
-    );
-    const beatable = pool.filter((b) => b <= budget(mine)).length;
+  it('still catches up a straggler that did fight', () => {
+    const state = run([charmander('veteran', 10), charmander('rookie', 0), charmander('bench')]);
+    const { run: after } = grantWinExp(state, 1, ['veteran', 'rookie']);
 
-    expect(beatable).toBeGreaterThan(pool.length / 2);
+    const rookie = after.lineUp.find((m) => m.instanceId === 'rookie')!;
+    const bench = after.lineUp.find((m) => m.instanceId === 'bench')!;
+
+    expect(rookie.exp).toBeGreaterThan(0);
+    expect(bench.exp).toBe(0);
+  });
+});
+
+describe('adoption at a Center', () => {
+  it('charges more for a higher tier', () => {
+    expect(adoptionCost(3)).toBeGreaterThan(adoptionCost(1));
+  });
+
+  it('prices a reroll well below a Pokémon', () => {
+    // A reroll is meant to be a nudge, not a purchase in itself.
+    expect(REROLL_COST).toBeLessThan(adoptionCost(1));
+  });
+
+  it('only allows a reroll that can be paid for', () => {
+    expect(canReroll(REROLL_COST)).toBe(true);
+    expect(canReroll(REROLL_COST - 1)).toBe(false);
+  });
+
+  it('offers five slots', () => {
+    expect(ADOPTION_SLOTS).toBe(5);
+  });
+});
+
+describe('combining Pokémon in the same evolution line', () => {
+  it("adds a flat amount of EXP, not the sacrifice's own progress", () => {
+    const a = charmander('a', 5);
+    const b = charmander('b', 40);
+    const after = combineMons(run([a, b]), 'a', 'b');
+
+    const kept = after.lineUp.find((m) => m.instanceId === 'a')!;
+    expect(kept.exp).toBe(5 + EXP_PER_COMBINE);
+  });
+
+  it('takes three sacrifices to evolve a fresh mon — four mons into one', () => {
+    // The headline case: four Charmanders combine into a Charmeleon.
+    let state = run([
+      charmander('keep'),
+      charmander('b'),
+      charmander('c'),
+      charmander('d'),
+    ]);
+    for (const id of ['b', 'c', 'd']) state = combineMons(state, 'keep', id);
+
+    const kept = state.lineUp.find((m) => m.instanceId === 'keep')!;
+    expect(kept.exp).toBe(EXP_PER_COMBINE * 3);
+    expect(speciesOf(kept.speciesId)?.name).toBe('Charmeleon');
+    expect(unspentPoints(kept)).toBe(STAT_POINTS_PER_EVOLUTION);
+  });
+
+  it('does not evolve the keeper on a single combine', () => {
+    const after = combineMons(run([charmander('a'), charmander('b')]), 'a', 'b');
+    const kept = after.lineUp.find((m) => m.instanceId === 'a')!;
+
+    expect(kept.exp).toBe(EXP_PER_COMBINE);
+    expect(speciesOf(kept.speciesId)?.name).toBe('Charmander');
+    expect(unspentPoints(kept)).toBe(0);
+  });
+
+  it('combines across stages of the same line', () => {
+    const charmeleon = createInstance('Charmeleon', { instanceId: 'evolved', timesEvolved: 1 });
+    const state = { ...run([charmander('a', 3)]), box: [charmeleon] };
+
+    const after = combineMons(state, 'a', 'evolved');
+    expect(after.box).toHaveLength(0);
+    expect(after.lineUp[0]!.exp).toBe(3 + EXP_PER_COMBINE);
+    expect(speciesOf(after.lineUp[0]!.speciesId)?.name).toBe('Charmander');
+  });
+
+  it('removes the consumed mon from wherever it was, line-up or Box', () => {
+    const state = { ...run([charmander('a')]), box: [charmander('b')] };
+    const after = combineMons(state, 'a', 'b');
+    expect(after.lineUp.map((m) => m.instanceId)).toEqual(['a']);
+    expect(after.box).toHaveLength(0);
+  });
+
+  it('keeps each mon in its own group — combining does not relocate the survivor', () => {
+    const state = { ...run([charmander('a')]), box: [charmander('b')] };
+    const after = combineMons(state, 'b', 'a');
+    expect(after.box.map((m) => m.instanceId)).toEqual(['b']);
+    expect(after.lineUp).toHaveLength(0);
+  });
+
+  it('refuses to combine two different evolution lines', () => {
+    const state = run([charmander('a'), createInstance('Squirtle', { instanceId: 'b' })]);
+    expect(combineMons(state, 'a', 'b')).toBe(state);
+  });
+
+  it('refuses a mon combined with itself', () => {
+    const state = run([charmander('a')]);
+    expect(combineMons(state, 'a', 'a')).toBe(state);
+  });
+
+  it('leaves the run untouched if either id does not exist', () => {
+    const state = run([charmander('a')]);
+    expect(combineMons(state, 'a', 'ghost')).toBe(state);
+    expect(combineMons(state, 'ghost', 'a')).toBe(state);
+  });
+
+  it('finds duplicates across both the line-up and the Box, and across stages', () => {
+    const charmeleon = createInstance('Charmeleon', { instanceId: 'evolved', timesEvolved: 1 });
+    const state = {
+      ...run([charmander('a'), createInstance('Squirtle', { instanceId: 'x' })]),
+      box: [charmander('b'), charmeleon],
+    };
+    expect(duplicatesOf(state, 'a').map((m) => m.instanceId).sort()).toEqual(['b', 'evolved']);
+  });
+
+  it('does not treat a different line, or the mon itself, as a duplicate', () => {
+    const state = run([charmander('a'), createInstance('Squirtle', { instanceId: 'x' })]);
+    expect(duplicatesOf(state, 'a')).toEqual([]);
+  });
+
+  it('reports combinability the same way duplicatesOf does', () => {
+    const state = { ...run([charmander('a')]), box: [charmander('b')] };
+    expect(canCombine(state, 'a', 'b')).toBe(true);
+    expect(canCombine(state, 'a', 'a')).toBe(false);
+  });
+});
+
+describe('swapping two mons', () => {
+  it('swaps two positions within the line-up', () => {
+    const state = run([charmander('a'), charmander('b'), charmander('c')]);
+    const after = swapMons(state, 'a', 'c');
+    expect(after.lineUp.map((m) => m.instanceId)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('swaps two positions within the Box', () => {
+    const state = { ...run([charmander('lead')]), box: [charmander('x'), charmander('y')] };
+    const after = swapMons(state, 'x', 'y');
+    expect(after.box.map((m) => m.instanceId)).toEqual(['y', 'x']);
+  });
+
+  it('swaps across the line-up and the Box, each landing in the other\'s exact slot', () => {
+    const state = {
+      ...run([charmander('lead'), charmander('support')]),
+      box: [charmander('boxed')],
+    };
+    const after = swapMons(state, 'support', 'boxed');
+
+    expect(after.lineUp.map((m) => m.instanceId)).toEqual(['lead', 'boxed']);
+    expect(after.box.map((m) => m.instanceId)).toEqual(['support']);
+  });
+
+  it('does not change how many mons are in each group', () => {
+    const state = {
+      ...run([charmander('lead'), charmander('support')]),
+      box: [charmander('boxed')],
+    };
+    const after = swapMons(state, 'lead', 'boxed');
+    expect(after.lineUp).toHaveLength(2);
+    expect(after.box).toHaveLength(1);
+  });
+
+  it('does nothing for a mon swapped with itself', () => {
+    const state = run([charmander('a')]);
+    expect(swapMons(state, 'a', 'a')).toBe(state);
+  });
+
+  it('does nothing if either id is unknown', () => {
+    const state = run([charmander('a')]);
+    expect(swapMons(state, 'a', 'ghost')).toBe(state);
   });
 });

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { STEP_CAP, SUDDEN_DEATH_STEP, runPrecomputed } from '../src/sim/index.js';
 import { createInstance, statsOf, toCombatant, toLineUp } from '../src/content/factory.js';
-import { SPECIES, speciesNamed, speciesOfType } from '../src/content/index.js';
+import { BASE_SPEED, SPECIES, speciesNamed, speciesOfType } from '../src/content/index.js';
 
 const named = (name: string) => {
   const s = speciesNamed(name);
@@ -22,8 +22,9 @@ describe('building combatants from roster species', () => {
   it('carries stats, types and the passive onto the combatant', () => {
     const charmander = toCombatant(createInstance('Charmander', { instanceId: 'c1' }));
 
-    expect(charmander.currentStats).toEqual({ attack: 3, health: 4, speed: 1 });
-    expect(charmander.currentHP).toBe(4);
+    // 4 base Health, tripled; Speed is the flat starting value, not the tier-derived one.
+    expect(charmander.currentStats).toEqual({ attack: 3, health: 12, speed: BASE_SPEED, special: 3 });
+    expect(charmander.currentHP).toBe(12);
     expect(charmander.types).toEqual(['Fire']);
     expect(charmander.passive?.displayName).toBe('Ember Burst');
   });
@@ -43,11 +44,22 @@ describe('building combatants from roster species', () => {
     expect(c.currentHP).toBe(2);
   });
 
-  it('derives stats rather than storing them', () => {
+  it('derives stats from the allocation rather than storing them', () => {
     const fresh = createInstance('Charmander', { instanceId: 'c1' });
-    const grown = { ...fresh, exp: 20 };
+    const grown = {
+      ...fresh,
+      exp: 20,
+      allocation: { attack: 20, health: 0, special: 0, speed: 0 },
+    };
 
     expect(statsOf(fresh)).not.toEqual(statsOf(grown));
+  });
+
+  it('shows nothing for EXP that has not been spent yet', () => {
+    const fresh = createInstance('Charmander', { instanceId: 'c1' });
+    const unspent = { ...fresh, exp: 20 };
+
+    expect(statsOf(unspent)).toEqual(statsOf(fresh));
   });
 
   it('rejects a species that is not in the curated roster', () => {
@@ -63,7 +75,7 @@ describe('building combatants from roster species', () => {
     runPrecomputed(toLineUp([instance]), toLineUp([createInstance('Squirtle', { instanceId: 's1' })]), 1);
 
     expect(instance.currentHP).toBeNull();
-    expect(statsOf(instance)).toEqual({ attack: 3, health: 4, speed: 1 });
+    expect(statsOf(instance)).toEqual({ attack: 3, health: 12, speed: BASE_SPEED, special: 3 });
   });
 });
 
@@ -146,11 +158,23 @@ describe('what the real content does to fight length', () => {
     expect(Math.abs(t6.finalState.stepNumber - t1.finalState.stepNumber)).toBeLessThanOrEqual(2);
   });
 
-  it('EXP is what lengthens a fight', () => {
-    const fight = (exp: number) =>
+  it('invested stats are what lengthen a fight', () => {
+    // EXP is evolution progress now and moves no stats on its own, so the thing that lengthens a
+    // fight is what has actually been put into Health.
+    const fight = (health: number) =>
       runPrecomputed(
-        toLineUp([createInstance('Charmander', { exp, instanceId: 'a1' })]),
-        toLineUp([createInstance('Squirtle', { exp, instanceId: 'b1' })]),
+        toLineUp([
+          createInstance('Charmander', {
+            instanceId: 'a1',
+            allocation: { attack: 0, health, special: 0, speed: 0 },
+          }),
+        ]),
+        toLineUp([
+          createInstance('Squirtle', {
+            instanceId: 'b1',
+            allocation: { attack: 0, health, special: 0, speed: 0 },
+          }),
+        ]),
         1,
       ).finalState.stepNumber;
 
@@ -200,5 +224,44 @@ describe('type synergies fire off real species types', () => {
       .filter((e) => e.kind === 'TypeSynergy' && e.sourceSide === 'A')
       .map((e) => e.synergyType);
     expect(types).toEqual(['Bug', 'Ghost']);
+  });
+});
+
+describe('what tripled Health did to fight length', () => {
+  const fightLengths = (count: number): number[] => {
+    const lengths: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const pick = (n: number) => SPECIES[(i * 13 + n * 47) % SPECIES.length]!;
+      const side = (p: string) =>
+        toLineUp([0, 1, 2].map((j) => createInstance(pick(j), { exp: i % 30, instanceId: `${p}${i}-${j}` })));
+      lengths.push(runPrecomputed(side('a'), side('b'), i + 1).finalState.stepNumber);
+    }
+    return lengths;
+  };
+
+  it('makes a typical fight run well past a handful of Steps', () => {
+    const lengths = fightLengths(200).sort((a, b) => a - b);
+    const median = lengths[Math.floor(lengths.length / 2)]!;
+
+    // Before the multiplier this sat around six or seven.
+    expect(median).toBeGreaterThan(8);
+  });
+
+  it('still never reaches the safety cap', () => {
+    // Longer fights must not become unresolvable ones; sudden death has to keep working against
+    // three times the health it was tuned for.
+    for (const length of fightLengths(200)) {
+      expect(length).toBeLessThan(STEP_CAP);
+    }
+  });
+
+  it('now routinely outruns the Step sudden death starts at', () => {
+    // Recorded, not fixed. SUDDEN_DEATH_STEP is 30 and was chosen when the longest real fight was
+    // 17. Fights now reach the low forties, so sudden death has gone from a safety valve that
+    // fired once in four thousand fights to something that decides roughly one in sixteen. The
+    // constant needs raising in the balance pass; this test will fail when it is, which is the
+    // point.
+    const longest = Math.max(...fightLengths(200));
+    expect(longest).toBeGreaterThan(SUDDEN_DEATH_STEP);
   });
 });

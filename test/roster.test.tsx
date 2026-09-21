@@ -12,11 +12,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { DRAG_MIME, readDragPayload, setDragPayload } from '../src/ui/dragDrop.js';
-import { BoxScreen, TeamBuilder } from '../src/ui/RunScreen.js';
+import { BoxScreen, GrowthPanel, TeamBuilder } from '../src/ui/RunScreen.js';
+import { PokemonDetailModal } from '../src/ui/PokemonDetailModal.js';
 import { useRunStore } from '../src/state/runStore.js';
-import { createInstance, statsOf } from '../src/content/factory.js';
+import { createInstance, statsOf, unspentPoints } from '../src/content/factory.js';
 import { createRun } from '../src/meta/runState.js';
 import { MAX_PARTY_SIZE } from '../src/meta/progression.js';
+import { EXP_PER_COMBINE } from '../src/meta/experience.js';
 
 afterEach(cleanup);
 
@@ -94,114 +96,54 @@ describe('the team builder', () => {
     expect(names).toEqual(['Charmander', 'Squirtle', 'Pidgey']);
   });
 
-  it('reorders with the arrow buttons', () => {
+  it('has no reorder or remove buttons — those are drag-only now', () => {
+    // The X and the arrows were removed: drag-to-reorder and drag-to-Box cover both, and a card
+    // full of small buttons was the thing this redesign was for.
     render(<TeamBuilder />);
-    // The second card's "move forward" arrow.
-    const backs = screen.getAllByTitle('Move forward');
-    fireEvent.click(backs[1]!);
-
-    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'a', 'c']);
+    expect(screen.queryByTitle('Move forward')).toBeNull();
+    expect(screen.queryByTitle('Send to the Box')).toBeNull();
   });
 
-  it('sends a mon to the Box', () => {
+  it('opens the detail modal on click', () => {
     render(<TeamBuilder />);
-    fireEvent.click(screen.getAllByTitle('Send to the Box')[0]!);
-
-    const run = useRunStore.getState().run;
-    expect(run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'c']);
-    expect(run.box.map((m) => m.instanceId)).toEqual(['a']);
+    fireEvent.click(screen.getByText('Charmander'));
+    expect(useRunStore.getState().detailInstanceId).toBe('a');
   });
 
-  it('will not empty the line-up', () => {
-    useRunStore.setState({ run: createRun(1, [createInstance('Charmander', { instanceId: 'x' })]) });
-    render(<TeamBuilder />);
-
-    const button = screen.getByTitle('Send to the Box') as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-  });
-
-  it('swaps two mons when one is dropped on the other', () => {
-    // A drop on a slot is a swap, not an insert. Inserting has to answer "before or after?", and a
-    // drop on a card cannot — which is what used to land mons a slot away from where they were
-    // aimed, and only ever when they were dragged rightwards.
+  it('still reorders by dragging a card into a gap', () => {
+    // Covered in depth further down; this just confirms the affordance survived the redesign.
     const { container } = render(<TeamBuilder />);
-    const slots = container.querySelectorAll('.roster-slot');
+    fireEvent.drop(container.querySelectorAll('.slot-gap')[0]!, {
+      dataTransfer: payloadFor('c', 'lineUp'),
+    });
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'a', 'b']);
+  });
 
-    fireEvent.drop(slots[2]!, { dataTransfer: payloadFor('a', 'lineUp') });
+  it('reorders by dropping into a gap between slots', () => {
+    const { container } = render(<TeamBuilder />);
+    const gaps = container.querySelectorAll('.slot-gap');
+
+    // Drop the third mon into the first gap — it should land at the front.
+    fireEvent.drop(gaps[0]!, { dataTransfer: payloadFor('c', 'lineUp') });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('swaps two mons when one is dropped directly onto the other', () => {
+    // The new model: a card drop always does something. Two different lines, so this swaps
+    // rather than combines.
+    render(<TeamBuilder />);
+    const charmanderCard = screen.getByText('Charmander').closest('.team-card')!;
+    fireEvent.drop(charmanderCard, { dataTransfer: payloadFor('c', 'lineUp') });
 
     expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'b', 'a']);
-  });
-
-  it('swaps the same way in either direction', () => {
-    const { container } = render(<TeamBuilder />);
-    const slots = container.querySelectorAll('.roster-slot');
-
-    fireEvent.drop(slots[0]!, { dataTransfer: payloadFor('c', 'lineUp') });
-
-    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['c', 'b', 'a']);
-  });
-
-  it('draws every slot the line-up could hold, not only the filled ones', () => {
-    const { container } = render(<TeamBuilder />);
-    expect(container.querySelectorAll('.roster-slot')).toHaveLength(MAX_PARTY_SIZE);
-    expect(container.querySelectorAll('.roster-slot.empty')).toHaveLength(MAX_PARTY_SIZE - 3);
-  });
-
-  it('moves a mon to the end when it is dropped on an empty slot', () => {
-    // The line-up is dense — there is no hole to leave in the middle of it — so an empty slot
-    // means "last", whichever empty slot it was.
-    const { container } = render(<TeamBuilder />);
-    const empty = container.querySelectorAll('.roster-slot.empty');
-
-    fireEvent.drop(empty[1]!, { dataTransfer: payloadFor('a', 'lineUp') });
-
-    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'c', 'a']);
-  });
-
-  it('brings a Box mon into the empty slot it was dropped on', () => {
-    useRunStore.setState({
-      run: {
-        ...useRunStore.getState().run,
-        box: [createInstance('Oddish', { instanceId: 'boxed' })],
-      },
-    });
-    const { container } = render(<TeamBuilder />);
-
-    fireEvent.drop(container.querySelector('.roster-slot.empty')!, {
-      dataTransfer: payloadFor('boxed', 'box'),
-    });
-
-    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual([
-      'a',
-      'b',
-      'c',
-      'boxed',
-    ]);
-    expect(useRunStore.getState().run.box).toHaveLength(0);
-  });
-
-  it('exchanges a Box mon with whoever is in the slot it was dropped on', () => {
-    useRunStore.setState({
-      run: {
-        ...useRunStore.getState().run,
-        box: [createInstance('Oddish', { instanceId: 'boxed' })],
-      },
-    });
-    const { container } = render(<TeamBuilder />);
-    const slots = container.querySelectorAll('.roster-slot');
-
-    fireEvent.drop(slots[1]!, { dataTransfer: payloadFor('boxed', 'box') });
-
-    const run = useRunStore.getState().run;
-    expect(run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'boxed', 'c']);
-    expect(run.box.map((m) => m.instanceId)).toEqual(['b']);
   });
 
   it('ignores a ball dropped on the roster', () => {
     const { container } = render(<TeamBuilder />);
     const before = useRunStore.getState().run.lineUp.map((m) => m.instanceId);
 
-    fireEvent.drop(container.querySelector('.roster-slot')!, {
+    fireEvent.drop(container.querySelector('.slot-gap')!, {
       dataTransfer: fakeDataTransfer({
         [DRAG_MIME]: JSON.stringify({ kind: 'ball', tier: 'Poke' }),
       }),
@@ -251,12 +193,13 @@ describe('the Box screen', () => {
     expect(run.box.map((m) => m.instanceId)).not.toContain('x');
   });
 
-  it('moves a mon by dragging it from the Box onto a line-up slot', () => {
+  it('moves a mon by dragging it from the Box onto the line-up', () => {
+    // The line-up section is now a SlottedRow (a .slot-row), not a .box-grid — dropping on its
+    // background (not a gap, not a card) inserts at the end via the row's own catch-all handler.
     const { container } = render(<BoxScreen />);
-    const lineUpGrid = container.querySelectorAll('.box-grid')[0]!;
-    const empty = lineUpGrid.querySelectorAll('.roster-slot.empty');
+    const lineUpRow = container.querySelector('.slot-row')!;
 
-    fireEvent.drop(empty[0]!, { dataTransfer: payloadFor('y', 'box') });
+    fireEvent.drop(lineUpRow, { dataTransfer: payloadFor('y', 'box') });
 
     expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'y']);
   });
@@ -272,14 +215,16 @@ describe('the Box screen', () => {
       },
     });
     const { container } = render(<BoxScreen />);
-    const boxGrid = container.querySelectorAll('.box-grid')[1]!;
+    // The line-up section is a .slot-row now; .box-grid refers only to storage, so there's just
+    // the one.
+    const boxGrid = container.querySelector('.box-grid')!;
 
     fireEvent.drop(boxGrid, { dataTransfer: payloadFor('b', 'lineUp') });
 
     expect(useRunStore.getState().run.box.map((m) => m.instanceId)).toContain('b');
   });
 
-  it('will not add past a full line-up, and says what to do instead', () => {
+  it('refuses to overfill the line-up', () => {
     useRunStore.setState({
       run: {
         ...useRunStore.getState().run,
@@ -290,211 +235,239 @@ describe('the Box screen', () => {
     });
     render(<BoxScreen />);
 
-    const add = screen.getAllByTitle(/Line-up is full/)[0] as HTMLButtonElement;
+    const add = screen.getAllByTitle('Line-up is full')[0] as HTMLButtonElement;
     expect(add.disabled).toBe(true);
   });
 
-  it('still lets a full line-up be traded into, by dropping onto one of its slots', () => {
-    // The old behaviour was a drop that silently did nothing, which is indistinguishable from a
-    // broken drag. An exchange always has somewhere to put the mon it displaced.
-    useRunStore.setState({
-      run: {
-        ...useRunStore.getState().run,
-        lineUp: Array.from({ length: MAX_PARTY_SIZE }, (_, i) =>
-          createInstance('Charmander', { instanceId: `m${i}` }),
-        ),
-      },
-    });
-    const { container } = render(<BoxScreen />);
-    const slots = container.querySelectorAll('.box-grid')[0]!.querySelectorAll('.roster-slot');
-
-    fireEvent.drop(slots[2]!, { dataTransfer: payloadFor('x', 'box') });
-
-    const run = useRunStore.getState().run;
-    expect(run.lineUp).toHaveLength(MAX_PARTY_SIZE);
-    expect(run.lineUp[2]!.instanceId).toBe('x');
-    expect(run.box.map((m) => m.instanceId)).toContain('m2');
-  });
-
-  it('shows empty slots in the Box rather than a blank panel', () => {
+  it('says so when the Box is empty rather than showing a blank panel', () => {
     useRunStore.setState({ run: { ...useRunStore.getState().run, box: [] } });
-    const { container } = render(<BoxScreen />);
-
-    const store = container.querySelector('.box-store')!;
-    expect(store.querySelectorAll('.roster-slot.empty').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/store a mon here/).length).toBeGreaterThan(0);
+    render(<BoxScreen />);
+    expect(screen.getByText(/Nothing stored/)).toBeDefined();
   });
 });
 
-describe('the type buffs outside battle', () => {
+describe('spending EXP', () => {
   beforeEach(() => {
     useRunStore.setState({
-      run: createRun(1, [
-        createInstance('Charmander', { instanceId: 'a' }),
-        createInstance('Squirtle', { instanceId: 'b' }),
-        createInstance('Pidgey', { instanceId: 'c' }),
-      ]),
+      run: {
+        ...createRun(1, [createInstance('Charmander', { instanceId: 'a' })]),
+        lineUp: [createInstance('Charmander', { instanceId: 'a', statPoints: 2 })],
+      },
       phase: 'map',
-      lastFusion: null,
     });
   });
 
-  it('names every synergy the line-up is carrying, with its count', () => {
-    render(<TeamBuilder />);
-
-    // One of each: the same counts the battle screen's corners would show for this team.
-    expect(screen.getByText('Ember Burst x1')).toBeDefined();
-    expect(screen.getByText('Shell Guard x1')).toBeDefined();
-    expect(screen.getByText('Steady Growth x1')).toBeDefined();
-    expect(screen.getByText('Tailwind x1')).toBeDefined();
+  it('offers a choice of all four stats', () => {
+    render(<GrowthPanel />);
+    for (const label of ['ATT', 'HEA', 'SP', 'SPE']) {
+      expect(screen.getByRole('button', { name: label })).toBeDefined();
+    }
   });
 
-  it('counts a second mon of a type, so the readout moves as the team is edited', () => {
+  it('spends one point on the chosen stat and no more', () => {
+    render(<GrowthPanel />);
+    const before = statsOf(useRunStore.getState().run.lineUp[0]!);
+
+    fireEvent.click(screen.getByRole('button', { name: 'ATT' }));
+
+    const mon = useRunStore.getState().run.lineUp[0]!;
+    expect(statsOf(mon).attack).toBe(before.attack + 1);
+    expect(unspentPoints(mon)).toBe(1);
+  });
+
+  it('disappears once every point is spent', () => {
+    const { rerender } = render(<GrowthPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'HEA' }));
+    rerender(<GrowthPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'SPE' }));
+    rerender(<GrowthPanel />);
+
+    expect(screen.queryByRole('button', { name: 'ATT' })).toBeNull();
+  });
+
+  it('will not spend a point a mon does not have', () => {
+    useRunStore.setState({
+      run: { ...useRunStore.getState().run, lineUp: [createInstance('Charmander', { instanceId: 'a' })] },
+    });
+    const { container } = render(<GrowthPanel />);
+    expect(container.querySelector('.growth-panel')).toBeNull();
+  });
+
+  it('stops offering Speed once it is capped', () => {
     useRunStore.setState({
       run: {
         ...useRunStore.getState().run,
         lineUp: [
-          createInstance('Charmander', { instanceId: 'a' }),
-          createInstance('Charmander', { instanceId: 'd' }),
+          {
+            ...createInstance('Charmander', { instanceId: 'a' }),
+            statPoints: 5,
+            allocation: { attack: 0, health: 0, special: 0, speed: 200 },
+          },
         ],
       },
     });
-    render(<TeamBuilder />);
-
-    expect(screen.getByText('Ember Burst x2')).toBeDefined();
-  });
-
-  it('spells the effect out where there is room for it, on the Box screen', () => {
-    render(<BoxScreen />);
-    expect(screen.getByText(/damage to the foe's Lead as the fight opens/)).toBeDefined();
+    render(<GrowthPanel />);
+    expect((screen.getByRole('button', { name: 'SPE' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
-describe('combining two of a family', () => {
+describe('the Pokémon detail modal', () => {
+  beforeEach(() => {
+    useRunStore.setState({
+      run: {
+        ...createRun(1, [createInstance('Charmander', { instanceId: 'a', statPoints: 3 })]),
+        box: [createInstance('Charmander', { instanceId: 'b' })],
+      },
+      detailInstanceId: 'a',
+    });
+  });
+
+  it('shows the species, its ability, and its stats', () => {
+    render(<PokemonDetailModal instanceId="a" />);
+    expect(screen.getByRole('heading', { name: 'Charmander' })).toBeDefined();
+    expect(screen.getByText('Ember Burst')).toBeDefined();
+    expect(screen.getByText(/burn/i)).toBeDefined();
+  });
+
+  it('offers the pending points to spend, and spending one updates the mon', () => {
+    render(<PokemonDetailModal instanceId="a" />);
+    expect(screen.getByText(/3 stat points to spend/i)).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ATT' }));
+
+    const mon = useRunStore.getState().run.lineUp[0]!;
+    expect(mon.allocation.attack).toBe(1);
+  });
+
+  it('hides the points section once nothing is pending', () => {
+    useRunStore.setState({
+      run: { ...useRunStore.getState().run, lineUp: [createInstance('Charmander', { instanceId: 'a' })] },
+    });
+    render(<PokemonDetailModal instanceId="a" />);
+    expect(screen.queryByText(/points to spend/i)).toBeNull();
+  });
+
+  it('lists a same-line duplicate and combines on click, adding a flat evolution\'s worth', () => {
+    render(<PokemonDetailModal instanceId="a" />);
+    fireEvent.click(screen.getByTitle(/Combine with this Charmander/));
+
+    const run = useRunStore.getState().run;
+    expect(run.box).toHaveLength(0);
+    // A flat EXP_PER_COMBINE toward evolving, regardless of the sacrifice's own progress.
+    expect(run.lineUp[0]!.exp).toBe(EXP_PER_COMBINE);
+  });
+
+  it('lists a duplicate elsewhere in the same evolution line, not just the same species', () => {
+    useRunStore.setState({
+      run: {
+        ...useRunStore.getState().run,
+        box: [createInstance('Charmeleon', { instanceId: 'evolved', timesEvolved: 1 })],
+      },
+    });
+    render(<PokemonDetailModal instanceId="a" />);
+    expect(screen.getByTitle(/Combine with this Charmeleon/)).toBeDefined();
+  });
+
+  it('closes on scrim click but not on panel click', () => {
+    const { container } = render(<PokemonDetailModal instanceId="a" />);
+    fireEvent.click(container.querySelector('.detail-modal')!);
+    expect(useRunStore.getState().detailInstanceId).toBe('a');
+
+    fireEvent.click(container.querySelector('.modal-scrim')!);
+    expect(useRunStore.getState().detailInstanceId).toBeNull();
+  });
+
+  it('closes cleanly if the mon it was viewing disappears', () => {
+    useRunStore.setState({ run: { ...useRunStore.getState().run, lineUp: [], box: [] } });
+    render(<PokemonDetailModal instanceId="a" />);
+    expect(useRunStore.getState().detailInstanceId).toBeNull();
+  });
+});
+
+describe('card drops: combine or swap, always one or the other', () => {
   beforeEach(() => {
     useRunStore.setState({
       run: {
         ...createRun(1, [
-          createInstance('Charmander', { instanceId: 'a', exp: 3 }),
-          createInstance('Charmeleon', { instanceId: 'b', exp: 4, timesEvolved: 1 }),
-          createInstance('Squirtle', { instanceId: 'c' }),
+          createInstance('Charmander', { instanceId: 'a' }),
+          createInstance('Squirtle', { instanceId: 'x' }),
         ]),
-        box: [createInstance('Charmander', { instanceId: 'boxed' })],
+        box: [createInstance('Charmander', { instanceId: 'dupe' })],
       },
       phase: 'map',
-      lastFusion: null,
     });
   });
 
-  it('offers a mon with a partner and refuses one without', () => {
-    render(<TeamBuilder />);
-
-    expect(screen.getAllByTitle('Combine with another of its family')).toHaveLength(2);
-    const alone = screen.getByTitle('Nothing of its family to combine with') as HTMLButtonElement;
-    expect(alone.disabled).toBe(true);
-  });
-
-  it('merges the pair the player picks, keeping the evolved form', () => {
-    render(<TeamBuilder />);
-    const before = {
-      charmander: statsOf(useRunStore.getState().run.lineUp[0]!),
-      charmeleon: statsOf(useRunStore.getState().run.lineUp[1]!),
-    };
-
-    // Pick the Charmander, then commit into the Charmeleon.
-    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
-    fireEvent.click(screen.getByTitle('Combine into Charmeleon'));
-
-    const lineUp = useRunStore.getState().run.lineUp;
-    expect(lineUp.map((m) => m.instanceId)).toEqual(['b', 'c']);
-
-    const merged = statsOf(lineUp[0]!);
-    expect(merged.attack).toBe(Math.max(before.charmander.attack, before.charmeleon.attack) + 1);
-    expect(merged.health).toBe(Math.max(before.charmander.health, before.charmeleon.health) + 1);
-  });
-
-  it('shows what the merge would produce before it is committed', () => {
-    render(<TeamBuilder />);
-    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
-
-    expect(screen.getByText(/if combined/)).toBeDefined();
-  });
-
-  it('cancels on a second press, leaving the team alone', () => {
-    render(<TeamBuilder />);
-    const start = screen.getAllByTitle('Combine with another of its family')[0]!;
-
-    fireEvent.click(start);
-    fireEvent.click(screen.getByTitle('Cancel combine'));
-
-    expect(screen.queryByTitle('Combine into Charmeleon')).toBeNull();
-    expect(useRunStore.getState().run.lineUp).toHaveLength(3);
-  });
-
-  it('does NOT merge on a plain drag onto family — that is a swap', () => {
-    // The regression this guards is the worst one the roster had: a drag was treated as arming a
-    // combine, so dragging a Charmander past a Charmeleon to change the batting order destroyed
-    // one of them. A drag moves a mon. Only ⊕ combines.
+  it('combines when a same-line mon is dropped directly onto a card', () => {
     const { container } = render(<TeamBuilder />);
-    const slots = container.querySelectorAll('.roster-slot');
+    const charmanderCard = screen.getByText('Charmander').closest('.team-card')!;
 
-    fireEvent.dragStart(container.querySelectorAll('.team-card')[0]!, {
-      dataTransfer: payloadFor('a', 'lineUp'),
-    });
-    fireEvent.drop(slots[1]!, { dataTransfer: payloadFor('a', 'lineUp') });
-
-    const lineUp = useRunStore.getState().run.lineUp;
-    expect(lineUp).toHaveLength(3);
-    expect(lineUp.map((m) => m.instanceId)).toEqual(['b', 'a', 'c']);
-  });
-
-  it('merges by dropping an armed mon onto its family', () => {
-    const { container } = render(<TeamBuilder />);
-
-    // Armed with the button first — which is the only thing that turns a drop into a merge.
-    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
-    fireEvent.dragStart(container.querySelectorAll('.team-card')[0]!, {
-      dataTransfer: payloadFor('a', 'lineUp'),
-    });
-    fireEvent.drop(container.querySelectorAll('.roster-slot')[1]!, {
-      dataTransfer: payloadFor('a', 'lineUp'),
-    });
-
-    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'c']);
-  });
-
-  it('will not merge an armed mon onto something outside its family', () => {
-    const { container } = render(<TeamBuilder />);
-
-    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
-    fireEvent.dragStart(container.querySelectorAll('.team-card')[0]!, {
-      dataTransfer: payloadFor('a', 'lineUp'),
-    });
-    fireEvent.drop(container.querySelectorAll('.roster-slot')[2]!, {
-      dataTransfer: payloadFor('a', 'lineUp'),
-    });
-
-    // Three still there: a drop on a mon of another family is a swap, never a merge.
-    expect(useRunStore.getState().run.lineUp).toHaveLength(3);
-  });
-
-  it('feeds a boxed mon to one that is fighting, and says what came out', () => {
-    render(<BoxScreen />);
-
-    fireEvent.click(screen.getAllByTitle('Combine with another of its family').pop()!);
-    fireEvent.click(screen.getByTitle('Combine into Charmeleon'));
+    fireEvent.drop(charmanderCard, { dataTransfer: payloadFor('dupe', 'box') });
 
     const run = useRunStore.getState().run;
     expect(run.box).toHaveLength(0);
-    expect(run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'b', 'c']);
-    expect(screen.getByText(/absorbed its own kind/)).toBeDefined();
+    expect(run.lineUp.find((m) => m.instanceId === 'a')!.exp).toBe(EXP_PER_COMBINE);
+    // The gap-based insert handler must not also have fired for this drop.
+    expect(container.querySelectorAll('.team-card')).toHaveLength(2);
   });
 
-  it('marks a mon that has been fused', () => {
+  it('swaps rather than combining when the two are different lines', () => {
+    // The old model silently declined a non-combinable card drop, which read as broken. The new
+    // one always does something: a mismatched pair swaps places instead.
     render(<TeamBuilder />);
-    fireEvent.click(screen.getAllByTitle('Combine with another of its family')[0]!);
-    fireEvent.click(screen.getByTitle('Combine into Charmeleon'));
+    const charmanderCard = screen.getByText('Charmander').closest('.team-card')!;
 
-    expect(screen.getByTitle('1 mon folded into this one')).toBeDefined();
+    fireEvent.drop(charmanderCard, { dataTransfer: payloadFor('x', 'lineUp') });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['x', 'a']);
+  });
+
+  it('swaps across the line-up and the Box in one drop', () => {
+    render(<TeamBuilder />);
+    // 'dupe' is a Charmander in the Box, same line as the line-up's Charmander, so drop it onto
+    // Squirtle instead to force a cross-group swap rather than a combine.
+    const squirtleCard = screen.getByText('Squirtle').closest('.team-card')!;
+
+    fireEvent.drop(squirtleCard, { dataTransfer: payloadFor('dupe', 'box') });
+
+    const run = useRunStore.getState().run;
+    expect(run.lineUp.map((m) => m.instanceId)).toEqual(['a', 'dupe']);
+    expect(run.box.map((m) => m.instanceId)).toEqual(['x']);
+  });
+});
+
+describe('the Box screen line-up gains the same gaps and card behaviour', () => {
+  beforeEach(() => {
+    useRunStore.setState({
+      run: {
+        ...createRun(1, [
+          createInstance('Charmander', { instanceId: 'a' }),
+          createInstance('Squirtle', { instanceId: 'b' }),
+        ]),
+        box: [createInstance('Charmander', { instanceId: 'dupe' })],
+      },
+      phase: 'box',
+    });
+  });
+
+  it('inserts via a gap in the Box screen\'s own line-up row, not just the bottom strip', () => {
+    const { container } = render(<BoxScreen />);
+    const gaps = container.querySelectorAll('.slot-row .slot-gap');
+    expect(gaps.length).toBeGreaterThan(0);
+
+    fireEvent.drop(gaps[0]!, { dataTransfer: payloadFor('dupe', 'box') });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['dupe', 'a', 'b']);
+  });
+
+  it('swaps by dropping one line-up card onto another, right there in the Box screen', () => {
+    render(<BoxScreen />);
+    // Two Charmanders exist (one line-up, one boxed) so name text alone is ambiguous; scope to
+    // the line-up row specifically.
+    const lineUpRow = document.querySelector('.slot-row')!;
+    const charmanderCard = lineUpRow.querySelector('.team-card')!;
+    fireEvent.drop(charmanderCard, { dataTransfer: payloadFor('b', 'lineUp') });
+
+    expect(useRunStore.getState().run.lineUp.map((m) => m.instanceId)).toEqual(['b', 'a']);
   });
 });

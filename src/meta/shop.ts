@@ -75,3 +75,24 @@ export const describeInventory = (balls: BallInventory): string =>
   BALL_TIERS.filter((t) => balls[t] > 0)
     .map((t) => `${ballName(t)} ×${balls[t]}`)
     .join(', ') || 'no balls';
+
+
+// --- adoption ------------------------------------------------------------------------------------
+
+/**
+ * What a Center charges to adopt a Pokémon, by tier.
+ *
+ * Priced against a Location's takings — roughly eleven money for a clean sweep — so adopting is a
+ * real alternative to stocking up on balls rather than something you do as well. A tier above the
+ * local cap costs disproportionately more, because that is the thing that keeps you on the curve
+ * and catching is supposed to stay the cheaper route to it.
+ */
+export const adoptionCost = (tier: number): number => 3 + Math.max(0, tier - 1) * 4;
+
+/** What it costs to see a different five. */
+export const REROLL_COST = 2;
+
+/** How many Pokémon a Center offers at once. */
+export const ADOPTION_SLOTS = 5;
+
+export const canReroll = (money: number): boolean => money >= REROLL_COST;

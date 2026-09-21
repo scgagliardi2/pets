@@ -27,6 +27,8 @@ export interface Species {
   readonly baseAttack: number;
   readonly baseHealth: number;
   readonly baseSpeed: number;
+  /** The magnitude of this species' ability. Derived from its real Special Attack. */
+  readonly baseSpecial: number;
   /**
    * How likely a point of EXP goes to Health rather than Attack, 0-100. The species' real Health
    * share rescaled above a 50% floor, so every mon favours Health at least evenly — except the
@@ -46,8 +48,40 @@ export interface PassiveContent extends PassiveDefinition {
   readonly magnitudeByStage: readonly number[];
 }
 
+/**
+ * Speed every species starts at, overriding the tier-derived 1-3 value.
+ *
+ * Applied at derivation rather than baked into `species.json`, like the Health multiplier, so the
+ * generated roster still validates against the Unity assets number for number.
+ *
+ * Flat for every species for now, deliberately: the old 1-3 spread was calibrated to a charge
+ * threshold of 3 and means nothing against 100. Re-deriving a per-species Speed from the real
+ * base-stat spread is a balance job, and doing it badly is worse than starting everyone level.
+ *
+ * Lives here rather than in `statGrowth` — which is where it belongs conceptually — because
+ * `statGrowth` already imports from this module, and putting it there would close an import
+ * cycle that ESM resolves by handing one side `undefined` at module-init time.
+ */
+export const BASE_SPEED = 10;
+
 export const SPECIES: readonly Species[] = speciesData as readonly Species[];
 export const PASSIVES: readonly PassiveContent[] = passivesData as readonly PassiveContent[];
+
+/**
+ * What a mon does when its charge fills, if nothing else is specified: damage to the enemy Lead
+ * equal to its Special.
+ *
+ * The magnitude is not written here — `scalesWithSpecial` tells the simulator to read it off the
+ * acting mon when the ability fires. An authored ability that shields, heals or inflicts a status
+ * simply does not carry that flag, and so replaces this rather than stacking with it.
+ */
+export const DEFAULT_ABILITY: PassiveContent = {
+  id: 'default-special-strike',
+  displayName: 'Focus Strike',
+  description: "Strikes the foe's Lead for damage equal to this Pokémon's Special.",
+  effects: [{ type: 'DealDamage', target: 'EnemyLead', amount: 0, scalesWithSpecial: true }],
+  magnitudeByStage: [1],
+};
 
 const speciesById = new Map<number, Species>(SPECIES.map((s) => [s.id, s]));
 const speciesByName = new Map<string, Species>(SPECIES.map((s) => [s.name.toLowerCase(), s]));
@@ -67,11 +101,17 @@ export function passiveOf(id: string): PassiveContent | null {
 }
 
 /** The species' own tier line, before any EXP or evolution. */
+/**
+ * The species' own tier line, before any EXP or evolution — and before the global Health
+ * multiplier, which is applied when a mon's stats are derived rather than stored here.
+ */
 export function baseStatsOf(species: Species): Stats {
   return {
     attack: species.baseAttack,
     health: species.baseHealth,
-    speed: species.baseSpeed,
+    // The tier-derived 1-3 Speed is superseded by a flat starting value; see BASE_SPEED.
+    speed: BASE_SPEED,
+    special: species.baseSpecial,
   };
 }
 
@@ -83,19 +123,17 @@ export function baseStatsOf(species: Species): Stats {
  * a passive is worth the same at Blastoise as at Squirtle — but the shape is here so content can
  * start using it without a sim change.
  */
-export function resolvePassive(species: Species, stage = 0): PassiveDefinition | null {
-  if (species.passiveId === null) return null;
+export function resolvePassive(species: Species, stage = 0): PassiveContent | null {
+  if (species.passiveId === null) return DEFAULT_ABILITY;
   const passive = passiveById.get(species.passiveId);
-  if (passive === undefined) return null;
+  if (passive === undefined) return DEFAULT_ABILITY;
 
   const table = passive.magnitudeByStage;
   const magnitude = table[Math.min(Math.max(stage, 0), table.length - 1)] ?? 1;
   if (magnitude === 1) return passive;
 
   return {
-    id: passive.id,
-    displayName: passive.displayName,
-    typeFlavor: passive.typeFlavor,
+    ...passive,
     effects: passive.effects.map((e) => ({ ...e, amount: e.amount * magnitude })),
   };
 }
